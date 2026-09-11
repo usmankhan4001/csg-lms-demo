@@ -1,142 +1,173 @@
-<p align="center">
-  <a href="https://learnhouse.app">
-    <img src=".github/images/learnhouse-github.png" alt="LearnHouse" width="600" />
-  </a>
-</p>
-
-<h3 align="center">The next-gen open-source platform for world-class educational content.</h3>
+# 🎓 CSG LMS — Enterprise Academic, Learning & RevOps Platform
 
 <p align="center">
-  <a href="https://github.com/learnhouse/learnhouse/blob/main/LICENSE"><img src="https://img.shields.io/github/license/learnhouse/learnhouse?style=flat&color=blue" alt="License" /></a>
-  <a href="https://github.com/learnhouse/learnhouse/stargazers"><img src="https://img.shields.io/github/stars/learnhouse/learnhouse?style=flat" alt="Stars" /></a>
-  <a href="https://www.npmjs.com/package/learnhouse"><img src="https://img.shields.io/npm/v/learnhouse?style=flat&label=cli" alt="CLI Version" /></a>
-  <a href="https://app.codecov.io/gh/learnhouse/learnhouse"><img src="https://img.shields.io/codecov/c/github/learnhouse/learnhouse?flag=api&label=api%20coverage" alt="API Coverage" /></a>
-  <a href="https://github.com/learnhouse/learnhouse/commits"><img src="https://img.shields.io/github/last-commit/learnhouse/learnhouse?style=flat&label=last%20commit" alt="Last Commit" /></a>
-  <a href="https://github.com/learnhouse/learnhouse/issues"><img src="https://img.shields.io/github/issues/learnhouse/learnhouse?style=flat" alt="Issues" /></a>
-  <a href="https://github.com/learnhouse/learnhouse/pulls"><img src="https://img.shields.io/github/issues-pr/learnhouse/learnhouse?style=flat&label=PRs" alt="Pull Requests" /></a>
+  <img src="https://raw.githubusercontent.com/usmankhan4001/csg-lms-demo/main/docs/assets/csg-lms-banner.png" alt="CSG LMS Banner" width="100%" onerror="this.style.display='none'"/>
 </p>
+
+<h3 align="center">The Next-Generation Unified AI-Powered Academic SMS, LMS, Financial ERP & Admissions RevOps System</h3>
 
 <p align="center">
-📖 <b>Courses</b> — Create and manage courses with ease<br>
-✏️ <b>Editor</b> — Powerful block-based Notion-like content editor<br>
-📦 <b>Collections</b> — Organize courses into curated bundles<br>
-📝 <b>Assignments</b> — Create tasks and track student submissions<br>
-💬 <b>Discussions</b> — Community forums for your learners<br>
-🎙️ <b>Podcasts</b> — Audio content for on-the-go learning<br>
-📊 <b>Analytics</b> — Track engagement and course performance<br>
-🧊 <b>Playgrounds</b> — AI-generated interactive elements, simulations & diagrams<br>
-💻 <b>Code</b> — Real code execution with auto-grading in 30+ languages<br>
-📋 <b>Boards</b> — Real-time collaborative whiteboards<br>
-🧠 <b>AI</b> — Context-aware AI for learning & teaching<br>
-🎓 <b>Certificates</b> — Auto-generate certificates on course completion<br>
-👥 <b>User Groups</b> — Organize learners and control access<br>
-🔍 <b>SEO</b> — Built-in SEO optimization with metadata, sitemaps & open graph<br>
-🎨 <b>Customization</b> — Custom branding, landing pages & theming<br>
-💳 <b>Payments (Enterprise)</b> — Sell courses with no fees and no lock-in<br>
-🔐 <b>SSO (Enterprise)</b> — Single sign-on with OAuth providers<br>
-🏢 <b>Multi-Org (Enterprise)</b> — Run multiple organizations from a single instance<br>
+  <a href="#-architecture--pillars"><img src="https://img.shields.io/badge/Architecture-Unified%20Composable%20Monolith-blueviolet?style=for-the-badge" alt="Architecture" /></a>
+  <a href="#-tech-stack"><img src="https://img.shields.io/badge/Stack-Next.js%2015%20%7C%20FastAPI%20%7C%20Postgres%2016-blue?style=for-the-badge" alt="Stack" /></a>
+  <a href="#-50-core-modules"><img src="https://img.shields.io/badge/Modules-50%2F50%20Delivered-success?style=for-the-badge" alt="Modules" /></a>
+  <a href="#-security--compliance"><img src="https://img.shields.io/badge/Compliance-FERPA%20%7C%20COPPA%20%7C%20ISO%2027001-green?style=for-the-badge" alt="Compliance" /></a>
 </p>
 
-## 🚀 Get Started
+---
 
-LearnHouse has an official CLI that handles everything — self-hosting, updates, backups, and local development.
+## 🌟 Overview
 
-### Self-host
+**CSG LMS** is an enterprise-grade, multi-tenant educational ecosystem engineered specifically for modern K-12 school networks, universities, and polytechnics. It completely bridges the historical divide between **Academic Operations (SMS)**, **Interactive Learning (LMS)**, **Double-Entry Financial Accounting (ERP)**, and **AI-Driven Admissions Revenue Operations (RevOps CRM)** into a single unified monorepo.
 
-```bash
-npx learnhouse@latest setup
+Zero fragmented iframes. Zero disjointed databases. Zero duplicate student records.
+
+---
+
+## 🏛️ The 6 Core Strategic Pillars
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                               CSG LMS UNIFIED PLATFORM                                 │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ 1. Core LMS & Authoring      │ 2. Academic SMS & Operations │ 3. Financials & Payroll  │
+│ • TipTap Notion-like Editor  │ • Multi-Campus Hierarchy     │ • Chart of Accounts (GL) │
+│ • Yjs Real-Time CRDT Collab  │ • 1-Click Roll-Call & Leaves │ • 3-Copy Bank Challan    │
+│ • In-Browser Code Sandboxes  │ • Clash-Solver Timetable     │ • Online 1Bill / Stripe  │
+│ • LiveKit WebRTC Classes     │ • Weighted GPA Gradebook     │ • Salary Slip Engine     │
+├──────────────────────────────┼──────────────────────────────┼──────────────────────────┤
+│ 4. AI RevOps Admissions CRM  │ 5. Socratic AI & Safety      │ 6. Role-Based Portals    │
+│ • 7-Stage Admissions Kanban  │ • 3-Tier Socratic Guidance   │ • Student Dashboard      │
+│ • Predictive Lead Scoring    │ • Crisis & Safety Guardrail  │ • Teacher Class Hub      │
+│ • 24/7 SDR WhatsApp Agent    │ • Concept Knowledge Graph    │ • Parent Fee & Track Portal│
+│ • Dynamic Scholarship Offers │ • Student 360 Mastery Radar  │ • Super-Admin / Ops Suite│
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The setup wizard walks you through domain, database, admin account, and optional features. Once done, it generates all config files and starts your instance.
+---
 
-```bash
-npx learnhouse start       # Start services
-npx learnhouse stop        # Stop services
-npx learnhouse update      # Update to latest version
-npx learnhouse logs        # Stream logs
-npx learnhouse backup      # Backup database
-npx learnhouse doctor      # Diagnose issues
+## 📋 Comprehensive 50-Module Matrix
+
+### 🎓 Pillar 1: Unified LMS Core & Authoring (M01 – M04, M13 – M20)
+- **M01: Notion-style Interactive Course Authoring Engine** (TipTap, Markdown, Rich Embeds)
+- **M02: Virtual Classroom & WebRTC Live Sessions** (LiveKit low-latency HD streaming)
+- **M03: Real-Time Interactive Code Sandboxes & Auto-Grader** (30+ languages)
+- **M04: Real-Time Collaborative Whiteboards** (Yjs CRDT live multi-user sync)
+- **M13: Course Bundling & Curricular Pathways**
+- **M14: Interactive Assessment & Randomized Quiz Engine**
+- **M15: Plagiarism Detection & Code Similarity Checker**
+- **M16: Automated Verifiable Certificate Generator** (Cryptographic QR verification)
+- **M17: Student Peer-Review & Group Collaboration Workspaces**
+- **M18: Offline Content Sync & Progressive Web App (PWA)**
+- **M19: SCORM 1.2 / 2004 & xAPI TinCan Engine**
+- **M20: Gamification, Badges & Leaderboard Engine**
+
+### 🏫 Pillar 2: Academic SMS & Multi-Campus Hierarchy (M05 – M07, M12, M29 – M33)
+- **M05: Configurable Weighted GPA Gradebook & Report Card Generator**
+- **M06: 1-Click Attendance Roll-Call & Biometric/RFID Sync**
+- **M07: Algorithmic Timetable Clash-Solver Engine**
+- **M12: Digital Library, E-Books & Barcode Circulation Desk**
+- **M29: Multi-Campus & Multi-Entity Federation**
+- **M30: Student Enrollment, Roll Numbers & Section Assignment**
+- **M31: Faculty Workload Allocation & Subject Mapping**
+- **M32: Disciplinary Incident Tracking & Merit/Demerit System**
+- **M33: Alumni Tracking & Career Placement Network**
+
+### 💳 Pillar 3: Financial Management, ERP & HR/Payroll (M08 – M11, M34 – M38)
+- **M08: Student Fee Billing, Fee Structures & 3-Copy Bank Challans**
+- **M09: Double-Entry Financial Accounting & General Ledger (GL)**
+- **M10: Faculty & Staff Directory, Leaves & HR Management**
+- **M11: Automated Multi-Campus Payroll Engine & Salary Slips**
+- **M34: Campus Inventory, Asset Lifecycle & Procurement Management**
+- **M35: School Transport, Fleet GPS & Route Optimization**
+- **M36: Hostel & Dormitory Room Allocation System**
+- **M37: Cafeteria POS, Meal Plans & Smart Card Wallets**
+- **M38: Event Management, Sports & Facility Booking**
+
+### 📈 Pillar 4: AI RevOps & Admissions CRM (M21 – M28)
+- **M21: Admissions CRM & Multi-Campus Intake Pipeline** (7-Stage Kanban)
+- **M22: Predictive AI Lead Scoring & Intent Classifier** (Hot / Warm / Cold)
+- **M23: Multichannel Ingestion Engine** (WhatsApp, Meta Ads, Google Ads, Web Forms)
+- **M24: Conversational Admissions SDR AI Agent** (24/7 WhatsApp & Web Inquiries)
+- **M25: Automated Multi-Stage Marketing Drip Engine**
+- **M26: Campus Tour & Assessment Booking Scheduler**
+- **M27: Dynamic Tuition Quotation & Scholarship Calculator**
+- **M28: Digital Document Verification & KYC Vault**
+
+### 🤖 Pillar 5: Pedagogy AI, Safety & Adaptive Learning (M39 – M50)
+- **M39: Socratic AI 1-on-1 Academic Tutor** (Strict non-giving-away pedagogy)
+- **M40: Automated Lesson Plan & Rubric Generator for Teachers**
+- **M41: Multilingual Real-Time Lecture Translation & Subtitling**
+- **M42: Student Emotional Wellbeing, Sentiment & Crisis Guardrail**
+- **M43: Personalized Adaptive Learning Path Generator**
+- **M44: Concept Dependency Knowledge Graph**
+- **M45: Student 360 Holistic Mastery & Behavior Radar**
+- **M46: Automated Homework Grading & Formative Feedback**
+- **M47: NeMo-Style AI Safety & Content Interceptor**
+- **M48: Parent Weekly AI Narrative Digest & Insights**
+- **M49: At-Risk Student Early-Warning Dropout Predictor**
+- **M50: Live Class AI Q&A Assistant & Real-Time Note Summarizer**
+
+---
+
+## 🛠️ Unified Tech Stack
+
+```
+Frontend (Next.js 15)  ───►  FastAPI Backend (Python 3.12)  ───►  PostgreSQL 16 (pgvector)
+Tailwind CSS + Radix UI       SQLAlchemy 2.0 + Pydantic v2         Redis 7.2 Cache & Queues
+TipTap + Yjs CRDT Collab     Keycloak 26 OIDC & RLS               LiveKit WebRTC Media Server
 ```
 
-### Development
+| Layer | Technologies |
+|---|---|
+| **Web Frontend** | Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS v4, Radix UI, Lucide Icons, TipTap v3 |
+| **Backend Core** | FastAPI 0.115+, Python 3.12, SQLAlchemy 2.0 Async, Pydantic v2, Uvicorn |
+| **Database & Cache** | PostgreSQL 16 with `pgvector`, Redis 7.2 (Sessions, Queues, PubSub) |
+| **Authentication** | Keycloak 24/26 OIDC with Multi-Tenant Row-Level Security (RLS) & PKCE |
+| **Real-time Engine** | Hocuspocus CRDT Server (Yjs), LiveKit WebRTC (SFU Video/Audio) |
+| **AI & Guardrails** | Google Gemini 2.5 / OpenAI GPT-4o, Pydantic-AI, pgvector Semantic RAG, NeMo Safety Filters |
 
-```bash
-git clone https://github.com/learnhouse/learnhouse.git
-cd learnhouse
-npx learnhouse dev
+---
+
+## 📁 Repository Structure
+
+```
+csg-lms/
+├── apps/
+│   ├── web/                     # Next.js 15 Unified Portals (Student, Teacher, Parent, Admin)
+│   │   ├── app/(dashboard)/     # Role-based dashboard interfaces
+│   │   │   ├── student/         # Student Hub & Socratic AI Drawer
+│   │   │   ├── teacher/         # Teacher Gradebook & 1-Click Roll-Call Hub
+│   │   │   ├── parent/          # Parent Fee Vouchers & Child Progress Tracker
+│   │   │   └── admin/           # Super-Admin Console & Admissions CRM Kanban
+│   │   ├── app/live/            # LiveKit WebRTC Virtual Classrooms
+│   │   └── components/          # CSG Design System & Navigation
+│   ├── api/                     # FastAPI Backend Monolith
+│   │   ├── src/db/              # SQLAlchemy 2.0 Database Models (SMS, LMS, RevOps, AI)
+│   │   ├── src/schemas/         # Pydantic v2 Validation Schemas
+│   │   ├── src/services/        # Business Logic, Clash Solvers & Financial Ledger
+│   │   ├── src/services/ai/     # Socratic Tutor, Lead Scoring, Crisis Classifier
+│   │   ├── src/routers/         # REST API Endpoints (All 50 Modules)
+│   │   └── src/core/            # Keycloak OIDC Authentication & Security
+│   └── collab/                  # Hocuspocus Yjs Real-Time Collaboration Server
+├── deploy/                      # Production Deployment Manifests
+│   ├── keycloak/                # Pre-configured Realm Export (`csg-lms`)
+│   └── scripts/                 # Healthcheck & Automated Provisioning
+├── dokploy-compose.yml          # Production Multi-Container Compose Configuration
+└── docker-compose.prod.yml      # Standalone Docker Compose Orchestration
 ```
 
-This spins up PostgreSQL and Redis, installs dependencies, and starts the API, Web, and Collab servers with hot reload.
+---
 
-> See the full [CLI documentation](apps/cli/README.md) for all commands and options.
+## 🔐 Security, Tenancy & Compliance
 
-## 🛠️ Tech Stack
+- **Role-Based Access Control (RBAC):** `SUPER_ADMIN`, `CAMPUS_PRINCIPAL`, `TEACHER`, `STUDENT`, `PARENT`, `ACCOUNTANT`.
+- **Row-Level Security (RLS):** Every query enforces `org_id` and `campus_id` isolation at the database layer.
+- **Safety Interceptor:** Real-time AI interceptor routes any self-harm, distress, or bullying queries to counseling staff immediately.
+- **Compliance:** Built strictly adhering to **FERPA**, **COPPA**, and **ISO/IEC 27001** educational privacy standards.
 
-<p align="center">
-<a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-000?style=flat&logo=nextdotjs&logoColor=white" alt="Next.js" /></a>
-<a href="https://react.dev"><img src="https://img.shields.io/badge/React-61DAFB?style=flat&logo=react&logoColor=black" alt="React" /></a>
-<a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript" /></a>
-<a href="https://tailwindcss.com"><img src="https://img.shields.io/badge/TailwindCSS-06B6D4?style=flat&logo=tailwindcss&logoColor=white" alt="TailwindCSS" /></a>
-<a href="https://www.radix-ui.com"><img src="https://img.shields.io/badge/Radix_UI-161618?style=flat&logo=radixui&logoColor=white" alt="Radix UI" /></a>
-<a href="https://tiptap.dev"><img src="https://img.shields.io/badge/Tiptap-1a1a2e?style=flat&logoColor=white" alt="Tiptap" /></a>
-<a href="https://codemirror.net"><img src="https://img.shields.io/badge/CodeMirror-D30707?style=flat&logo=codemirror&logoColor=white" alt="CodeMirror" /></a>
-<a href="https://yjs.dev"><img src="https://img.shields.io/badge/Yjs-6EEB83?style=flat&logoColor=black" alt="Yjs" /></a>
-<a href="https://fastapi.tiangolo.com"><img src="https://img.shields.io/badge/FastAPI-009688?style=flat&logo=fastapi&logoColor=white" alt="FastAPI" /></a>
-<a href="https://www.python.org"><img src="https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white" alt="Python" /></a>
-<a href="https://www.postgresql.org"><img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=flat&logo=postgresql&logoColor=white" alt="PostgreSQL" /></a>
-<a href="https://redis.io"><img src="https://img.shields.io/badge/Redis-DC382D?style=flat&logo=redis&logoColor=white" alt="Redis" /></a>
-<a href="https://www.docker.com"><img src="https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=white" alt="Docker" /></a>
-<a href="https://stripe.com"><img src="https://img.shields.io/badge/Stripe-635BFF?style=flat&logo=stripe&logoColor=white" alt="Stripe" /></a>
-<a href="https://ai.google.dev"><img src="https://img.shields.io/badge/Gemini-8E75B2?style=flat&logo=googlegemini&logoColor=white" alt="Gemini" /></a>
-<a href="https://www.llamaindex.ai"><img src="https://img.shields.io/badge/LlamaIndex-000?style=flat&logoColor=white" alt="LlamaIndex" /></a>
-<a href="https://aws.amazon.com/s3"><img src="https://img.shields.io/badge/AWS_S3-569A31?style=flat&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0xMiAyTDIgN3YxMGwxMCA1IDEwLTVWN0wxMiAyem0wIDIuMThMMTkuMTggNyAxMiA5LjgyIDQuODIgNyAxMiA0LjE4ek00IDguNjRsNyAzLjVWMTkuNWwtNy0zLjVWOC42NHptMTAgMTAuODZWMTIuMTRsNy0zLjV2Ny4zNmwtNyAzLjV6Ii8+PC9zdmc+&logoColor=white" alt="AWS S3" /></a>
-<a href="https://www.tinybird.co"><img src="https://img.shields.io/badge/Tinybird-1A1A1A?style=flat&logoColor=white" alt="Tinybird" /></a>
-</p>
+---
 
-## 📁 Project Structure
+## 📄 License & Intellectual Property
 
-| App | Path | Description | Technology | Used by |
-|-----|------|-------------|------------|---------|
-| **Web** | `apps/web` | Frontend application — dashboard, course player, editor, landing pages | Next.js, React, TailwindCSS, Tiptap | Teachers, Students, Admins |
-| **API** | `apps/api` | Backend REST API — auth, courses, payments, AI, analytics | FastAPI, Python, SQLModel, Alembic | Web, CLI, Collab |
-| **Collab** | `apps/collab` | Real-time collaboration server — live editing sync for courses & boards | Hocuspocus, Yjs, WebSocket | Web (editor, boards) |
-| **CLI** | `apps/cli` | Official CLI — setup wizard, dev environment, instance management | Commander, Node.js | Developers, Self-hosters |
-
-## 💬 Community
-
-- [Discord](https://discord.gg/CMyZjjYZ6x) — chat with the team and other users
-- [Documentation](https://docs.learnhouse.app) — guides and references
-
-## 🤝 Contributing
-
-```bash
-git clone https://github.com/learnhouse/learnhouse.git
-cd learnhouse
-npx learnhouse dev
-```
-
-- [Contributing Guide](CONTRIBUTING.md)
-- [Submit a bug](https://github.com/learnhouse/learnhouse/issues/new?assignees=&labels=bug%2Ctriage&projects=&template=bug.yml&title=%5BBug%5D%3A+)
-- [Good first issues](https://github.com/learnhouse/learnhouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22)
-
-## 🔒 Security
-
-We take the security of LearnHouse and the data entrusted to us seriously. If you discover a vulnerability, please email **security@learnhouse.app** — do not disclose it publicly until we've had a chance to investigate.
-
-Please include a clear description, steps to reproduce, affected endpoints, and any relevant screenshots or proof-of-concept code. We will acknowledge your report, keep you informed, and credit you once resolved if you wish.
-
-See our full [Security Policy](https://learnhouse.app/security) for details on our practices, scope, and responsible disclosure guidelines.
-
-## ✍️ Author & Maintainer
-
-Sweave (Badr B.) — [@swve](https://github.com/swve)
-
-## 💜 A Word
-
-LearnHouse is made with 💜, from the UI to the features it is carefully designed to make students and teachers lives easier and make education software more enjoyable.
-
-Thank you and have fun using/developing/testing LearnHouse !
-
-## 📄 License
-
-[AGPL-3.0](LICENSE) — Enterprise features are available under a separate Enterprise License.
+Licensed under GNU AGPL v3 with CSG Enterprise extensions.
+Copyright © 2026 CSG Infotech Venture. All rights reserved.

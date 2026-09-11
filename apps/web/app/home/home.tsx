@@ -218,6 +218,25 @@ function HomeClient() {
                   <OrgRow key={org.id ?? org.slug} org={org} access_token={access_token} />
                 ))}
 
+              {/* Quick Role Portal Launchers */}
+              <div className="w-full mt-4 p-4 rounded-2xl bg-indigo-50/50 border border-indigo-100 flex flex-col gap-2.5">
+                <span className="text-[11px] font-bold text-indigo-900 tracking-wider uppercase">Unified Role Portals (50 Modules)</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <Link href="/student" className="flex items-center gap-2 p-2.5 bg-white rounded-xl text-xs font-semibold text-gray-800 hover:text-indigo-600 border border-gray-100 shadow-xs hover:border-indigo-200 transition-all">
+                    <span>🎓</span> Student Hub
+                  </Link>
+                  <Link href="/teacher" className="flex items-center gap-2 p-2.5 bg-white rounded-xl text-xs font-semibold text-gray-800 hover:text-indigo-600 border border-gray-100 shadow-xs hover:border-indigo-200 transition-all">
+                    <span>🧑‍🏫</span> Teacher Hub
+                  </Link>
+                  <Link href="/parent" className="flex items-center gap-2 p-2.5 bg-white rounded-xl text-xs font-semibold text-gray-800 hover:text-indigo-600 border border-gray-100 shadow-xs hover:border-indigo-200 transition-all">
+                    <span>👨‍👩‍👧</span> Parent Portal
+                  </Link>
+                  <Link href="/admin/admissions/crm" className="flex items-center gap-2 p-2.5 bg-white rounded-xl text-xs font-semibold text-gray-800 hover:text-indigo-600 border border-gray-100 shadow-xs hover:border-indigo-200 transition-all">
+                    <span>🏛️</span> Admissions CRM
+                  </Link>
+                </div>
+              </div>
+
               {/* Create organization — prominent entry into the hub */}
               {isAuthenticated && orgs && (
                 <Link
@@ -234,23 +253,11 @@ function HomeClient() {
             </div>
 
             {/* Footer */}
-            {platformUrl ? (
-              <a
-                href={platformUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-10 flex items-center gap-1.5 text-[11px] text-black/30 hover:text-black/60 transition-colors"
-              >
-                <span>{t('common.powered_by', { defaultValue: 'Powered by' })}</span>
-                <span className="font-semibold tracking-tight text-black/50 group-hover:text-black/70">LearnHouse</span>
-              </a>
-            ) : (
-              <div className="mt-10 flex items-center gap-1.5 text-[11px] text-black/30">
-                <span>{t('common.powered_by', { defaultValue: 'Powered by' })}</span>
-                <span className="font-semibold tracking-tight text-black/50">LearnHouse</span>
-              </div>
-            )}
-            <CopyrightFooter year={new Date().getFullYear()} className="mt-4 pt-0" />
+            <div className="mt-10 flex items-center gap-1.5 text-[11px] text-black/40 font-medium">
+              <span>Powered by</span>
+              <span className="font-bold tracking-tight text-indigo-950">CSG LMS Enterprise Platform</span>
+            </div>
+            <CopyrightFooter year={new Date().getFullYear()} className="mt-2 pt-0" />
           </div>
         </div>
       </div>

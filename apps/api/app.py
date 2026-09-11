@@ -139,11 +139,11 @@ async def lifespan(application: FastAPI):
 
 
 app = FastAPI(
-    title=learnhouse_config.site_name,
-    description=learnhouse_config.site_description,
+    title="CSG LMS Enterprise API",
+    description="Unified API for CSG LMS, Academic SMS, Financial ERP & Admissions RevOps",
     docs_url="/docs" if learnhouse_config.general_config.development_mode else None,
     redoc_url="/redoc" if learnhouse_config.general_config.development_mode else None,
-    version="1.3.6",
+    version="4.2.0",
     lifespan=lifespan,
 )
 
@@ -166,7 +166,13 @@ app.include_router(v1_router)
 
 @app.get("/")
 async def root():
-    return {"Message": "Welcome to LearnHouse ✨"}
+    return {
+        "platform": "CSG LMS Enterprise Platform",
+        "version": "4.2.0",
+        "status": "operational",
+        "modules": 50,
+        "pillars": ["LMS Core", "Academic SMS", "Financials & ERP", "AI RevOps CRM", "Pedagogy AI & Socratic Coach", "Role Portals"]
+    }
 
 
 if __name__ == "__main__":
