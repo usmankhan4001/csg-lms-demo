@@ -7,6 +7,7 @@ authors = [
     {name = "CSG Infotech"}
 ]
 dependencies = [
+    "arq==0.28.0",
     "boto3==1.43.83",
     "botocore==1.43.87",
     "faker==40.38.0",
@@ -50,6 +51,16 @@ dependencies = [
     "pypdf==6.16.2",
     "regex==2026.9.3",
 ]
+
+[tool.uv]
+# arq==0.28.0 declares "redis[hiredis]<6,>=4.2.0" in its own metadata, which
+# predates redis-py 6/7/8. This project already depends on redis==8.1.0
+# elsewhere (src/core/redis.py) and arq only relies on the stable, long
+# unchanged async client API (get/set/blpop/pipeline/etc.), so the upper
+# bound is overly conservative rather than a real incompatibility. Override
+# it so the resolver uses the version already pinned above instead of
+# failing the solve.
+override-dependencies = ["redis==8.1.0"]
 
 [tool.ruff]
 lint.ignore = ["E501", "E712"]

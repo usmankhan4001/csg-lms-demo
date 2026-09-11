@@ -5,6 +5,7 @@ from sqlalchemy import and_, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.events.database import get_db_session
+from src.core.keycloak_auth import KeycloakUserPrincipal, get_current_user_principal
 from src.db.sms_revops import (
     ActivityType,
     AdmissionsLead,
@@ -29,6 +30,7 @@ from src.schemas.sms_revops import (
     ScholarshipOfferCreate,
     ScholarshipOfferRead,
 )
+from src.security.features_utils.dependencies import require_revops_feature
 from src.services.sms.revops import (
     batch_score_leads,
     create_admissions_lead,
@@ -38,7 +40,7 @@ from src.services.sms.revops import (
     update_lead_stage as service_update_stage,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_revops_feature)])
 
 
 # ── Admissions Leads Endpoints ──
@@ -53,6 +55,7 @@ router = APIRouter()
 async def create_lead_endpoint(
     payload: LeadCreate,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> LeadRead:
     lead = await create_admissions_lead(session=session, payload=payload)
     return LeadRead.model_validate(lead)
@@ -67,6 +70,7 @@ async def create_lead_endpoint(
 async def get_pipeline_endpoint(
     campus_id: Optional[int] = Query(None, description="Optional Campus ID filter"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> PipelineResponse:
     filter_campus_id = campus_id if isinstance(campus_id, int) else None
     return await get_pipeline_kanban(session=session, campus_id=filter_campus_id)
@@ -85,6 +89,7 @@ async def list_leads_endpoint(
     intent_level: Optional[LeadIntent] = Query(None, description="Filter by Intent Level"),
     search: Optional[str] = Query(None, description="Search parent/student name, email, or phone"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[LeadRead]:
     conditions = []
     if isinstance(campus_id, int):
@@ -123,6 +128,7 @@ async def list_leads_endpoint(
 async def get_lead_detail_endpoint(
     lead_id: int,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> LeadDetailResponse:
     lead_stmt = select(AdmissionsLead).where(AdmissionsLead.id == lead_id)
     lead = (await session.execute(lead_stmt)).scalar_one_or_none()
@@ -166,6 +172,7 @@ async def update_lead_endpoint(
     lead_id: int,
     payload: LeadUpdate,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> LeadRead:
     stmt = select(AdmissionsLead).where(AdmissionsLead.id == lead_id)
     lead = (await session.execute(stmt)).scalar_one_or_none()
@@ -196,6 +203,7 @@ async def update_lead_stage_endpoint(
     lead_id: int,
     payload: LeadStageUpdate,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> LeadRead:
     updated_lead = await service_update_stage(session=session, lead_id=lead_id, payload=payload)
     return LeadRead.model_validate(updated_lead)
@@ -212,6 +220,7 @@ async def log_activity_endpoint(
     lead_id: int,
     payload: LeadActivityCreate,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> LeadActivityRead:
     activity = await log_activity_for_lead(session=session, lead_id=lead_id, payload=payload)
     return LeadActivityRead.model_validate(activity)
@@ -226,6 +235,7 @@ async def log_activity_endpoint(
 async def list_lead_activities_endpoint(
     lead_id: int,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[LeadActivityRead]:
     stmt = (
         select(LeadActivityLog)
@@ -245,6 +255,7 @@ async def list_lead_activities_endpoint(
 async def batch_score_leads_endpoint(
     payload: BatchScoringRequest,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> BatchScoringResponse:
     return await batch_score_leads(session=session, payload=payload)
 
@@ -261,6 +272,7 @@ async def batch_score_leads_endpoint(
 async def generate_offer_endpoint(
     payload: ScholarshipOfferCreate,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> ScholarshipOfferRead:
     offer = await service_generate_offer(session=session, payload=payload)
     return ScholarshipOfferRead.model_validate(offer)
@@ -277,6 +289,7 @@ async def list_offers_endpoint(
     campus_id: Optional[int] = Query(None, description="Filter by Campus ID"),
     offer_status: Optional[OfferStatus] = Query(None, alias="status", description="Filter by Offer Status"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[ScholarshipOfferRead]:
     conditions = []
     if isinstance(lead_id, int):
@@ -303,6 +316,7 @@ async def list_offers_endpoint(
 async def get_offer_endpoint(
     offer_id: int,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> ScholarshipOfferRead:
     stmt = select(ScholarshipOffer).where(ScholarshipOffer.id == offer_id)
     offer = (await session.execute(stmt)).scalar_one_or_none()

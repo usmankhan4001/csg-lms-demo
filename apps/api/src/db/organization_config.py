@@ -179,6 +179,27 @@ class AdminToggles(BaseModel):
     payments: FeatureAdminToggle = FeatureAdminToggle()
     playgrounds: FeatureAdminToggle = FeatureAdminToggle()
     podcasts: FeatureAdminToggle = FeatureAdminToggle()
+    # ------------------------------------------------------------------
+    # CSG-LMS SMS / RevOps module toggles (default disabled=False, i.e. ON).
+    # sms_campus is deliberately absent: it is the multi-campus tenancy root
+    # (campuses/academic years/terms/sections/enrollments that every other SMS
+    # module hangs off of), so it is hardcoded into ALWAYS_ON_FEATURES in
+    # resolve.py alongside courses/usergroups/assignments and can never be
+    # disabled per-org.
+    # ------------------------------------------------------------------
+    sms_attendance: FeatureAdminToggle = FeatureAdminToggle()
+    sms_timetable: FeatureAdminToggle = FeatureAdminToggle()
+    sms_gradebook: FeatureAdminToggle = FeatureAdminToggle()
+    sms_fees: FeatureAdminToggle = FeatureAdminToggle()
+    sms_financials: FeatureAdminToggle = FeatureAdminToggle()
+    # HR and Payroll share ONE toggle: salary structures/slips FK straight to
+    # StaffProfile (see src/db/sms_payroll.py), so payroll has no independent
+    # existence without HR staff records. Splitting the toggle would let an
+    # org disable HR while payroll keeps operating against orphaned staff
+    # data (or vice versa) -- combining them avoids that inconsistent state.
+    sms_hr_payroll: FeatureAdminToggle = FeatureAdminToggle()
+    sms_library: FeatureAdminToggle = FeatureAdminToggle()
+    revops: FeatureAdminToggle = FeatureAdminToggle()
 
 
 # ============================================================================

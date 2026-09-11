@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.events.database import get_db_session
+from src.core.keycloak_auth import KeycloakUserPrincipal, get_current_user_principal
 from src.db.sms_hr import StaffProfile
 from src.db.sms_payroll import SalaryPaymentStatus, SalarySlip, SalaryStructure
 from src.schemas.sms_payroll import (
@@ -14,12 +15,13 @@ from src.schemas.sms_payroll import (
     SalaryStructureCreate,
     SalaryStructureRead,
 )
+from src.security.features_utils.dependencies import require_sms_hr_payroll_feature
 from src.services.sms.payroll import (
     generate_batch_salary_slips,
     process_salary_slip_payment,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_sms_hr_payroll_feature)])
 
 
 # ── Salary Structures ──
@@ -33,6 +35,7 @@ router = APIRouter()
 async def create_or_update_salary_structure(
     payload: SalaryStructureCreate,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> SalaryStructureRead:
     # Verify staff profile exists
     staff_stmt = select(StaffProfile).where(StaffProfile.id == payload.staff_id)
@@ -101,6 +104,7 @@ async def create_or_update_salary_structure(
 async def get_staff_salary_structure(
     staff_id: int,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> SalaryStructureRead:
     stmt = select(SalaryStructure).where(SalaryStructure.staff_id == staff_id)
     struct = (await session.execute(stmt)).scalar_one_or_none()
@@ -123,6 +127,7 @@ async def get_staff_salary_structure(
 async def generate_salary_slips_batch(
     payload: BatchSalarySlipGenerateRequest,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[SalarySlipRead]:
     slips = await generate_batch_salary_slips(session=session, payload=payload)
     return [SalarySlipRead.model_validate(s) for s in slips]
@@ -139,6 +144,7 @@ async def list_salary_slips(
     year: Optional[int] = Query(None, ge=2000, le=2100, description="Filter by Year"),
     payment_status: Optional[SalaryPaymentStatus] = Query(None, description="Filter by Payment Status"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[SalarySlipRead]:
     query = select(SalarySlip)
     if type(staff_id) is int:
@@ -164,6 +170,7 @@ async def list_salary_slips(
 async def get_salary_slip(
     slip_id: int,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> SalarySlipRead:
     stmt = select(SalarySlip).where(SalarySlip.id == slip_id)
     slip = (await session.execute(stmt)).scalar_one_or_none()
@@ -184,6 +191,7 @@ async def record_salary_payment(
     slip_id: int,
     payload: ProcessSalaryPaymentRequest,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> SalarySlipRead:
     slip = await process_salary_slip_payment(session=session, slip_id=slip_id, payload=payload)
     return SalarySlipRead.model_validate(slip)

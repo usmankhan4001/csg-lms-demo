@@ -8,6 +8,7 @@ from fastapi import Depends, HTTPException, Path, Request
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from src.core.events.database import get_db_session
+from src.core.keycloak_auth import KeycloakUserPrincipal, get_current_user_principal
 from src.db.organization_config import OrganizationConfig
 from src.db.organizations import Organization
 from src.db.courses.courses import Course
@@ -27,6 +28,15 @@ FeatureName = Literal[
     "ai",
     "payments",
     "usergroups",
+    # CSG-LMS SMS / RevOps modules
+    "sms_attendance",
+    "sms_timetable",
+    "sms_gradebook",
+    "sms_fees",
+    "sms_financials",
+    "sms_hr_payroll",
+    "sms_library",
+    "revops",
 ]
 
 
@@ -392,3 +402,109 @@ async def require_playgrounds_feature(
         )
 
     return True
+
+
+# ============================================================================
+# CSG-LMS SMS / RevOps module dependencies
+# ============================================================================
+#
+# require_courses_feature/require_boards_feature/require_playgrounds_feature
+# above auto-detect the org from the REQUEST (course_uuid, board_uuid,
+# org_slug, org_id path/query params) because those resources belong to a
+# Learnhouse Organization directly.
+#
+# The SMS domain (attendance, timetable, gradebook, fees, financials, HR,
+# payroll, library, admissions/RevOps) has no such org_id/org_slug of its
+# own -- its resources are scoped only by campus_id (see src/db/sms_campus.py
+# and the sms_* routers), and campuses aren't looked up by these endpoints'
+# path/query params consistently enough to auto-detect from. Instead, the org
+# scope comes from the authenticated Keycloak principal's own org_id claim,
+# already resolved from the caller's JWT by get_current_user_principal (the
+# same dependency the sms_* routers use for authentication) -- so an
+# unauthenticated caller is rejected with 401 before the feature check ever
+# runs, satisfying "auth AND feature-toggle" together.
+
+
+async def _check_sms_feature_enabled(
+    feature: FeatureName,
+    principal: KeycloakUserPrincipal,
+    db_session: AsyncSession,
+) -> bool:
+    """
+    Shared helper for the CSG-LMS SMS/RevOps router-level feature dependencies.
+
+    Mirrors require_courses_feature's "no relevant parameter found -> allow"
+    fallback: a principal with no org_id (e.g. a token that doesn't carry a
+    tenant scope) isn't gated by a per-org admin toggle.
+    """
+    if principal.org_id is None:
+        return True
+    return await _check_feature_enabled(feature, principal.org_id, db_session)
+
+
+async def require_sms_attendance_feature(
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+    db_session: AsyncSession = Depends(get_db_session),
+) -> bool:
+    """Router-level dependency gating the SMS Attendance module behind its admin toggle."""
+    return await _check_sms_feature_enabled("sms_attendance", principal, db_session)
+
+
+async def require_sms_timetable_feature(
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+    db_session: AsyncSession = Depends(get_db_session),
+) -> bool:
+    """Router-level dependency gating the SMS Timetable module behind its admin toggle."""
+    return await _check_sms_feature_enabled("sms_timetable", principal, db_session)
+
+
+async def require_sms_gradebook_feature(
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+    db_session: AsyncSession = Depends(get_db_session),
+) -> bool:
+    """Router-level dependency gating the SMS Gradebook module behind its admin toggle."""
+    return await _check_sms_feature_enabled("sms_gradebook", principal, db_session)
+
+
+async def require_sms_fees_feature(
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+    db_session: AsyncSession = Depends(get_db_session),
+) -> bool:
+    """Router-level dependency gating the SMS Fees module behind its admin toggle."""
+    return await _check_sms_feature_enabled("sms_fees", principal, db_session)
+
+
+async def require_sms_financials_feature(
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+    db_session: AsyncSession = Depends(get_db_session),
+) -> bool:
+    """Router-level dependency gating the SMS Financials module behind its admin toggle."""
+    return await _check_sms_feature_enabled("sms_financials", principal, db_session)
+
+
+async def require_sms_hr_payroll_feature(
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+    db_session: AsyncSession = Depends(get_db_session),
+) -> bool:
+    """
+    Router-level dependency gating the combined SMS HR + Payroll modules
+    behind one admin toggle (shared by sms_hr.py and sms_payroll.py -- see
+    sms_hr_payroll on AdminToggles for why they're combined).
+    """
+    return await _check_sms_feature_enabled("sms_hr_payroll", principal, db_session)
+
+
+async def require_sms_library_feature(
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+    db_session: AsyncSession = Depends(get_db_session),
+) -> bool:
+    """Router-level dependency gating the SMS Library module behind its admin toggle."""
+    return await _check_sms_feature_enabled("sms_library", principal, db_session)
+
+
+async def require_revops_feature(
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+    db_session: AsyncSession = Depends(get_db_session),
+) -> bool:
+    """Router-level dependency gating the AI RevOps / Admissions module behind its admin toggle."""
+    return await _check_sms_feature_enabled("revops", principal, db_session)

@@ -4,6 +4,7 @@ from sqlalchemy import and_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.events.database import get_db_session
+from src.core.keycloak_auth import KeycloakUserPrincipal, get_current_user_principal
 from src.db.sms_fees import (
     FeePaymentReceipt,
     FeeStructure,
@@ -19,13 +20,14 @@ from src.schemas.sms_fees import (
     StudentFeeLedgerResponse,
     StudentFeeVoucherRead,
 )
+from src.security.features_utils.dependencies import require_sms_fees_feature
 from src.services.sms.fees import (
     fetch_student_fee_ledger,
     generate_vouchers_for_students,
     process_fee_payment,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_sms_fees_feature)])
 
 
 # ── Fee Structures ──
@@ -39,6 +41,7 @@ router = APIRouter()
 async def create_fee_structure(
     payload: FeeStructureCreate,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> FeeStructureRead:
     total = payload.tuition_fee + payload.transport_fee + payload.lab_fee + payload.other_fee
     structure = FeeStructure(
@@ -67,6 +70,7 @@ async def list_fee_structures(
     campus_id: Optional[int] = Query(None, description="Filter by Campus ID"),
     academic_term_id: Optional[int] = Query(None, description="Filter by Academic Term ID"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[FeeStructureRead]:
     conditions = []
     if isinstance(campus_id, int):
@@ -93,6 +97,7 @@ async def list_fee_structures(
 async def generate_vouchers(
     payload: GenerateVouchersRequest,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[StudentFeeVoucherRead]:
     vouchers = await generate_vouchers_for_students(session=session, payload=payload)
     return [StudentFeeVoucherRead.model_validate(v) for v in vouchers]
@@ -107,6 +112,7 @@ async def list_vouchers(
     student_id: Optional[int] = Query(None, description="Filter by Student ID"),
     status_filter: Optional[VoucherStatus] = Query(None, alias="status", description="Filter by voucher status"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[StudentFeeVoucherRead]:
     conditions = []
     if isinstance(student_id, int):
@@ -133,6 +139,7 @@ async def list_vouchers(
 async def record_payment(
     payload: RecordPaymentRequest,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> FeePaymentReceiptRead:
     receipt = await process_fee_payment(session=session, payload=payload)
     return FeePaymentReceiptRead.model_validate(receipt)
@@ -147,5 +154,6 @@ async def record_payment(
 async def get_student_fee_ledger_endpoint(
     student_id: int,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> StudentFeeLedgerResponse:
     return await fetch_student_fee_ledger(session=session, student_id=student_id)

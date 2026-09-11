@@ -5,6 +5,7 @@ from sqlalchemy import and_, desc, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.events.database import get_db_session
+from src.core.keycloak_auth import KeycloakUserPrincipal, get_current_user_principal
 from src.db.sms_library import BookLoan, BookLoanStatus, LibraryBook
 from src.schemas.sms_library import (
     BookLoanRead,
@@ -16,13 +17,14 @@ from src.schemas.sms_library import (
     LibraryBookUpdate,
     ReturnBookRequest,
 )
+from src.security.features_utils.dependencies import require_sms_library_feature
 from src.services.sms.library import (
     batch_calculate_overdue_fines,
     borrow_library_book,
     return_library_book,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_sms_library_feature)])
 
 
 # ── Books Catalog Endpoints ──
@@ -36,6 +38,7 @@ router = APIRouter()
 async def create_book(
     payload: LibraryBookCreate,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> LibraryBookRead:
     book = LibraryBook(
         campus_id=payload.campus_id,
@@ -64,6 +67,7 @@ async def list_books(
     search: Optional[str] = Query(None, description="Search by title, author, or ISBN"),
     available_only: bool = Query(False, description="Filter only books with available copies"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[LibraryBookRead]:
     conditions = []
     if isinstance(campus_id, int):
@@ -99,6 +103,7 @@ async def list_books(
 async def get_book(
     book_id: int,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> LibraryBookRead:
     stmt = select(LibraryBook).where(LibraryBook.id == book_id)
     book = (await session.execute(stmt)).scalars().first()
@@ -119,6 +124,7 @@ async def update_book(
     book_id: int,
     payload: LibraryBookUpdate,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> LibraryBookRead:
     stmt = select(LibraryBook).where(LibraryBook.id == book_id)
     book = (await session.execute(stmt)).scalars().first()
@@ -161,6 +167,7 @@ async def update_book(
 async def delete_book(
     book_id: int,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ):
     stmt = select(LibraryBook).where(LibraryBook.id == book_id)
     book = (await session.execute(stmt)).scalars().first()
@@ -185,6 +192,7 @@ async def delete_book(
 async def borrow_book(
     payload: BorrowBookRequest,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> BookLoanRead:
     try:
         loan = await borrow_library_book(
@@ -208,6 +216,7 @@ async def return_book(
     loan_id: int,
     payload: Optional[ReturnBookRequest] = None,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> BookLoanRead:
     ret_date = payload.returned_date if payload else None
     override_fine = payload.fine_amount if payload else None
@@ -234,6 +243,7 @@ async def list_loans(
     book_id: Optional[int] = Query(None, description="Filter by book ID"),
     loan_status: Optional[BookLoanStatus] = Query(None, alias="status", description="Filter by status"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[BookLoanRead]:
     conditions = []
     if isinstance(user_id, int):
@@ -261,6 +271,7 @@ async def list_loans(
 async def calculate_overdue_fines_endpoint(
     payload: Optional[CalculateFinesRequest] = None,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> CalculateFinesResponse:
     fine_rate = payload.fine_per_day if payload else 1.0
     ref_date = payload.as_of_date if payload else datetime.date.today()

@@ -239,6 +239,44 @@ class TestFeatureResolve:
         assert members["available"] is True   # free plan includes members
         assert members["enabled"] is False    # ...but the admin turned it off
 
+    def test_csg_lms_sms_features_enabled_by_default_in_ee_mode(self):
+        """
+        The new SMS/RevOps module toggles (AdminToggles: sms_attendance,
+        sms_timetable, sms_gradebook, sms_fees, sms_financials,
+        sms_hr_payroll, sms_library, revops) all default to disabled=False,
+        i.e. ON. With no admin_toggles entry at all (a config that predates
+        the toggles, or simply hasn't touched them), they must still resolve
+        enabled — same "no config entry --> not disabled" behavior already
+        exercised for boards/analytics elsewhere in this file.
+        """
+        with patch("src.security.features_utils.resolve.get_deployment_mode", return_value="ee"):
+            for feature in ("sms_attendance", "sms_timetable", "sms_gradebook", "revops"):
+                resolved = resolve_feature(feature, {"config_version": "2.0"}, org_id=1)
+                assert resolved["enabled"] is True, feature
+                assert resolved["available"] is True, feature
+
+    def test_csg_lms_sms_features_disabled_via_admin_toggle(self):
+        """Setting admin_toggles.<feature>.disabled=True turns each new SMS/RevOps key off."""
+        config = {
+            "config_version": "2.0",
+            "admin_toggles": {
+                "sms_fees": {"disabled": True},
+                "sms_hr_payroll": {"disabled": True},
+                "sms_library": {"disabled": True},
+            },
+        }
+        with patch("src.security.features_utils.resolve.get_deployment_mode", return_value="ee"):
+            sms_fees = resolve_feature("sms_fees", config, org_id=1)
+            sms_hr_payroll = resolve_feature("sms_hr_payroll", config, org_id=1)
+            sms_library = resolve_feature("sms_library", config, org_id=1)
+            # A sibling feature left untouched in the same config stays enabled.
+            sms_financials = resolve_feature("sms_financials", config, org_id=1)
+
+        assert sms_fees["enabled"] is False
+        assert sms_hr_payroll["enabled"] is False
+        assert sms_library["enabled"] is False
+        assert sms_financials["enabled"] is True
+
     def test_fetch_purchased_extras_returns_defaults_when_org_id_zero(self):
         result = _fetch_purchased_extras(0)
         assert result == {"ai": 0, "members": 0, "admin_seats": 0}
@@ -295,7 +333,7 @@ class TestFeatureResolve:
         ):
             result = resolve_all_features({"config_version": "2.0"}, org_id=0)
         mock_fetch.assert_not_called()
-        assert len(result) == 19
+        assert len(result) == 27
 
     def test_resolve_all_features_uses_resolve_feature_for_every_entry(self):
         calls = []
@@ -327,6 +365,14 @@ class TestFeatureResolve:
             "sso",
             "usergroups",
             "versioning",
+            "sms_attendance",
+            "sms_timetable",
+            "sms_gradebook",
+            "sms_fees",
+            "sms_financials",
+            "sms_hr_payroll",
+            "sms_library",
+            "revops",
         ]
-        assert len(calls) == 19
+        assert len(calls) == 27
         assert calls[0] == ("ai", {"config_version": "2.0"}, 9)

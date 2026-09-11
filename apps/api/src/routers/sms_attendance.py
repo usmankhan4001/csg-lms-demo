@@ -6,6 +6,7 @@ from sqlalchemy import and_, extract, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.events.database import get_db_session
+from src.core.keycloak_auth import KeycloakUserPrincipal, get_current_user_principal
 from src.db.sms_attendance import (
     AttendanceLeaveRequest,
     AttendanceStatus,
@@ -22,8 +23,9 @@ from src.schemas.sms_attendance import (
     MonthlyStudentAttendanceSheet,
     StudentAttendanceRead,
 )
+from src.security.features_utils.dependencies import require_sms_attendance_feature
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_sms_attendance_feature)])
 
 
 # ── 1-Click Batch Roll-Call ──
@@ -38,6 +40,7 @@ router = APIRouter()
 async def submit_batch_roll_call(
     payload: BatchRollCallRequest,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> BatchRollCallResponse:
     """
     Submits batch roll-call attendance. Performs upsert on (student_id, section_id, date).
@@ -114,6 +117,7 @@ async def get_monthly_student_attendance(
     month: int = Query(..., ge=1, le=12, description="Month (1-12)"),
     section_id: Optional[int] = Query(None, description="Optional Section ID filter"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> MonthlyStudentAttendanceSheet:
     """
     Generates institutional monthly attendance breakdown & weighted attendance percentage.
@@ -178,6 +182,7 @@ async def get_monthly_student_attendance(
 async def submit_leave_request(
     payload: LeaveRequestCreate,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> LeaveRequestRead:
     if payload.end_date < payload.start_date:
         raise HTTPException(
@@ -210,6 +215,7 @@ async def list_leave_requests(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[LeaveRequestRead]:
     conditions = []
     if isinstance(student_id, int):
@@ -242,6 +248,7 @@ async def update_leave_request_status(
     request_id: int,
     payload: LeaveRequestUpdateStatus,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> LeaveRequestRead:
     stmt = select(AttendanceLeaveRequest).where(AttendanceLeaveRequest.id == request_id)
     result = await session.execute(stmt)

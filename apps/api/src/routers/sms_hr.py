@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.events.database import get_db_session
+from src.core.keycloak_auth import KeycloakUserPrincipal, get_current_user_principal
 from src.db.sms_hr import (
     ContractType,
     LeaveStatus,
@@ -19,8 +20,9 @@ from src.schemas.sms_hr import (
     StaffProfileRead,
     StaffProfileUpdate,
 )
+from src.security.features_utils.dependencies import require_sms_hr_payroll_feature
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_sms_hr_payroll_feature)])
 
 
 # ── Staff Directory ──
@@ -34,6 +36,7 @@ router = APIRouter()
 async def create_staff_profile(
     payload: StaffProfileCreate,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> StaffProfileRead:
     # Check employee code uniqueness
     stmt = select(StaffProfile).where(StaffProfile.employee_code == payload.employee_code)
@@ -75,6 +78,7 @@ async def list_staff_profiles(
     contract_type: Optional[ContractType] = Query(None, description="Filter by Contract Type"),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[StaffProfileRead]:
     query = select(StaffProfile)
     if type(campus_id) is int:
@@ -100,6 +104,7 @@ async def list_staff_profiles(
 async def get_staff_profile(
     staff_id: int,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> StaffProfileRead:
     stmt = select(StaffProfile).where(StaffProfile.id == staff_id)
     profile = (await session.execute(stmt)).scalar_one_or_none()
@@ -120,6 +125,7 @@ async def update_staff_profile(
     staff_id: int,
     payload: StaffProfileUpdate,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> StaffProfileRead:
     stmt = select(StaffProfile).where(StaffProfile.id == staff_id)
     profile = (await session.execute(stmt)).scalar_one_or_none()
@@ -149,6 +155,7 @@ async def update_staff_profile(
 async def apply_staff_leave(
     payload: StaffLeaveCreate,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> StaffLeaveRead:
     # Verify staff exists
     staff_stmt = select(StaffProfile).where(StaffProfile.id == payload.staff_id)
@@ -189,6 +196,7 @@ async def list_staff_leaves(
     leave_type: Optional[LeaveType] = Query(None, description="Filter by Leave Type"),
     status_filter: Optional[LeaveStatus] = Query(None, alias="status", description="Filter by Leave Status"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[StaffLeaveRead]:
     query = select(StaffLeave)
     if isinstance(staff_id, int):
@@ -213,6 +221,7 @@ async def update_leave_status(
     leave_id: int,
     payload: StaffLeaveActionRequest,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> StaffLeaveRead:
     stmt = select(StaffLeave).where(StaffLeave.id == leave_id)
     leave = (await session.execute(stmt)).scalar_one_or_none()

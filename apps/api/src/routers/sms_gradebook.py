@@ -4,6 +4,7 @@ from sqlalchemy import and_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.events.database import get_db_session
+from src.core.keycloak_auth import KeycloakUserPrincipal, get_current_user_principal
 from src.db.sms_gradebook import (
     AssessmentPlan,
     GradebookEntry,
@@ -19,12 +20,13 @@ from src.schemas.sms_gradebook import (
     GradingScaleRead,
     StudentTermReportCardResponse,
 )
+from src.security.features_utils.dependencies import require_sms_gradebook_feature
 from src.services.sms.gradebook import (
     generate_student_term_report_card,
     resolve_letter_and_gpa,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_sms_gradebook_feature)])
 
 
 # ── Grading Scales ──
@@ -38,6 +40,7 @@ router = APIRouter()
 async def create_grading_scale(
     payload: GradingScaleCreate,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> GradingScaleRead:
     scale = GradingScale(
         name=payload.name,
@@ -58,6 +61,7 @@ async def create_grading_scale(
 )
 async def list_grading_scales(
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[GradingScaleRead]:
     stmt = select(GradingScale)
     scales = (await session.execute(stmt)).scalars().all()
@@ -76,6 +80,7 @@ async def list_grading_scales(
 async def create_assessment_plan(
     payload: AssessmentPlanCreate,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> AssessmentPlanRead:
     plan = AssessmentPlan(
         course_id=payload.course_id,
@@ -100,6 +105,7 @@ async def list_assessment_plans(
     course_id: Optional[int] = Query(None, description="Filter by Course ID"),
     academic_term_id: Optional[int] = Query(None, description="Filter by Academic Term ID"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[AssessmentPlanRead]:
     conditions = []
     if isinstance(course_id, int):
@@ -125,6 +131,7 @@ async def list_assessment_plans(
 async def batch_enter_grades(
     payload: BatchGradebookEntryRequest,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[GradebookEntryRead]:
     # Verify plan exists
     plan_stmt = select(AssessmentPlan).where(AssessmentPlan.id == payload.assessment_plan_id)
@@ -202,6 +209,7 @@ async def get_student_report_card(
     section_id: int = Query(..., description="Student Section ID"),
     academic_term_id: int = Query(..., description="Academic Term ID"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> StudentTermReportCardResponse:
     return await generate_student_term_report_card(
         session=session,

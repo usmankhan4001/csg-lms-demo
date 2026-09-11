@@ -25,6 +25,10 @@ ALL_FEATURES = [
     "folders", "communities", "courses",
     "members", "payments", "playgrounds", "podcasts", "roles", "scorm",
     "sso", "usergroups", "versioning",
+    # CSG-LMS SMS / RevOps modules (sms_campus is the tenancy root and lives
+    # in ALWAYS_ON_FEATURES below instead, so it has no admin toggle).
+    "sms_attendance", "sms_timetable", "sms_gradebook", "sms_fees",
+    "sms_financials", "sms_hr_payroll", "sms_library", "revops",
 ]
 
 

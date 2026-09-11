@@ -4,6 +4,7 @@ from sqlalchemy import and_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.events.database import get_db_session
+from src.core.keycloak_auth import KeycloakUserPrincipal, get_current_user_principal
 from src.db.sms_timetable import ClassPeriod, DayOfWeek, TimetableSchedule
 from src.schemas.sms_timetable import (
     ClassPeriodCreate,
@@ -16,6 +17,7 @@ from src.schemas.sms_timetable import (
     TimetableScheduleRead,
     TimetableSlotDetail,
 )
+from src.security.features_utils.dependencies import require_sms_timetable_feature
 from src.services.sms.timetable import (
     check_schedule_clashes,
     detect_timetable_clashes,
@@ -24,7 +26,7 @@ from src.services.sms.timetable import (
     get_teacher_timetable_slots,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_sms_timetable_feature)])
 
 
 # ── Class Periods ──
@@ -39,6 +41,7 @@ router = APIRouter()
 async def create_class_period(
     payload: ClassPeriodCreate,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> ClassPeriodRead:
     period = ClassPeriod(
         campus_id=payload.campus_id,
@@ -62,6 +65,7 @@ async def create_class_period(
 async def list_class_periods(
     campus_id: Optional[int] = Query(None, description="Filter by Campus ID"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[ClassPeriodRead]:
     stmt = select(ClassPeriod)
     if isinstance(campus_id, int):
@@ -83,6 +87,7 @@ async def list_class_periods(
 async def check_clashes_endpoint(
     payload: ClashCheckRequest,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> ClashCheckResponse:
     day_str = payload.day_of_week.value if isinstance(payload.day_of_week, DayOfWeek) else str(payload.day_of_week)
     return await check_schedule_clashes(
@@ -109,9 +114,10 @@ async def create_timetable_schedule(
     payload: TimetableScheduleCreate,
     enforce_no_clash: bool = Query(True, description="Reject creation if clashes exist"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> TimetableScheduleRead:
     day_str = payload.day_of_week.value if isinstance(payload.day_of_week, DayOfWeek) else str(payload.day_of_week)
-    
+
     # Verify period exists
     period_stmt = select(ClassPeriod).where(ClassPeriod.id == payload.period_id)
     period_res = await session.execute(period_stmt)
@@ -168,6 +174,7 @@ async def list_timetable_schedules(
     academic_term_id: Optional[int] = Query(None, description="Filter by Academic Term ID"),
     day_of_week: Optional[DayOfWeek] = Query(None, description="Filter by Day of Week"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[TimetableSlotDetail]:
     conditions = []
     if isinstance(section_id, int):
@@ -196,6 +203,7 @@ async def get_student_timetable(
     section_id: int = Query(..., description="Student's section ID"),
     academic_term_id: Optional[int] = Query(None, description="Filter by Academic Term ID"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> StudentTimetableResponse:
     term_id = academic_term_id if isinstance(academic_term_id, int) else None
     slots = await get_student_timetable_slots(
@@ -221,6 +229,7 @@ async def get_teacher_timetable(
     teacher_id: int,
     academic_term_id: Optional[int] = Query(None, description="Filter by Academic Term ID"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> TeacherTimetableResponse:
     term_id = academic_term_id if isinstance(academic_term_id, int) else None
     slots = await get_teacher_timetable_slots(

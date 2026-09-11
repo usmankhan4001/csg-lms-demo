@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.events.database import get_db_session
+from src.core.keycloak_auth import KeycloakUserPrincipal, get_current_user_principal
 from src.db.sms_financials import (
     AccountType,
     ChartOfAccounts,
@@ -18,12 +19,13 @@ from src.schemas.sms_financials import (
     JournalEntryRead,
     TrialBalanceResponse,
 )
+from src.security.features_utils.dependencies import require_sms_financials_feature
 from src.services.sms.financials import (
     generate_trial_balance,
     validate_and_create_journal_entry,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_sms_financials_feature)])
 
 
 # ── Chart of Accounts ──
@@ -37,6 +39,7 @@ router = APIRouter()
 async def create_chart_of_account(
     payload: ChartOfAccountsCreate,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> ChartOfAccountsRead:
     account = ChartOfAccounts(
         account_code=payload.account_code,
@@ -63,6 +66,7 @@ async def list_chart_of_accounts(
     account_type: Optional[AccountType] = Query(None, description="Filter by Account Type"),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[ChartOfAccountsRead]:
     query = select(ChartOfAccounts)
     if isinstance(campus_id, int):
@@ -86,6 +90,7 @@ async def list_chart_of_accounts(
 async def get_chart_of_account(
     account_id: int,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> ChartOfAccountsRead:
     stmt = select(ChartOfAccounts).where(ChartOfAccounts.id == account_id)
     account = (await session.execute(stmt)).scalar_one_or_none()
@@ -108,6 +113,7 @@ async def get_chart_of_account(
 async def create_journal_entry(
     payload: JournalEntryCreate,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> JournalEntryRead:
     entry = await validate_and_create_journal_entry(session=session, payload=payload)
 
@@ -128,6 +134,7 @@ async def create_journal_entry(
 async def list_journal_entries(
     campus_id: Optional[int] = Query(None, description="Filter by Campus ID"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[JournalEntryRead]:
     query = select(JournalEntry)
     if isinstance(campus_id, int):
@@ -156,6 +163,7 @@ async def list_journal_entries(
 async def get_journal_entry(
     entry_id: int,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> JournalEntryRead:
     stmt = select(JournalEntry).where(JournalEntry.id == entry_id)
     entry = (await session.execute(stmt)).scalar_one_or_none()
@@ -182,6 +190,7 @@ async def get_journal_entry(
 async def get_trial_balance(
     campus_id: Optional[int] = Query(None, description="Filter by Campus ID"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> TrialBalanceResponse:
     c_id = campus_id if isinstance(campus_id, int) else None
     return await generate_trial_balance(session=session, campus_id=c_id)
