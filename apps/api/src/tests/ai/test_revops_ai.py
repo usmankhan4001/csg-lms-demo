@@ -190,6 +190,57 @@ class TestAdmissionsSDRAgent:
         assert "schedule_campus_tour" in result["suggested_actions"]
         assert result["parent_contact"]["phone"] == "+1-555-999-8888"
 
+    # -----------------------------------------------------------------------
+    # Consent & Compliance gating (does the SDR agent actually refuse to fire
+    # an outbound reply, not just carry a consent field)
+    # -----------------------------------------------------------------------
+    def test_whatsapp_reply_blocked_when_consent_explicitly_denied(self):
+        message = "What are the annual tuition fees for Grade 3?"
+        lead_ctx = {"whatsapp_consent": False}
+
+        result = handle_admissions_inquiry(message, lead_context=lead_ctx, channel="whatsapp")
+
+        assert result["consent_blocked"] is True
+        assert result["blocked_channel"] == "whatsapp"
+        assert result["response"] is None
+        assert result["suggested_actions"] == []
+        # Parsing/intent detection still runs -- only the outbound action is suppressed
+        assert result["intent"] == "fee_inquiry"
+
+    def test_email_reply_blocked_when_consent_explicitly_denied(self):
+        message = "Tell me about your Cambridge IGCSE curriculum."
+        lead_ctx = {"email_consent": False}
+
+        result = handle_admissions_inquiry(message, lead_context=lead_ctx, channel="email")
+
+        assert result["consent_blocked"] is True
+        assert result["response"] is None
+        assert result["suggested_actions"] == []
+
+    def test_reply_allowed_when_consent_explicitly_granted(self):
+        message = "What are the annual tuition fees for Grade 3?"
+        lead_ctx = {"whatsapp_consent": True}
+
+        result = handle_admissions_inquiry(message, lead_context=lead_ctx, channel="whatsapp")
+
+        assert result["consent_blocked"] is False
+        assert result["response"] is not None
+        assert "send_fee_schedule" in result["suggested_actions"]
+
+    def test_reply_allowed_when_channel_or_consent_unknown(self):
+        # No channel specified at all -- backward-compatible default behavior.
+        result_no_channel = handle_admissions_inquiry("Tell me about your curriculum.")
+        assert result_no_channel["consent_blocked"] is False
+        assert result_no_channel["response"] is not None
+
+        # Channel specified but this lead has no recorded consent for it yet
+        # (e.g. a brand new inbound message pre-CRM) -- must not be blocked.
+        result_unknown_consent = handle_admissions_inquiry(
+            "Tell me about your curriculum.", lead_context={}, channel="whatsapp"
+        )
+        assert result_unknown_consent["consent_blocked"] is False
+        assert result_unknown_consent["response"] is not None
+
 
 # ===========================================================================
 # 3. Tests for Automated Marketing Drip Generator (M27)
@@ -245,6 +296,53 @@ class TestMarketingDripGenerator:
         assert len(drip) == 4
         assert drip[0]["stage"] == 1
         assert drip[3]["stage"] == 4
+
+    # -----------------------------------------------------------------------
+    # Consent & Compliance gating (does the drip engine actually suppress the
+    # outbound content it would fire, not just carry a consent field)
+    # -----------------------------------------------------------------------
+    def test_drip_blocks_every_stage_when_all_consent_denied(self):
+        lead = {
+            "id": "lead_900",
+            "parent_name": "No Consent Parent",
+            "student_name": "Test Child",
+            "whatsapp_consent": False,
+            "email_consent": False,
+        }
+        drip = generate_nurture_sequence(lead, {})
+
+        assert len(drip) == 4  # stages stay visible in the sequence for audit purposes
+        for stage in drip:
+            # Every stage channel in this sequence includes whatsapp and/or email
+            assert stage["consent_blocked"] is True
+            assert stage["content"] is None
+            assert stage["call_to_action"] is None
+
+    def test_drip_allows_stage_restricted_to_consented_channel_only(self):
+        # WhatsApp consented, Email explicitly denied.
+        lead = {"id": "lead_901", "whatsapp_consent": True, "email_consent": False}
+        drip = generate_nurture_sequence(lead, {})
+
+        stage_1 = drip[0]  # channel "email_whatsapp" -- includes denied email leg
+        stage_4 = drip[3]  # channel "phone_whatsapp" -- whatsapp consented, phone untracked
+
+        assert stage_1["consent_blocked"] is True
+        assert "email" in stage_1["blocked_channels"]
+        assert stage_1["content"] is None
+
+        assert stage_4["consent_blocked"] is False
+        assert stage_4["blocked_channels"] == []
+        assert stage_4["content"] is not None
+        assert "Confirm 1-on-1 Executive Consultation" in stage_4["call_to_action"]
+
+    def test_drip_unblocked_when_consent_unknown(self):
+        # No consent keys recorded at all -- must not be blocked (backward
+        # compatible with leads captured before consent tracking existed).
+        lead = {"id": "lead_902", "parent_name": "Unknown Consent Parent"}
+        drip = generate_nurture_sequence(lead, {})
+        for stage in drip:
+            assert stage["consent_blocked"] is False
+            assert stage["content"] is not None
 
 
 # ===========================================================================

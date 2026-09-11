@@ -11,6 +11,7 @@ from src.db.sms_revops import (
     AdmissionsLead,
     LeadActivityLog,
     LeadIntent,
+    LeadOrigin,
     LeadSource,
     LeadStage,
     OfferStatus,
@@ -21,6 +22,7 @@ from src.schemas.sms_revops import (
     BatchScoringResponse,
     LeadActivityCreate,
     LeadActivityRead,
+    LeadConsentUpdate,
     LeadCreate,
     LeadDetailResponse,
     LeadRead,
@@ -37,6 +39,7 @@ from src.services.sms.revops import (
     generate_scholarship_offer as service_generate_offer,
     get_pipeline_kanban,
     log_activity_for_lead,
+    update_lead_consent as service_update_consent,
     update_lead_stage as service_update_stage,
 )
 
@@ -86,6 +89,7 @@ async def list_leads_endpoint(
     campus_id: Optional[int] = Query(None, description="Filter by Campus ID"),
     stage: Optional[LeadStage] = Query(None, description="Filter by Lead Stage"),
     source: Optional[LeadSource] = Query(None, description="Filter by Acquisition Source"),
+    origin: Optional[LeadOrigin] = Query(None, description="Filter by Inbound/Outbound nurture origin"),
     intent_level: Optional[LeadIntent] = Query(None, description="Filter by Intent Level"),
     search: Optional[str] = Query(None, description="Search parent/student name, email, or phone"),
     session: AsyncSession = Depends(get_db_session),
@@ -98,6 +102,8 @@ async def list_leads_endpoint(
         conditions.append(AdmissionsLead.stage == stage)
     if isinstance(source, (LeadSource, str)):
         conditions.append(AdmissionsLead.source == source)
+    if isinstance(origin, (LeadOrigin, str)):
+        conditions.append(AdmissionsLead.origin == origin)
     if isinstance(intent_level, (LeadIntent, str)):
         conditions.append(AdmissionsLead.intent_level == intent_level)
     if isinstance(search, str) and search.strip():
@@ -206,6 +212,26 @@ async def update_lead_stage_endpoint(
     principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> LeadRead:
     updated_lead = await service_update_stage(session=session, lead_id=lead_id, payload=payload)
+    return LeadRead.model_validate(updated_lead)
+
+
+@router.patch(
+    "/leads/{lead_id}/consent",
+    response_model=LeadRead,
+    summary="Update Lead Consent & Compliance Preferences",
+    description=(
+        "Records an opt-in/opt-out change for a lead's outbound WhatsApp and/or "
+        "Email channels. This is the compliance record that gates whether outbound "
+        "automation (SDR agent, drip engine) may contact the lead on that channel."
+    ),
+)
+async def update_lead_consent_endpoint(
+    lead_id: int,
+    payload: LeadConsentUpdate,
+    session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+) -> LeadRead:
+    updated_lead = await service_update_consent(session=session, lead_id=lead_id, payload=payload)
     return LeadRead.model_validate(updated_lead)
 
 

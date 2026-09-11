@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { RoleSidebar } from '@/components/navigation/RoleSidebar'
 import { PortalHeader } from '@/components/navigation/PortalHeader'
 import { UserRole, Campus, AcademicTerm, CAMPUSES, ACADEMIC_TERMS } from '@/components/navigation/types'
+import Toast from '@/components/Objects/StyledElements/Toast/Toast'
 
 export default function DashboardLayout({
   children,
@@ -38,6 +39,9 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-neutral-50/60 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 flex flex-col md:flex-row antialiased">
+      {/* Background-action confirmations (DESIGN-SYSTEM.md §7 Feedback: toast for background results). */}
+      <Toast />
+
       {/* Dynamic Role Sidebar */}
       <RoleSidebar
         currentRole={currentRole}

@@ -8,7 +8,35 @@ Generates a personalized 4-stage multichannel nurture sequence for prospective s
 - Stage 4 (Day 14): Personal Admissions Officer 1-on-1 Consultation Follow-up (Phone / WhatsApp)
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
+
+
+def _consent_gated_channel_tokens(channel: str) -> List[str]:
+    """Extracts the consent-trackable channel tokens (whatsapp/email) referenced
+    by a stage's underscore-joined channel string (e.g. "email_whatsapp" ->
+    ["email", "whatsapp"]). Untracked legs (phone, sms) are ignored -- there is
+    no consent field for them, so they never gate a stage on their own."""
+    consent_tracked = {"whatsapp", "email"}
+    return [token for token in channel.lower().split("_") if token in consent_tracked]
+
+
+def _stage_consent_blocked(lead: Dict[str, Any], channel: str) -> Tuple[bool, List[str]]:
+    """
+    Consent & Compliance gate for outbound drip stages.
+
+    A stage is blocked ONLY when the lead's CRM record explicitly denies
+    consent (`{"whatsapp_consent": False}` / `{"email_consent": False}`) for a
+    channel referenced in that stage's delivery channel string. A channel with
+    no recorded consent key (unknown) does not block -- explicit opt-out is
+    the only blocking condition, matching the AdmissionsLead.whatsapp_consent /
+    email_consent compliance fields.
+    """
+    blocked_channels: List[str] = []
+    for token in _consent_gated_channel_tokens(channel):
+        consent_key = f"{token}_consent"
+        if consent_key in lead and lead.get(consent_key) is False:
+            blocked_channels.append(token)
+    return (len(blocked_channels) > 0, blocked_channels)
 
 
 def generate_nurture_sequence(
@@ -164,5 +192,18 @@ def generate_nurture_sequence(
         },
     }
     sequence.append(stage_4)
+
+    # Consent & Compliance gate: suppress the actual outbound content (but keep
+    # the stage entry, annotated, for audit/visibility) on any stage whose
+    # channel includes a WhatsApp or Email leg the lead has explicitly opted
+    # out of. This is what stops the drip engine from actually firing an
+    # outbound message it isn't permitted to send -- not just recording the flag.
+    for stage_dict in sequence:
+        blocked, blocked_channels = _stage_consent_blocked(lead, stage_dict["channel"])
+        stage_dict["consent_blocked"] = blocked
+        stage_dict["blocked_channels"] = blocked_channels
+        if blocked:
+            stage_dict["content"] = None
+            stage_dict["call_to_action"] = None
 
     return sequence

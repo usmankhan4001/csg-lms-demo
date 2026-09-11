@@ -38,6 +38,27 @@ ADMISSIONS_CRITERIA_PATTERNS = [
 ]
 
 
+def has_channel_consent(lead_context: Optional[Dict[str, Any]], channel: Optional[str]) -> bool:
+    """
+    Consent & Compliance gate for outbound SDR replies.
+
+    Returns False (blocked) ONLY when the lead's CRM record explicitly records
+    consent as denied (e.g. `{"whatsapp_consent": False}`) for the channel the
+    reply would be delivered on. When no channel is specified, or the lead's
+    consent for that channel is simply unknown (key absent -- e.g. a fresh,
+    pre-CRM inbound message with no lead record yet), the check is permissive
+    so live inbound conversation handling is not blocked by data we don't have.
+    Opt-out (explicit False) is the only blocking condition -- matching the
+    AdmissionsLead.whatsapp_consent / email_consent compliance fields.
+    """
+    if not channel or not lead_context:
+        return True
+    consent_key = f"{str(channel).strip().lower()}_consent"
+    if consent_key not in lead_context:
+        return True
+    return bool(lead_context.get(consent_key))
+
+
 def extract_entities_from_text(message: str) -> Dict[str, Any]:
     """
     Extracts structured entities from natural language inquiry text:
@@ -225,6 +246,7 @@ def handle_admissions_inquiry(
     message: str,
     lead_context: Optional[Dict[str, Any]] = None,
     history: Optional[List[Dict[str, Any]]] = None,
+    channel: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Main entrypoint for the Conversational Admissions SDR Agent (M25, M26).
@@ -233,6 +255,11 @@ def handle_admissions_inquiry(
         message: Incoming prospective parent query or chat message.
         lead_context: Stored CRM lead metadata (if previously known).
         history: Conversation history list.
+        channel: Outbound delivery channel for the generated reply (e.g.
+            "whatsapp" or "email"). When provided, the reply is gated on the
+            lead's consent for that channel (see `has_channel_consent`) -- if
+            consent has been explicitly denied, no outbound content is
+            produced.
 
     Returns:
         Dict with:
@@ -242,8 +269,9 @@ def handle_admissions_inquiry(
         - student_age: Extracted age or None
         - grade: Extracted grade or None
         - parent_contact: Dict with email, phone, parent_name
-        - response: Conversational admissions response
-        - suggested_actions: List of operational action tokens
+        - response: Conversational admissions response, or None if consent-blocked
+        - suggested_actions: List of operational action tokens (empty if consent-blocked)
+        - consent_blocked: bool -- True if the outbound reply was suppressed for lack of consent
     """
     if not message or not isinstance(message, str):
         message = ""
@@ -266,18 +294,39 @@ def handle_admissions_inquiry(
     # 3. Intent Detection
     intent_data = detect_inquiry_intent(message)
 
-    # 4. Generate Professional Admissions Response
-    gen_result = generate_sdr_response(
-        intent_data=intent_data,
-        entities=merged_entities,
-        lead_context=lead_ctx,
-    )
-
     parent_contact = {
         "name": merged_entities.get("parent_name"),
         "phone": merged_entities.get("phone"),
         "email": merged_entities.get("email"),
     }
+
+    # 4. Consent & Compliance gate -- do not fire an outbound reply on a
+    # channel the lead has explicitly opted out of.
+    if not has_channel_consent(lead_ctx, channel):
+        logger.info(
+            "Suppressing outbound SDR reply on channel '%s': consent explicitly denied.",
+            channel,
+        )
+        return {
+            "intent": intent_data["primary_intent"],
+            "all_intents": intent_data["all_intents"],
+            "tour_intent_detected": intent_data["tour_intent_detected"],
+            "extracted_entities": merged_entities,
+            "student_age": merged_entities.get("student_age"),
+            "grade": merged_entities.get("grade"),
+            "parent_contact": parent_contact,
+            "response": None,
+            "suggested_actions": [],
+            "consent_blocked": True,
+            "blocked_channel": channel,
+        }
+
+    # 5. Generate Professional Admissions Response
+    gen_result = generate_sdr_response(
+        intent_data=intent_data,
+        entities=merged_entities,
+        lead_context=lead_ctx,
+    )
 
     return {
         "intent": intent_data["primary_intent"],
@@ -289,4 +338,5 @@ def handle_admissions_inquiry(
         "parent_contact": parent_contact,
         "response": gen_result["response"],
         "suggested_actions": gen_result["suggested_actions"],
+        "consent_blocked": False,
     }

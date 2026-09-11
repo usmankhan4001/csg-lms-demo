@@ -25,6 +25,8 @@ from src.services.ai.knowledge_graph import (
     get_student_mastery_radar,
     get_student_learning_path,
     _normalize_score,
+    MASTERY_THRESHOLD,
+    PASSING_PREREQUISITE_THRESHOLD,
 )
 from src.services.ai.live_class_copilot import (
     LiveClassQAAssistant,
@@ -385,3 +387,88 @@ class TestAIStudentProfileRouter:
             )
             res = await api_live_class_qa(session_id="live_100", payload=payload, db_session=mock_session)
             assert res.answer == "The wave equation is Psi(x,t)."
+
+
+# ---------------------------------------------------------------------------
+# 6. Adaptive Pacing Consumer Contract (Socratic Tutor, client scoping req.)
+# ---------------------------------------------------------------------------
+#
+# The client's "adaptive pacing" requirement says the Socratic Tutor must
+# reuse this module's EXISTING mastery-tracking DAG rather than invent a
+# new pacing signal or separate mastery table. These tests pin that contract
+# from the consumer's side: src.services.ai.socratic_tutor's pacing directive
+# is built directly from get_recommended_next_concepts()'s own output and
+# must gate on this module's own PASSING_PREREQUISITE_THRESHOLD /
+# MASTERY_THRESHOLD — not a value it invents itself.
+
+class TestAdaptivePacingConsumesKnowledgeGraph:
+    def test_pacing_threshold_constant_is_not_reinvented(self):
+        """The tutor imports (not redefines) this module's own threshold."""
+        from src.services.ai import socratic_tutor
+
+        assert socratic_tutor.PASSING_PREREQUISITE_THRESHOLD is PASSING_PREREQUISITE_THRESHOLD
+        assert PASSING_PREREQUISITE_THRESHOLD == 0.70
+
+    @pytest.mark.asyncio
+    async def test_pacing_directive_holds_back_dependent_concept_below_threshold(self):
+        """
+        Kinematics (prerequisite) is below PASSING_PREREQUISITE_THRESHOLD, so
+        get_recommended_next_concepts correctly withholds Newton's Laws (the
+        dependent concept) from its own output — and the tutor's pacing
+        directive, built directly from that output, must reflect the same
+        gate rather than surfacing the locked concept.
+        """
+        from src.services.ai.socratic_tutor import get_adaptive_pacing_directive
+
+        n1 = ConceptNode(id=1, subject="Physics", topic_code="PHYS-1", title="Kinematics", difficulty_level=1)
+        n2 = ConceptNode(id=2, subject="Physics", topic_code="PHYS-2", title="Newton's Laws", difficulty_level=2)
+        e21 = ConceptPrerequisite(id=1, concept_id=2, prerequisite_concept_id=1, strength_weight=1.0)
+        # Below PASSING_PREREQUISITE_THRESHOLD (0.70) on the prerequisite.
+        m1 = StudentConceptMastery(student_id="s1", concept_id=1, mastery_score=0.40, confidence_level=0.5)
+
+        mock_session = AsyncMock()
+        res_concepts = MagicMock()
+        res_concepts.scalars.return_value.all.return_value = [n1, n2]
+        res_mastery = MagicMock()
+        res_mastery.scalars.return_value.all.return_value = [m1]
+        res_prereq = MagicMock()
+        res_prereq.scalars.return_value.all.return_value = [e21]
+        mock_session.execute.side_effect = [res_concepts, res_mastery, res_prereq]
+
+        directive = await get_adaptive_pacing_directive(
+            student_id="s1", subject="Physics", db_session=mock_session,
+        )
+
+        assert directive is not None
+        assert "Kinematics" in directive
+        assert "Newton's Laws" not in directive
+
+    @pytest.mark.asyncio
+    async def test_pacing_directive_unlocks_once_prerequisite_crosses_the_same_threshold(self):
+        """Once the prerequisite's mastery crosses PASSING_PREREQUISITE_THRESHOLD
+        (here comfortably above it, at MASTERY_THRESHOLD), the dependent
+        concept becomes READY_TO_LEARN in both the DAG and the tutor's
+        pacing directive built from it."""
+        from src.services.ai.socratic_tutor import get_adaptive_pacing_directive
+
+        n1 = ConceptNode(id=1, subject="Physics", topic_code="PHYS-1", title="Kinematics", difficulty_level=1)
+        n2 = ConceptNode(id=2, subject="Physics", topic_code="PHYS-2", title="Newton's Laws", difficulty_level=2)
+        e21 = ConceptPrerequisite(id=1, concept_id=2, prerequisite_concept_id=1, strength_weight=1.0)
+        m1 = StudentConceptMastery(student_id="s1", concept_id=1, mastery_score=MASTERY_THRESHOLD + 0.10, confidence_level=0.8)
+
+        mock_session = AsyncMock()
+        res_concepts = MagicMock()
+        res_concepts.scalars.return_value.all.return_value = [n1, n2]
+        res_mastery = MagicMock()
+        res_mastery.scalars.return_value.all.return_value = [m1]
+        res_prereq = MagicMock()
+        res_prereq.scalars.return_value.all.return_value = [e21]
+        mock_session.execute.side_effect = [res_concepts, res_mastery, res_prereq]
+
+        directive = await get_adaptive_pacing_directive(
+            student_id="s1", subject="Physics", db_session=mock_session,
+        )
+
+        assert directive is not None
+        assert "Newton's Laws" in directive
+        assert "READY TO LEARN" in directive

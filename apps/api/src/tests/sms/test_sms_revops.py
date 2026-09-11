@@ -5,6 +5,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from src.db.sms_revops import (
     ActivityType,
     LeadIntent,
+    LeadOrigin,
     LeadSource,
     LeadStage,
     OfferStatus,
@@ -12,6 +13,7 @@ from src.db.sms_revops import (
 from src.schemas.sms_revops import (
     BatchScoringRequest,
     LeadActivityCreate,
+    LeadConsentUpdate,
     LeadCreate,
     LeadStageUpdate,
     LeadUpdate,
@@ -28,6 +30,7 @@ from src.routers.sms_revops import (
     list_leads_endpoint,
     list_offers_endpoint,
     log_activity_endpoint,
+    update_lead_consent_endpoint,
     update_lead_endpoint,
     update_lead_stage_endpoint,
 )
@@ -269,3 +272,171 @@ async def test_batch_ai_scoring_and_filtering(db: AsyncSession):
     # List activities
     activities = await list_lead_activities_endpoint(lead_id=l1.id, session=db)
     assert len(activities) >= 1
+
+
+@pytest.mark.asyncio
+async def test_stalled_lead_loopback_transition_and_audit_log(db: AsyncSession):
+    """
+    Test that a non-converting lead can be marked STALLED and looped back to
+    NEW_INQUIRY (Lead Research/Sourcing) per the funnel-loop redesign, with the
+    loopback recorded distinctly (not as an ordinary forward stage change) in
+    the activity audit log.
+    """
+    lead = await create_lead_endpoint(
+        payload=LeadCreate(
+            parent_name="Nora Patel",
+            student_name="Aiden Patel",
+            email="nora.patel@example.com",
+            phone="+1-555-0455",
+            grade_applying_for="Grade 6",
+            campus_id=3,
+            source=LeadSource.META_ADS,
+        ),
+        session=db,
+    )
+
+    # Advance a bit, then stall out (lead exits active nurture without converting)
+    await update_lead_stage_endpoint(
+        lead_id=lead.id,
+        payload=LeadStageUpdate(stage=LeadStage.CONTACTED, reason="Initial outreach sent."),
+        session=db,
+    )
+    stalled_lead = await update_lead_stage_endpoint(
+        lead_id=lead.id,
+        payload=LeadStageUpdate(stage=LeadStage.STALLED, reason="No response after 3 nurture attempts."),
+        session=db,
+    )
+    assert stalled_lead.stage == LeadStage.STALLED
+
+    # Loop back to research / new inquiry stage for re-nurturing
+    looped_lead = await update_lead_stage_endpoint(
+        lead_id=lead.id,
+        payload=LeadStageUpdate(stage=LeadStage.NEW_INQUIRY, reason="Re-entering nurture with refreshed offer."),
+        session=db,
+    )
+    assert looped_lead.stage == LeadStage.NEW_INQUIRY
+
+    # The loopback must be distinctly flagged in the audit log, separate from
+    # an ordinary forward stage change.
+    activities = await list_lead_activities_endpoint(lead_id=lead.id, session=db)
+    stage_change_entries = [a for a in activities if a.activity_type == ActivityType.STAGE_CHANGE]
+    loopback_entries = [
+        a for a in stage_change_entries
+        if a.metadata_json and a.metadata_json.get("is_loopback") is True
+    ]
+    non_loopback_entries = [
+        a for a in stage_change_entries
+        if a.metadata_json and a.metadata_json.get("is_loopback") is False
+    ]
+    assert len(loopback_entries) == 1
+    assert loopback_entries[0].metadata_json["from_stage"] == LeadStage.STALLED.value
+    assert loopback_entries[0].metadata_json["to_stage"] == LeadStage.NEW_INQUIRY.value
+    assert "looped back" in loopback_entries[0].summary.lower()
+    assert len(non_loopback_entries) >= 1  # e.g. NEW_INQUIRY -> CONTACTED, CONTACTED -> STALLED
+
+    # Kanban pipeline recognizes the STALLED bucket even though this lead has
+    # already looped back out of it.
+    pipeline = await get_pipeline_endpoint(campus_id=3, session=db)
+    stalled_group = next(s for s in pipeline.stages if s.stage == LeadStage.STALLED)
+    assert stalled_group.count == 0
+
+
+@pytest.mark.asyncio
+async def test_inbound_outbound_origin_tagging(db: AsyncSession):
+    """
+    Test that leads are tagged with an inbound/outbound nurture-path origin,
+    distinct from the generic acquisition `source`: explicit values round-trip
+    through create/detail, unset values are auto-inferred from `source`
+    (paid-ads sources -> OUTBOUND), and the tag is filterable via list.
+    """
+    # Explicit inbound (organic content-driven) lead
+    inbound_lead = await create_lead_endpoint(
+        payload=LeadCreate(
+            parent_name="Farah Ali",
+            student_name="Zara Ali",
+            email="farah.ali@example.com",
+            phone="+1-555-0611",
+            grade_applying_for="Grade 2",
+            campus_id=4,
+            source=LeadSource.WEBSITE_FORM,
+            origin=LeadOrigin.INBOUND,
+        ),
+        session=db,
+    )
+    assert inbound_lead.origin == LeadOrigin.INBOUND
+
+    # Outbound (paid ads / pixel-tracked) lead with no explicit origin -> auto-inferred
+    outbound_lead = await create_lead_endpoint(
+        payload=LeadCreate(
+            parent_name="Omar Siddiqui",
+            student_name="Hana Siddiqui",
+            email="omar.siddiqui@example.com",
+            phone="+1-555-0622",
+            grade_applying_for="Grade 3",
+            campus_id=4,
+            source=LeadSource.META_ADS,
+        ),
+        session=db,
+    )
+    assert outbound_lead.origin == LeadOrigin.OUTBOUND
+
+    # Retrievable via detail endpoint (round-trips through DB, not just in-memory)
+    detail = await get_lead_detail_endpoint(lead_id=outbound_lead.id, session=db)
+    assert detail.origin == LeadOrigin.OUTBOUND
+
+    # Filterable via list endpoint
+    outbound_results = await list_leads_endpoint(campus_id=4, origin=LeadOrigin.OUTBOUND, session=db)
+    assert len(outbound_results) == 1
+    assert outbound_results[0].id == outbound_lead.id
+
+    inbound_results = await list_leads_endpoint(campus_id=4, origin=LeadOrigin.INBOUND, session=db)
+    assert len(inbound_results) == 1
+    assert inbound_results[0].id == inbound_lead.id
+
+
+@pytest.mark.asyncio
+async def test_consent_capture_and_update_endpoint(db: AsyncSession):
+    """
+    Test Consent & Compliance tracking: leads default to no outbound consent,
+    consent can be captured at intake, and later changed via a dedicated
+    endpoint that stamps a per-channel timestamp and writes a compliance audit
+    log entry.
+    """
+    lead = await create_lead_endpoint(
+        payload=LeadCreate(
+            parent_name="Grace Liu",
+            student_name="Ivy Liu",
+            email="grace.liu@example.com",
+            phone="+1-555-0733",
+            grade_applying_for="Grade 5",
+            campus_id=5,
+            source=LeadSource.WHATSAPP,
+            whatsapp_consent=True,
+        ),
+        session=db,
+    )
+    assert lead.whatsapp_consent is True
+    assert lead.email_consent is False  # default opt-out until explicitly granted
+    assert lead.whatsapp_consent_updated_at is not None
+    assert lead.email_consent_updated_at is None
+
+    # Opt into email later, opt out of WhatsApp
+    updated = await update_lead_consent_endpoint(
+        lead_id=lead.id,
+        payload=LeadConsentUpdate(
+            whatsapp_consent=False,
+            email_consent=True,
+            reason="Parent requested email-only communication.",
+        ),
+        session=db,
+    )
+    assert updated.whatsapp_consent is False
+    assert updated.email_consent is True
+    assert updated.whatsapp_consent_updated_at is not None
+    assert updated.email_consent_updated_at is not None
+
+    activities = await list_lead_activities_endpoint(lead_id=lead.id, session=db)
+    consent_entries = [a for a in activities if a.activity_type == ActivityType.CONSENT_UPDATE]
+    assert len(consent_entries) == 1
+    assert consent_entries[0].metadata_json["changes"]["whatsapp_consent"] is False
+    assert consent_entries[0].metadata_json["changes"]["email_consent"] is True

@@ -123,6 +123,63 @@ settings = KeycloakSettings()
 _jwks_client: Optional[jwt.PyJWKClient] = None
 
 
+# ---------------------------------------------------------
+# Dev-only HMAC verification detection
+# ---------------------------------------------------------
+#
+# No real Keycloak server has ever been deployed for local/dev work on this
+# project (the `keycloak` service in dokploy-compose.yml / docker-compose.prod.yml
+# is defined but has never been started here). Locally, `KEYCLOAK_URL` points at
+# localhost and `KEYCLOAK_SECRET_KEY`/`AUTH_JWT_SECRET_KEY` are unset, so
+# `decode_and_verify_token` always ends up verifying HS256 tokens against
+# `settings.shared_secret` -- it never actually reaches a JWKS server. This
+# helper answers "is that the situation right now?" so a dev-only token-minting
+# utility (see src/core/dev_tokens.py and src/routers/dev.py) can gate itself
+# to be inert the instant a real Keycloak deployment is configured.
+def is_hmac_dev_verification_active() -> bool:
+    """
+    True only when this deployment is realistically running HMAC/shared-secret
+    (dev) Keycloak verification rather than talking to a real, deployed
+    Keycloak server.
+
+    Used exclusively to gate the dev-only token-minting utility so it is
+    inert the moment a real Keycloak deployment is pointed to. Refuses
+    (returns False) when ANY of the following indicate a real Keycloak
+    deployment:
+
+      - `KEYCLOAK_PUBLIC_KEY` is set (a real RSA public key has been pinned
+        for signature verification).
+      - `KEYCLOAK_JWKS_URL` is explicitly set (someone pointed verification at
+        a real JWKS endpoint -- this is exactly what docker-compose.prod.yml /
+        dokploy-compose.yml set for the real `keycloak` service).
+      - `KEYCLOAK_URL` / `KEYCLOAK_SERVER_URL` resolves to anything other than
+        localhost/127.0.0.1 -- a real deployment always uses a public hostname
+        (see `KEYCLOAK_HOSTNAME` in dokploy-compose.yml, e.g.
+        `auth.csginfotech.com`) or the docker-compose-internal service name
+        (`http://keycloak:8080`), never `localhost`.
+
+    This is intentionally independent of `KEYCLOAK_VERIFY_SIGNATURE`: even
+    with verification nominally "on", an HS256 token is checked directly
+    against `settings.shared_secret` with no network call at all (see the
+    `alg.startswith("HS")` branch of `decode_and_verify_token` above), so the
+    real safety boundary is whether a genuine Keycloak server is configured --
+    not that one flag.
+    """
+    if settings.public_key_pem:
+        return False
+    if os.getenv("KEYCLOAK_JWKS_URL"):
+        return False
+
+    server_url = settings.server_url.lower()
+    is_local = (
+        server_url.startswith("http://localhost")
+        or server_url.startswith("http://127.0.0.1")
+        or server_url.startswith("https://localhost")
+        or server_url.startswith("https://127.0.0.1")
+    )
+    return is_local
+
+
 def get_jwks_client() -> jwt.PyJWKClient:
     """Return singleton PyJWKClient with caching."""
     global _jwks_client

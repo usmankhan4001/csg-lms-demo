@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
@@ -9,14 +9,8 @@ import {
   Users,
   ShieldCheck,
   ChevronDown,
-  ChevronRight,
   LogOut,
-  Settings,
-  HelpCircle,
-  Sparkles,
   X,
-  Compass,
-  ArrowRightLeft,
   Building2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -26,6 +20,8 @@ import {
   SAMPLE_USERS,
   NavItem,
 } from './types'
+import { useOrgFeatureFlags } from '@/lib/api/useOrgFeatureFlags'
+import { isFeatureEnabled } from '@/lib/api/org-features'
 
 interface RoleSidebarProps {
   currentRole: UserRole
@@ -121,7 +117,16 @@ export function RoleSidebar({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isMobileOpen, onMobileClose])
 
-  const navItems = ROLE_NAV_ITEMS[currentRole] || []
+  const { flags } = useOrgFeatureFlags()
+
+  // Per DESIGN-SYSTEM.md §2.3: "Modules hidden by feature flag or RBAC are
+  // removed from navigation, not disabled." Items with no `featureKey`
+  // (the persona's home page) are always shown; `isFeatureEnabled` fails
+  // open while flags haven't loaded yet (see lib/api/org-features.ts).
+  const navItems = useMemo(
+    () => (ROLE_NAV_ITEMS[currentRole] || []).filter((item) => isFeatureEnabled(flags, item.featureKey)),
+    [currentRole, flags]
+  )
   const user = SAMPLE_USERS[currentRole]
   const roleConfig = ROLE_CONFIG[currentRole]
 
@@ -333,29 +338,6 @@ export function RoleSidebar({
           )
         })}
       </div>
-
-      {/* Socratic AI Launcher banner (if student or teacher) */}
-      {!isCollapsed && (currentRole === 'STUDENT' || currentRole === 'PARENT') && (
-        <div className="px-3 pb-3">
-          <div className="p-3 rounded-xl bg-gradient-to-br from-indigo-500/10 via-purple-500/10 to-pink-500/10 border border-indigo-500/20 text-start relative overflow-hidden">
-            <div className="flex items-center gap-2 mb-1.5">
-              <Sparkles className="size-4 text-indigo-500 animate-pulse" />
-              <span className="text-xs font-bold text-indigo-900 dark:text-indigo-300">
-                Socratic AI 2.0
-              </span>
-            </div>
-            <p className="text-[11px] text-neutral-600 dark:text-neutral-400 leading-snug mb-2">
-              Instant 24/7 AI explanations, homework guidance & study plans.
-            </p>
-            <Link
-              href="/student#ai-tutor"
-              className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
-            >
-              Ask a question <ChevronRight className="size-3" />
-            </Link>
-          </div>
-        </div>
-      )}
 
       {/* Footer User Info */}
       <div className="p-3 border-t border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/30">

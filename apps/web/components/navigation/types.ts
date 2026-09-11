@@ -1,30 +1,18 @@
 import React from 'react'
 import {
   GraduationCap,
-  BookOpen,
   Calendar,
   Clock,
-  Sparkles,
-  CheckCircle2,
   Users,
   Award,
   CreditCard,
   Building2,
   TrendingUp,
-  Activity,
-  FileText,
   CheckSquare,
   Layers,
-  Settings,
-  Bell,
-  User,
-  BrainCircuit,
-  MessageSquare,
-  BarChart3,
   BookMarked,
   ShieldCheck,
   FolderLock,
-  Compass,
 } from 'lucide-react'
 
 export type UserRole = 'STUDENT' | 'TEACHER' | 'PARENT' | 'ADMIN'
@@ -37,6 +25,14 @@ export interface NavItem {
   badge?: string | number
   badgeColor?: 'default' | 'success' | 'warning' | 'primary' | 'danger'
   description?: string
+  /**
+   * Resolved-feature key (see `src/security/features_utils/dependencies.py`
+   * `FeatureName` / `src/security/features_utils/resolve.py` `ALL_FEATURES`)
+   * gating this item. Undefined = always shown (e.g. the persona's home
+   * page). `RoleSidebar` hides the item when the org's resolved feature is
+   * explicitly disabled -- see `lib/api/org-features.ts`.
+   */
+  featureKey?: string
   subItems?: {
     title: string
     href: string
@@ -152,206 +148,152 @@ export const ACADEMIC_TERMS: AcademicTerm[] = [
   },
 ]
 
+/**
+ * Persona navigation per DESIGN-SYSTEM.md §2.3 ("Navigation IA per persona"),
+ * adapted to the routes that actually exist in this app. Items carry
+ * `featureKey` where a real SMS module backs them so `RoleSidebar` can hide
+ * a disabled module's entry per that same section ("Modules hidden by
+ * feature flag or RBAC are removed from navigation, not disabled").
+ *
+ * `Admissions CRM` (revops), the course/lesson player, and the live
+ * classroom are owned by a separate in-flight AI RevOps/Tutor workstream
+ * (see AGENT scope boundary) -- their nav entries stay untouched/linked so
+ * that work remains reachable, but this file doesn't add new mock content
+ * for them.
+ */
 export const ROLE_NAV_ITEMS: Record<UserRole, NavItem[]> = {
   STUDENT: [
     {
-      id: 'student-dashboard',
-      title: 'Student Dashboard',
+      id: 'student-home',
+      title: 'Home',
       href: '/student',
       icon: GraduationCap,
-      description: 'Overview, timetable, active courses',
+      description: 'Overview, today at a glance',
     },
     {
       id: 'student-timetable',
-      title: 'Timetable & Schedule',
+      title: 'Timetable',
       href: '/student#timetable',
       icon: Clock,
-      badge: 'Today',
-      badgeColor: 'primary',
-    },
-    {
-      id: 'student-courses',
-      title: 'Active Courses',
-      href: '/student#courses',
-      icon: BookOpen,
-      badge: 6,
-    },
-    {
-      id: 'student-ai-tutor',
-      title: 'Socratic AI Tutor',
-      href: '/student#ai-tutor',
-      icon: BrainCircuit,
-      badge: 'AI Powered',
-      badgeColor: 'success',
+      featureKey: 'sms_timetable',
     },
     {
       id: 'student-attendance',
-      title: 'Attendance Record',
+      title: 'Attendance',
       href: '/student#attendance',
       icon: CheckSquare,
-      badge: '96.4%',
-      badgeColor: 'success',
+      featureKey: 'sms_attendance',
     },
     {
       id: 'student-grades',
-      title: 'Grades & Report Card',
+      title: 'Grades',
       href: '/student#grades',
       icon: Award,
+      featureKey: 'sms_gradebook',
     },
     {
       id: 'student-library',
-      title: 'Digital Library & Notes',
+      title: 'Library',
       href: '/student#library',
       icon: BookMarked,
+      featureKey: 'sms_library',
     },
   ],
   TEACHER: [
     {
-      id: 'teacher-hub',
-      title: 'Classroom Hub',
+      id: 'teacher-today',
+      title: 'Today',
       href: '/teacher',
       icon: Layers,
-      description: 'Active classes, attendance & gradebook',
+      description: "Today's classes at a glance",
     },
     {
-      id: 'teacher-rollcall',
-      title: '1-Click Roll-Call',
-      href: '/teacher#rollcall',
-      icon: CheckSquare,
-      badge: 'Quick Action',
-      badgeColor: 'warning',
-    },
-    {
-      id: 'teacher-classes',
-      title: 'My Classes Today',
-      href: '/teacher#classes',
-      icon: Users,
-      badge: 4,
+      id: 'teacher-timetable',
+      title: 'Classes',
+      href: '/teacher#timetable',
+      icon: Clock,
+      featureKey: 'sms_timetable',
     },
     {
       id: 'teacher-gradebook',
-      title: 'Gradebook & Marking',
+      title: 'Gradebook',
       href: '/teacher#gradebook',
       icon: Award,
-      badge: '14 Pending',
-      badgeColor: 'danger',
+      featureKey: 'sms_gradebook',
     },
     {
-      id: 'teacher-courses',
-      title: 'Course & Lesson Editor',
-      href: '/teacher#editor',
-      icon: BookOpen,
-    },
-    {
-      id: 'teacher-announcements',
-      title: 'Announcements & SMS',
-      href: '/teacher#announcements',
-      icon: MessageSquare,
-    },
-    {
-      id: 'teacher-analytics',
-      title: 'Class Analytics',
-      href: '/teacher#analytics',
-      icon: BarChart3,
+      id: 'teacher-attendance',
+      title: 'Attendance',
+      href: '/teacher#attendance',
+      icon: CheckSquare,
+      featureKey: 'sms_attendance',
     },
   ],
   PARENT: [
     {
-      id: 'parent-portal',
-      title: 'Parent Portal',
+      id: 'parent-home',
+      title: 'Home',
       href: '/parent',
       icon: Users,
-      description: 'Children progress, attendance & fees',
+      description: "Children's progress at a glance",
     },
     {
       id: 'parent-attendance',
-      title: 'Attendance Calendar',
+      title: 'My Children',
       href: '/parent#attendance',
       icon: Calendar,
-      badge: 'Live',
-      badgeColor: 'success',
+      featureKey: 'sms_attendance',
     },
     {
       id: 'parent-fees',
-      title: 'Fee Vouchers & Bills',
+      title: 'Fees',
       href: '/parent/fees',
       icon: CreditCard,
-      badge: 'Due in 12d',
-      badgeColor: 'warning',
+      featureKey: 'sms_fees',
     },
     {
-      id: 'parent-ai-report',
-      title: 'Weekly AI Summary',
-      href: '/parent#ai-report',
-      icon: Sparkles,
-      badge: 'New',
-      badgeColor: 'primary',
-    },
-    {
-      id: 'parent-academic',
-      title: 'Performance & Tests',
+      id: 'parent-performance',
+      title: 'Grades',
       href: '/parent#performance',
       icon: TrendingUp,
-    },
-    {
-      id: 'parent-messages',
-      title: 'Teacher Communications',
-      href: '/parent#communications',
-      icon: MessageSquare,
-      badge: 2,
+      featureKey: 'sms_gradebook',
     },
   ],
   ADMIN: [
     {
-      id: 'admin-console',
-      title: 'Admin Console',
+      id: 'admin-dashboard',
+      title: 'Dashboard',
       href: '/campus-admin',
       icon: ShieldCheck,
-      description: 'Campuses, admissions, finance & health',
+      description: 'Campuses, finance & staff at a glance',
     },
     {
       id: 'admin-admissions-crm',
-      title: 'Admissions CRM & SDR',
+      title: 'Admissions',
       href: '/admissions/crm',
       icon: Users,
-      badge: '540 Leads',
-      badgeColor: 'primary',
+      featureKey: 'revops',
       description: 'Kanban pipeline & SDR RevOps bot',
     },
     {
-      id: 'admin-campuses',
-      title: 'Campus Manager',
-      href: '/campus-admin#campuses',
-      icon: Building2,
-      badge: '4 Campuses',
-    },
-    {
       id: 'admin-finance',
-      title: 'Fee Collection & KPIs',
+      title: 'Finance',
       href: '/campus-admin#finance',
       icon: CreditCard,
-      badge: '88.4%',
-      badgeColor: 'success',
+      featureKey: 'sms_fees',
     },
     {
-      id: 'admin-health',
-      title: 'System Health & Logs',
-      href: '/campus-admin#health',
-      icon: Activity,
-      badge: '99.98%',
-      badgeColor: 'success',
-    },
-    {
-      id: 'admin-faculty',
-      title: 'Staff & HR Directory',
-      href: '/campus-admin#faculty',
+      id: 'admin-people',
+      title: 'People',
+      href: '/campus-admin#people',
       icon: FolderLock,
+      featureKey: 'sms_hr_payroll',
     },
     {
-      id: 'admin-settings',
-      title: 'System Settings',
-      href: '/campus-admin#settings',
-      icon: Settings,
+      id: 'admin-campuses',
+      title: 'Campuses',
+      href: '/campus-admin#campuses',
+      icon: Building2,
     },
   ],
 }
