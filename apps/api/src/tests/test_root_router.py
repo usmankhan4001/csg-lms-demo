@@ -93,10 +93,35 @@ def _install_stub_modules(monkeypatch: pytest.MonkeyPatch) -> None:
         "stream",
         "api_tokens",
         "webhooks",
+        "audit",
+        "demo",
+        "mfa",
+        "ai_tutor",
+        "ai_student_profile",
+        "sms_attendance",
+        "sms_campus",
+        "sms_counseling",
+        "sms_fees",
+        "sms_financials",
+        "sms_gradebook",
+        "sms_hr",
+        "sms_library",
+        "sms_payroll",
+        "sms_revops",
+        "sms_teacher_tools",
+        "sms_timetable",
+        "live_classes",
     ]:
         install_router_module(f"src.routers.{name}", f"src.routers.{name}")
 
     install_router_module("src.routers.utils", "src.routers.utils")
+
+    install_router_module(
+        "src.routers.nudges",
+        "src.routers.nudges",
+        public_router=_named_router("src.routers.nudges.public_router"),
+        internal_router=_named_router("src.routers.nudges.internal_router"),
+    )
 
     install_router_module(
         "src.routers.integrations.zapier", "src.routers.integrations.zapier"
@@ -117,6 +142,7 @@ def _install_stub_modules(monkeypatch: pytest.MonkeyPatch) -> None:
         "src.routers.ai.assignment_gen", "src.routers.ai.assignment_gen"
     )
     install_router_module("src.routers.ai.scenario", "src.routers.ai.scenario")
+    install_router_module("src.routers.ai.audio", "src.routers.ai.audio")
     sys.modules["src.routers.ai"].ai = sys.modules["src.routers.ai.ai"]
     sys.modules["src.routers.ai"].magicblocks = sys.modules[
         "src.routers.ai.magicblocks"
@@ -131,6 +157,7 @@ def _install_stub_modules(monkeypatch: pytest.MonkeyPatch) -> None:
         "src.routers.ai.assignment_gen"
     ]
     sys.modules["src.routers.ai"].scenario = sys.modules["src.routers.ai.scenario"]
+    sys.modules["src.routers.ai"].audio = sys.modules["src.routers.ai.audio"]
 
     install_router_module("src.routers.boards.boards", "src.routers.boards.boards")
     install_router_module(
@@ -259,6 +286,11 @@ def _install_stub_modules(monkeypatch: pytest.MonkeyPatch) -> None:
     install(
         "src.core.ee_hooks",
         register_ee_routers=lambda _router: None,
+    )
+    install(
+        "src.core.deployment_mode",
+        get_deployment_mode=lambda: "oss",
+        EE_ONLY_FEATURES=set(),
     )
     install(
         "src.services.dev.dev",
