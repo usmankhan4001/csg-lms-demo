@@ -6,8 +6,24 @@ from config.config import get_learnhouse_config
 from fastapi import FastAPI
 from sqlmodel import SQLModel, Session
 from sqlalchemy import event
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
+
+# SQLite compatibility fallback for PostgreSQL-specific data types during local dev/tests
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_sqlite(type_, compiler, **kw):
+    return "JSON"
+
+try:
+    from pgvector.sqlalchemy import Vector
+    @compiles(Vector, "sqlite")
+    def _compile_vector_sqlite(type_, compiler, **kw):
+        return "BLOB"
+except ImportError:
+    pass
+
 
 
 def import_all_models():
@@ -85,41 +101,44 @@ else:
     #   statement_cache_size=0           → disable asyncpg's own per-connection LRU
     #   prepared_statement_name_func=""  → force unnamed prepared statements
     #   prepared_statement_cache_size=0  → disable SQLAlchemy's adapter-level LRU
-    _connect_args = {
-        "statement_cache_size": 0,
-        "prepared_statement_name_func": lambda: "",
-        "prepared_statement_cache_size": 0,
-    }
-
-    # Detect connection poolers (Supavisor, PgBouncer) to use a smaller
-    # client-side pool so we don't overwhelm the pooler's upstream limit.
-    is_pooled = (
-        "pooler.supabase" in sql_url
-        or ":6543/" in sql_url
-        or ":6432/" in sql_url
-        or "pgbouncer" in sql_url.lower()
-        or os.getenv("LEARNHOUSE_PGBOUNCER", "").lower() in ("1", "true", "yes")
-    )
-
-    if is_pooled:
-        engine_kwargs = dict(
-            pool_pre_ping=True,
-            pool_size=5,
-            max_overflow=10,
-            pool_recycle=1800,
-            pool_timeout=30,
-            connect_args=_connect_args,
-        )
-        logging.info("DB engine: detected connection pooler — using small client-side pool.")
+    if sql_url.startswith("sqlite"):
+        engine_kwargs = {}
     else:
-        engine_kwargs = dict(
-            pool_pre_ping=True,
-            pool_size=20,
-            max_overflow=10,
-            pool_recycle=300,
-            pool_timeout=30,
-            connect_args=_connect_args,
+        _connect_args = {
+            "statement_cache_size": 0,
+            "prepared_statement_name_func": lambda: "",
+            "prepared_statement_cache_size": 0,
+        }
+
+        # Detect connection poolers (Supavisor, PgBouncer) to use a smaller
+        # client-side pool so we don't overwhelm the pooler's upstream limit.
+        is_pooled = (
+            "pooler.supabase" in sql_url
+            or ":6543/" in sql_url
+            or ":6432/" in sql_url
+            or "pgbouncer" in sql_url.lower()
+            or os.getenv("LEARNHOUSE_PGBOUNCER", "").lower() in ("1", "true", "yes")
         )
+
+        if is_pooled:
+            engine_kwargs = dict(
+                pool_pre_ping=True,
+                pool_size=5,
+                max_overflow=10,
+                pool_recycle=1800,
+                pool_timeout=30,
+                connect_args=_connect_args,
+            )
+            logging.info("DB engine: detected connection pooler — using small client-side pool.")
+        else:
+            engine_kwargs = dict(
+                pool_pre_ping=True,
+                pool_size=20,
+                max_overflow=10,
+                pool_recycle=300,
+                pool_timeout=30,
+                connect_args=_connect_args,
+            )
 
     engine = create_async_engine(sql_url, echo=False, **engine_kwargs)  # type: ignore
 

@@ -31,15 +31,17 @@ cli = typer.Typer()
 
 
 def _to_async_url(url: str) -> str:
-    if "+asyncpg" in url:
+    if "+asyncpg" in url or "+aiosqlite" in url:
         return url
     if url.startswith("postgresql://"):
         return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    if url.startswith("sqlite://"):
+        return url.replace("sqlite://", "sqlite+aiosqlite://", 1)
     return url
 
 
 def _to_sync_url(url: str) -> str:
-    return url.replace("+asyncpg", "")
+    return url.replace("+asyncpg", "").replace("+aiosqlite", "")
 
 
 @cli.command()
