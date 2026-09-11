@@ -92,11 +92,11 @@ The stack auto-imports the pre-configured realm from `deploy/keycloak/realm-expo
   2. `csg-lms-api`: Bearer-only Resource Server verifying access tokens and audience claims.
 - **Configured Realm Roles**:
   - `SUPER_ADMIN`: Full multi-tenant governance, system settings, global metrics.
-  - `CAMPUS_PRINCIPAL`: Campus-level academic administration, faculty oversight, reporting.
+  - `SCHOOL_ADMIN`: Campus-level academic administration, faculty oversight, reporting.
   - `TEACHER`: Course authoring, assignments, grading, interactive boards.
   - `STUDENT`: Course consumption, quizzes, peer collaborative sessions.
   - `PARENT`: Student gradebook, attendance reports, academic alerts.
-  - `ACCOUNTANT`: Tuition fee invoicing, payments, financial ledger reconciliation.
+  - `STAFF`: Tuition fee invoicing, payments, financial ledger reconciliation.
 
 ### Default Seed Accounts:
 All seed accounts have the initial password: `Password123!`
@@ -104,11 +104,11 @@ All seed accounts have the initial password: `Password123!`
 | Role | Email / Username | Attributes |
 |---|---|---|
 | **SUPER_ADMIN** | `superadmin@csginfotech.com` | `org_id: 1, campus_id: 1` |
-| **CAMPUS_PRINCIPAL** | `principal@csginfotech.com` | `org_id: 1, campus_id: 1` |
+| **SCHOOL_ADMIN** | `principal@csginfotech.com` | `org_id: 1, campus_id: 1` |
 | **TEACHER** | `teacher@csginfotech.com` | `org_id: 1, campus_id: 1` |
 | **STUDENT** | `student@csginfotech.com` | `org_id: 1, campus_id: 1` |
 | **PARENT** | `parent@csginfotech.com` | `org_id: 1, campus_id: 1` |
-| **ACCOUNTANT** | `accountant@csginfotech.com` | `org_id: 1, campus_id: 1` |
+| **STAFF** | `accountant@csginfotech.com` | `org_id: 1, campus_id: 1` |
 
 ---
 

@@ -2,6 +2,7 @@ import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 from sqlalchemy import (
+    Boolean,
     Column,
     Date,
     DateTime,
@@ -18,7 +19,15 @@ from sqlmodel import Field, SQLModel
 
 
 class LeadStage(str, Enum):
-    """Lifecycle stages in the admissions recruitment funnel."""
+    """
+    Lifecycle stages in the admissions recruitment funnel.
+
+    The real-world funnel is a loop, not a straight line: leads that stall or
+    fail to convert during Nurturing / Data Enrichment / Lead Maturing / Uplift
+    are marked STALLED and re-enter the funnel at NEW_INQUIRY (Lead
+    Research/Sourcing) for another re-nurturing cycle, rather than being
+    dropped permanently like LOST leads.
+    """
     NEW_INQUIRY = "NEW_INQUIRY"
     CONTACTED = "CONTACTED"
     TOUR_BOOKED = "TOUR_BOOKED"
@@ -26,6 +35,7 @@ class LeadStage(str, Enum):
     OFFER_SENT = "OFFER_SENT"
     ENROLLED = "ENROLLED"
     LOST = "LOST"
+    STALLED = "STALLED"
 
 
 class LeadSource(str, Enum):
@@ -36,6 +46,18 @@ class LeadSource(str, Enum):
     GOOGLE_ADS = "GOOGLE_ADS"
     WALK_IN = "WALK_IN"
     REFERRAL = "REFERRAL"
+
+
+class LeadOrigin(str, Enum):
+    """
+    Inbound vs outbound nurture-path tagging, distinct from the acquisition
+    `LeadSource` channel. INBOUND leads arrive organically / content-driven
+    (website form, referral, walk-in, organic WhatsApp). OUTBOUND leads arrive
+    via paid ads / pixel-tracked landing pages and follow a materially
+    different nurture path.
+    """
+    INBOUND = "INBOUND"
+    OUTBOUND = "OUTBOUND"
 
 
 class LeadIntent(str, Enum):
@@ -53,6 +75,7 @@ class ActivityType(str, Enum):
     WHATSAPP = "WHATSAPP"
     TOUR = "TOUR"
     STAGE_CHANGE = "STAGE_CHANGE"
+    CONSENT_UPDATE = "CONSENT_UPDATE"
 
 
 class OfferStatus(str, Enum):
@@ -91,6 +114,15 @@ class AdmissionsLead(SQLModel, table=True):
             default=LeadSource.WEBSITE_FORM,
         ),
     )
+    origin: LeadOrigin = Field(
+        default=LeadOrigin.INBOUND,
+        sa_column=Column(
+            SAEnum(LeadOrigin, name="sms_lead_origin", native_enum=False),
+            nullable=False,
+            default=LeadOrigin.INBOUND,
+            index=True,
+        ),
+    )
     stage: LeadStage = Field(
         default=LeadStage.NEW_INQUIRY,
         sa_column=Column(
@@ -112,6 +144,18 @@ class AdmissionsLead(SQLModel, table=True):
     budget_range: Optional[str] = Field(default=None, sa_column=Column(String(100), nullable=True))
     notes: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
     assigned_officer_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True, index=True))
+    # Consent & Compliance: per-channel opt-in/opt-out tracking that gates whether
+    # outbound WhatsApp/Email automation is permitted to fire for this lead.
+    whatsapp_consent: bool = Field(default=False, sa_column=Column(Boolean, nullable=False, default=False))
+    whatsapp_consent_updated_at: Optional[datetime.datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    email_consent: bool = Field(default=False, sa_column=Column(Boolean, nullable=False, default=False))
+    email_consent_updated_at: Optional[datetime.datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
     last_contacted_at: Optional[datetime.datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),

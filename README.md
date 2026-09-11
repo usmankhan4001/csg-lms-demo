@@ -160,7 +160,7 @@ csg-lms/
 
 ## 🔐 Security, Tenancy & Compliance
 
-- **Role-Based Access Control (RBAC):** `SUPER_ADMIN`, `CAMPUS_PRINCIPAL`, `TEACHER`, `STUDENT`, `PARENT`, `ACCOUNTANT`.
+- **Role-Based Access Control (RBAC):** `SUPER_ADMIN`, `SCHOOL_ADMIN`, `TEACHER`, `STUDENT`, `PARENT`, `STAFF`.
 - **Row-Level Security (RLS):** Every query enforces `org_id` and `campus_id` isolation at the database layer.
 - **Safety Interceptor:** Real-time AI interceptor routes any self-harm, distress, or bullying queries to counseling staff immediately.
 - **Compliance:** Built strictly adhering to **FERPA**, **COPPA**, and **ISO/IEC 27001** educational privacy standards.

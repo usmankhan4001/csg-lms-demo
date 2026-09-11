@@ -12,11 +12,11 @@ from src.core.keycloak_auth import (
     KeycloakRole,
     KeycloakUserPrincipal,
     SUPER_ADMIN,
-    CAMPUS_PRINCIPAL,
+    SCHOOL_ADMIN,
     TEACHER,
     STUDENT,
     PARENT,
-    ACCOUNTANT,
+    STAFF,
     ALL_REALM_ROLES,
     extract_principal_from_payload,
     decode_and_verify_token,
@@ -28,13 +28,13 @@ from src.core.keycloak_auth import (
 def test_realm_roles_defined():
     """Verify all required realm roles are properly defined in enum and sets."""
     assert KeycloakRole.SUPER_ADMIN.value == "SUPER_ADMIN"
-    assert KeycloakRole.CAMPUS_PRINCIPAL.value == "CAMPUS_PRINCIPAL"
+    assert KeycloakRole.SCHOOL_ADMIN.value == "SCHOOL_ADMIN"
     assert KeycloakRole.TEACHER.value == "TEACHER"
     assert KeycloakRole.STUDENT.value == "STUDENT"
     assert KeycloakRole.PARENT.value == "PARENT"
-    assert KeycloakRole.ACCOUNTANT.value == "ACCOUNTANT"
+    assert KeycloakRole.STAFF.value == "STAFF"
 
-    assert {"SUPER_ADMIN", "CAMPUS_PRINCIPAL", "TEACHER", "STUDENT", "PARENT", "ACCOUNTANT"}.issubset(
+    assert {"SUPER_ADMIN", "SCHOOL_ADMIN", "TEACHER", "STUDENT", "PARENT", "STAFF"}.issubset(
         ALL_REALM_ROLES
     )
 
@@ -69,7 +69,7 @@ def test_extract_principal_from_payload_complete():
     assert "TEACHER" in principal.roles
     assert "GRADEBOOK_EDITOR" in principal.roles
     assert principal.has_role("TEACHER") is True
-    assert principal.has_role("CAMPUS_PRINCIPAL") is False
+    assert principal.has_role("SCHOOL_ADMIN") is False
     assert principal.is_superadmin is False
 
 
@@ -83,15 +83,15 @@ def test_extract_principal_from_nested_attributes():
             "campus_id": ["3"]
         },
         "realm_access": {
-            "roles": ["CAMPUS_PRINCIPAL"]
+            "roles": ["SCHOOL_ADMIN"]
         }
     }
 
     principal = extract_principal_from_payload(payload)
     assert principal.org_id == 10
     assert principal.campus_id == 3
-    assert principal.has_role(CAMPUS_PRINCIPAL) is True
-    assert principal.has_any_role([TEACHER, CAMPUS_PRINCIPAL]) is True
+    assert principal.has_role(SCHOOL_ADMIN) is True
+    assert principal.has_any_role([TEACHER, SCHOOL_ADMIN]) is True
 
 
 def test_superadmin_role_bypass():
@@ -107,10 +107,10 @@ def test_superadmin_role_bypass():
     principal = extract_principal_from_payload(payload)
     assert principal.is_superadmin is True
     assert principal.has_role(TEACHER) is True
-    assert principal.has_role(CAMPUS_PRINCIPAL) is True
-    assert principal.has_role(ACCOUNTANT) is True
+    assert principal.has_role(SCHOOL_ADMIN) is True
+    assert principal.has_role(STAFF) is True
     assert principal.has_any_role([STUDENT, PARENT]) is True
-    assert principal.has_all_roles([TEACHER, ACCOUNTANT, CAMPUS_PRINCIPAL]) is True
+    assert principal.has_all_roles([TEACHER, STAFF, SCHOOL_ADMIN]) is True
 
 
 def test_extract_principal_missing_sub_raises_401():
@@ -130,7 +130,7 @@ async def test_require_roles_dependency_success():
         campus_id=2,
         roles={"TEACHER"},
     )
-    checker = require_roles([TEACHER, CAMPUS_PRINCIPAL])
+    checker = require_roles([TEACHER, SCHOOL_ADMIN])
     result = await checker(principal=principal)
     assert result == principal
 
@@ -145,7 +145,7 @@ async def test_require_roles_dependency_denied():
         campus_id=2,
         roles={"STUDENT"},
     )
-    checker = require_roles([TEACHER, CAMPUS_PRINCIPAL])
+    checker = require_roles([TEACHER, SCHOOL_ADMIN])
     with pytest.raises(HTTPException) as exc_info:
         await checker(principal=principal)
     assert exc_info.value.status_code == 403

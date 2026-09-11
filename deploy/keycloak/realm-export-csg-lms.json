@@ -58,8 +58,8 @@
       },
       {
         "id": "d002-principal-role",
-        "name": "CAMPUS_PRINCIPAL",
-        "description": "Campus Principal with campus-level administrative and reporting privileges",
+        "name": "SCHOOL_ADMIN",
+        "description": "School Administrator with campus-level administrative and reporting privileges",
         "composite": false,
         "clientRole": false,
         "containerId": "csg-lms"
@@ -90,8 +90,16 @@
       },
       {
         "id": "d006-accountant-role",
-        "name": "ACCOUNTANT",
-        "description": "Campus accountant for student fee collection, tuition invoicing, and finance ledger",
+        "name": "STAFF",
+        "description": "Campus staff for student fee collection, tuition invoicing, and finance ledger",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "csg-lms"
+      },
+      {
+        "id": "d007-psychologist-role",
+        "name": "PSYCHOLOGIST",
+        "description": "School psychologist for student mental health, counseling, and wellbeing support",
         "composite": false,
         "clientRole": false,
         "containerId": "csg-lms"
@@ -377,7 +385,7 @@
         }
       ],
       "realmRoles": [
-        "CAMPUS_PRINCIPAL"
+        "SCHOOL_ADMIN"
       ],
       "clientRoles": {}
     },
@@ -509,7 +517,7 @@
         }
       ],
       "realmRoles": [
-        "ACCOUNTANT"
+        "STAFF"
       ],
       "clientRoles": {}
     }

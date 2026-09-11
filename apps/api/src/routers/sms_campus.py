@@ -15,11 +15,11 @@ from src.core.events.database import get_db_session
 from src.core.keycloak_auth import (
     KeycloakUserPrincipal,
     SUPER_ADMIN,
-    CAMPUS_PRINCIPAL,
+    SCHOOL_ADMIN,
     TEACHER,
     STUDENT,
     PARENT,
-    ACCOUNTANT,
+    STAFF,
     get_current_user_principal,
     require_roles,
 )
@@ -76,7 +76,7 @@ async def list_campuses(
         query = query.where(Campus.org_id == target_org_id)
 
     # Campus isolation: non-superadmin users with assigned campus can only see their campus
-    if principal.campus_id and not principal.is_superadmin and not principal.has_role(CAMPUS_PRINCIPAL):
+    if principal.campus_id and not principal.is_superadmin and not principal.has_role(SCHOOL_ADMIN):
         query = query.where(Campus.id == principal.campus_id)
 
     if is_active is not None:
@@ -91,12 +91,12 @@ async def list_campuses(
     response_model=CampusRead,
     status_code=status.HTTP_201_CREATED,
     summary="Create Campus",
-    description="Create a new campus. Restricted to SUPER_ADMIN and CAMPUS_PRINCIPAL.",
+    description="Create a new campus. Restricted to SUPER_ADMIN and SCHOOL_ADMIN.",
 )
 async def create_campus(
     payload: CampusCreate,
     db_session: AsyncSession = Depends(get_db_session),
-    principal: KeycloakUserPrincipal = Depends(require_roles([SUPER_ADMIN, CAMPUS_PRINCIPAL])),
+    principal: KeycloakUserPrincipal = Depends(require_roles([SUPER_ADMIN, SCHOOL_ADMIN])),
 ) -> Campus:
     # Ensure tenant alignment
     if not principal.is_superadmin and principal.org_id and payload.org_id != principal.org_id:
@@ -148,7 +148,7 @@ async def get_campus(
     if not principal.is_superadmin:
         if principal.org_id and campus.org_id != principal.org_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access to campus outside organization is denied")
-        if principal.campus_id and principal.campus_id != campus.id and not principal.has_role(CAMPUS_PRINCIPAL):
+        if principal.campus_id and principal.campus_id != campus.id and not principal.has_role(SCHOOL_ADMIN):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access to other campuses is restricted")
 
     return campus
@@ -163,7 +163,7 @@ async def update_campus(
     campus_id: int,
     payload: CampusUpdate,
     db_session: AsyncSession = Depends(get_db_session),
-    principal: KeycloakUserPrincipal = Depends(require_roles([SUPER_ADMIN, CAMPUS_PRINCIPAL])),
+    principal: KeycloakUserPrincipal = Depends(require_roles([SUPER_ADMIN, SCHOOL_ADMIN])),
 ) -> Campus:
     campus = await db_session.get(Campus, campus_id)
     if not campus:
@@ -215,7 +215,7 @@ async def create_academic_year(
     campus_id: int,
     payload: AcademicYearBase,
     db_session: AsyncSession = Depends(get_db_session),
-    principal: KeycloakUserPrincipal = Depends(require_roles([SUPER_ADMIN, CAMPUS_PRINCIPAL])),
+    principal: KeycloakUserPrincipal = Depends(require_roles([SUPER_ADMIN, SCHOOL_ADMIN])),
 ) -> AcademicYear:
     new_year = AcademicYear(
         campus_id=campus_id,
@@ -267,7 +267,7 @@ async def create_class_section(
     payload: ClassSectionBase,
     class_teacher_id: Optional[int] = Query(None),
     db_session: AsyncSession = Depends(get_db_session),
-    principal: KeycloakUserPrincipal = Depends(require_roles([SUPER_ADMIN, CAMPUS_PRINCIPAL])),
+    principal: KeycloakUserPrincipal = Depends(require_roles([SUPER_ADMIN, SCHOOL_ADMIN])),
 ) -> ClassSection:
     section = ClassSection(
         campus_id=campus_id,
@@ -297,7 +297,7 @@ async def list_section_enrollments(
     section_id: int,
     status_filter: Optional[str] = Query(None, alias="status"),
     db_session: AsyncSession = Depends(get_db_session),
-    principal: KeycloakUserPrincipal = Depends(require_roles([SUPER_ADMIN, CAMPUS_PRINCIPAL, TEACHER, ACCOUNTANT])),
+    principal: KeycloakUserPrincipal = Depends(require_roles([SUPER_ADMIN, SCHOOL_ADMIN, TEACHER, STAFF])),
 ) -> List[StudentEnrollment]:
     query = select(StudentEnrollment).where(StudentEnrollment.section_id == section_id)
     if status_filter:
@@ -315,7 +315,7 @@ async def list_section_enrollments(
 async def enroll_student(
     payload: StudentEnrollmentCreate,
     db_session: AsyncSession = Depends(get_db_session),
-    principal: KeycloakUserPrincipal = Depends(require_roles([SUPER_ADMIN, CAMPUS_PRINCIPAL, ACCOUNTANT])),
+    principal: KeycloakUserPrincipal = Depends(require_roles([SUPER_ADMIN, SCHOOL_ADMIN, STAFF])),
 ) -> StudentEnrollment:
     # Check if student is already enrolled in this academic year
     existing = await db_session.exec(

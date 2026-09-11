@@ -35,19 +35,21 @@ def get_utc_now_iso() -> str:
 
 class KeycloakRole(str, Enum):
     SUPER_ADMIN = "SUPER_ADMIN"
-    CAMPUS_PRINCIPAL = "CAMPUS_PRINCIPAL"
+    SCHOOL_ADMIN = "SCHOOL_ADMIN"
     TEACHER = "TEACHER"
     STUDENT = "STUDENT"
     PARENT = "PARENT"
-    ACCOUNTANT = "ACCOUNTANT"
+    STAFF = "STAFF"
+    PSYCHOLOGIST = "PSYCHOLOGIST"
 
 
 SUPER_ADMIN = KeycloakRole.SUPER_ADMIN.value
-CAMPUS_PRINCIPAL = KeycloakRole.CAMPUS_PRINCIPAL.value
+SCHOOL_ADMIN = KeycloakRole.SCHOOL_ADMIN.value
 TEACHER = KeycloakRole.TEACHER.value
 STUDENT = KeycloakRole.STUDENT.value
 PARENT = KeycloakRole.PARENT.value
-ACCOUNTANT = KeycloakRole.ACCOUNTANT.value
+STAFF = KeycloakRole.STAFF.value
+PSYCHOLOGIST = KeycloakRole.PSYCHOLOGIST.value
 
 ALL_REALM_ROLES: Set[str] = {role.value for role in KeycloakRole}
 
@@ -186,8 +188,8 @@ class KeycloakUserPrincipal(BaseModel):
 
     @property
     def is_principal(self) -> bool:
-        """Helper to test for CAMPUS_PRINCIPAL role."""
-        return self.has_role(CAMPUS_PRINCIPAL)
+        """Helper to test for SCHOOL_ADMIN role."""
+        return self.has_role(SCHOOL_ADMIN)
 
     @property
     def is_teacher(self) -> bool:
@@ -441,7 +443,7 @@ def require_roles(
     FastAPI dependency factory: Validates that the authenticated user possesses
     the required realm/client roles.
 
-    :param required_roles: List or set of role names (e.g. ['TEACHER', 'CAMPUS_PRINCIPAL'])
+    :param required_roles: List or set of role names (e.g. ['TEACHER', 'SCHOOL_ADMIN'])
     :param require_all: If True, user must possess all listed roles. If False (default), any listed role satisfies.
     :returns: FastAPI Dependency callable returning `KeycloakUserPrincipal`.
     """

@@ -80,7 +80,10 @@ async def test_admissions_lead_lifecycle_and_kanban_pipeline(db: AsyncSession):
     # 3. Check Kanban Pipeline Structure
     pipeline = await get_pipeline_endpoint(campus_id=1, session=db)
     assert pipeline.total_leads == 2
-    assert len(pipeline.stages) == 7
+    # 8 stages: the original 7-stage pipeline plus STALLED, which loops a
+    # non-converted lead back to NEW_INQUIRY per the loop-funnel redesign.
+    assert len(pipeline.stages) == 8
+    assert any(s.stage == LeadStage.STALLED for s in pipeline.stages)
 
     new_inquiry_stage = next(s for s in pipeline.stages if s.stage == LeadStage.NEW_INQUIRY)
     assert new_inquiry_stage.count == 2

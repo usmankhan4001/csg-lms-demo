@@ -33,7 +33,7 @@ from src.routers.ai_tutor import (
 from src.core.keycloak_auth import (
     KeycloakUserPrincipal,
     TEACHER,
-    CAMPUS_PRINCIPAL,
+    SCHOOL_ADMIN,
     STUDENT,
     SUPER_ADMIN,
     require_roles,
@@ -277,7 +277,7 @@ class TestAITutorRouter:
             roles=[STUDENT],
             email="student@csg.edu",
         )
-        checker = require_roles([TEACHER, CAMPUS_PRINCIPAL, SUPER_ADMIN])
+        checker = require_roles([TEACHER, SCHOOL_ADMIN, SUPER_ADMIN])
         with pytest.raises(HTTPException) as exc_info:
             await checker(student_principal)
         assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN

@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.db.sms_revops import (
     ActivityType,
     LeadIntent,
+    LeadOrigin,
     LeadSource,
     LeadStage,
     OfferStatus,
@@ -21,9 +22,17 @@ class LeadBase(BaseModel):
     campus_id: Optional[int] = None
     academic_year_id: Optional[int] = None
     source: LeadSource = LeadSource.WEBSITE_FORM
+    # Inbound (organic/content-driven) vs Outbound (paid ads/pixel-tracked) nurture
+    # path, distinct from `source`. Left unset to allow server-side inference from
+    # `source` when the caller doesn't know / doesn't care to specify it.
+    origin: Optional[LeadOrigin] = None
     budget_range: Optional[str] = None
     notes: Optional[str] = None
     assigned_officer_id: Optional[int] = None
+    # Consent & Compliance: explicit per-channel opt-in captured at intake. Defaults
+    # to False (no consent assumed) until the prospect explicitly opts in.
+    whatsapp_consent: bool = False
+    email_consent: bool = False
 
 
 class LeadCreate(LeadBase):
@@ -41,6 +50,7 @@ class LeadUpdate(BaseModel):
     campus_id: Optional[int] = None
     academic_year_id: Optional[int] = None
     source: Optional[LeadSource] = None
+    origin: Optional[LeadOrigin] = None
     stage: Optional[LeadStage] = None
     lead_score: Optional[int] = Field(default=None, ge=0, le=100)
     intent_level: Optional[LeadIntent] = None
@@ -53,14 +63,27 @@ class LeadUpdate(BaseModel):
 class LeadRead(LeadBase):
     """Schema for reading an admissions lead."""
     id: int
+    origin: LeadOrigin
     stage: LeadStage
     lead_score: int
     intent_level: LeadIntent
+    whatsapp_consent_updated_at: Optional[datetime.datetime] = None
+    email_consent_updated_at: Optional[datetime.datetime] = None
     last_contacted_at: Optional[datetime.datetime] = None
     created_at: datetime.datetime
     updated_at: datetime.datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class LeadConsentUpdate(BaseModel):
+    """
+    Schema for recording an opt-in/opt-out consent change for a lead's outbound
+    communication channels. At least one channel must be supplied.
+    """
+    whatsapp_consent: Optional[bool] = None
+    email_consent: Optional[bool] = None
+    reason: Optional[str] = None
 
 
 class LeadStageUpdate(BaseModel):

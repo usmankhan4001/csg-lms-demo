@@ -10,6 +10,7 @@ from src.db.sms_revops import (
     AdmissionsLead,
     LeadActivityLog,
     LeadIntent,
+    LeadOrigin,
     LeadSource,
     LeadStage,
     OfferStatus,
@@ -19,6 +20,7 @@ from src.schemas.sms_revops import (
     BatchScoringRequest,
     BatchScoringResponse,
     LeadActivityCreate,
+    LeadConsentUpdate,
     LeadCreate,
     LeadRead,
     LeadScoringResult,
@@ -29,6 +31,20 @@ from src.schemas.sms_revops import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Paid-ads / pixel-tracked acquisition channels are treated as OUTBOUND nurture
+# paths; everything else (organic form fills, referrals, walk-ins, organic
+# WhatsApp) is treated as INBOUND. Used only as a default when the caller
+# doesn't explicitly tag `origin` on lead creation.
+OUTBOUND_LEAD_SOURCES = {LeadSource.META_ADS, LeadSource.GOOGLE_ADS}
+
+
+def infer_lead_origin(source: LeadSource) -> LeadOrigin:
+    """
+    Infers the inbound/outbound nurture-path tag from the acquisition source
+    when the caller does not explicitly supply one.
+    """
+    return LeadOrigin.OUTBOUND if source in OUTBOUND_LEAD_SOURCES else LeadOrigin.INBOUND
 
 
 def calculate_lead_score(
@@ -56,6 +72,7 @@ def calculate_lead_score(
         LeadStage.TOUR_BOOKED: 25,
         LeadStage.CONTACTED: 15,
         LeadStage.NEW_INQUIRY: 5,
+        LeadStage.STALLED: 5,
         LeadStage.LOST: 0,
     }
 
@@ -101,6 +118,7 @@ async def create_admissions_lead(
     Creates an admissions lead and logs the initial acquisition activity.
     """
     now = datetime.datetime.now(datetime.timezone.utc)
+    origin = payload.origin or infer_lead_origin(payload.source)
     lead = AdmissionsLead(
         campus_id=payload.campus_id,
         parent_name=payload.parent_name,
@@ -110,10 +128,15 @@ async def create_admissions_lead(
         grade_applying_for=payload.grade_applying_for,
         academic_year_id=payload.academic_year_id,
         source=payload.source,
+        origin=origin,
         stage=LeadStage.NEW_INQUIRY,
         budget_range=payload.budget_range,
         notes=payload.notes,
         assigned_officer_id=payload.assigned_officer_id,
+        whatsapp_consent=payload.whatsapp_consent,
+        whatsapp_consent_updated_at=now if payload.whatsapp_consent else None,
+        email_consent=payload.email_consent,
+        email_consent_updated_at=now if payload.email_consent else None,
         created_at=now,
         updated_at=now,
     )
@@ -134,9 +157,12 @@ async def create_admissions_lead(
         summary=f"Inquiry captured from {lead.source.value} for grade {lead.grade_applying_for}.",
         metadata_json={
             "source": lead.source.value,
+            "origin": lead.origin.value,
             "grade": lead.grade_applying_for,
             "initial_score": lead.lead_score,
             "intent": lead.intent_level.value,
+            "whatsapp_consent": lead.whatsapp_consent,
+            "email_consent": lead.email_consent,
         },
         created_at=now,
     )
@@ -168,6 +194,7 @@ async def get_pipeline_kanban(
         LeadStage.OFFER_SENT: "Offer Sent",
         LeadStage.ENROLLED: "Enrolled",
         LeadStage.LOST: "Lost / Dropped",
+        LeadStage.STALLED: "Stalled / Non-Converted (Looping Back)",
     }
 
     grouped: Dict[LeadStage, List[LeadRead]] = {stage: [] for stage in LeadStage}
@@ -227,15 +254,99 @@ async def update_lead_stage(
     lead.lead_score = score
     lead.intent_level = intent
 
-    summary_text = f"Stage transitioned from {old_stage.value} to {new_stage.value}."
+    # The funnel is a loop, not a line: a STALLED (non-converted) lead moving
+    # back to NEW_INQUIRY re-enters Lead Research/Sourcing for another
+    # re-nurturing cycle. Record this distinctly in the audit trail so it can
+    # be told apart from an ordinary forward stage change.
+    is_loopback = old_stage == LeadStage.STALLED and new_stage == LeadStage.NEW_INQUIRY
+
+    if is_loopback:
+        summary_text = (
+            f"Stalled lead looped back from {old_stage.value} to {new_stage.value} "
+            f"(re-entering Lead Research/Sourcing for another nurture cycle)."
+        )
+    else:
+        summary_text = f"Stage transitioned from {old_stage.value} to {new_stage.value}."
     if payload.reason:
         summary_text += f" Reason / Notes: {payload.reason}"
+
+    metadata_json = dict(payload.metadata_json) if payload.metadata_json else {
+        "from_stage": old_stage.value,
+        "to_stage": new_stage.value,
+    }
+    metadata_json.setdefault("from_stage", old_stage.value)
+    metadata_json.setdefault("to_stage", new_stage.value)
+    metadata_json["is_loopback"] = is_loopback
 
     activity = LeadActivityLog(
         lead_id=lead.id,
         activity_type=ActivityType.STAGE_CHANGE,
         summary=summary_text,
-        metadata_json=payload.metadata_json or {"from_stage": old_stage.value, "to_stage": new_stage.value},
+        metadata_json=metadata_json,
+        created_at=now,
+    )
+    session.add(activity)
+    session.add(lead)
+    await session.commit()
+    await session.refresh(lead)
+
+    return lead
+
+
+async def update_lead_consent(
+    session: AsyncSession,
+    lead_id: int,
+    payload: LeadConsentUpdate,
+) -> AdmissionsLead:
+    """
+    Records an opt-in/opt-out consent change for a lead's outbound WhatsApp
+    and/or Email channels, stamping the change timestamp per channel and
+    appending a compliance audit log entry. This is the record that gates
+    whether outbound WhatsApp/Email automation (SDR agent, drip engine) is
+    permitted to fire for the lead.
+    """
+    if payload.whatsapp_consent is None and payload.email_consent is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one of whatsapp_consent or email_consent must be provided.",
+        )
+
+    stmt = select(AdmissionsLead).where(AdmissionsLead.id == lead_id)
+    lead = (await session.execute(stmt)).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Admissions lead {lead_id} not found.",
+        )
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    changes: Dict[str, Any] = {}
+
+    if payload.whatsapp_consent is not None:
+        lead.whatsapp_consent = payload.whatsapp_consent
+        lead.whatsapp_consent_updated_at = now
+        changes["whatsapp_consent"] = payload.whatsapp_consent
+
+    if payload.email_consent is not None:
+        lead.email_consent = payload.email_consent
+        lead.email_consent_updated_at = now
+        changes["email_consent"] = payload.email_consent
+
+    lead.updated_at = now
+
+    channel_summaries = [
+        f"{channel.replace('_consent', '').upper()} consent {'GRANTED' if granted else 'REVOKED'}"
+        for channel, granted in changes.items()
+    ]
+    summary_text = "; ".join(channel_summaries) + "."
+    if payload.reason:
+        summary_text += f" Reason / Notes: {payload.reason}"
+
+    activity = LeadActivityLog(
+        lead_id=lead.id,
+        activity_type=ActivityType.CONSENT_UPDATE,
+        summary=summary_text,
+        metadata_json={"changes": changes, "reason": payload.reason},
         created_at=now,
     )
     session.add(activity)

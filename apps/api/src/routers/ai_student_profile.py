@@ -15,7 +15,7 @@ from src.core.events.database import get_db_session
 from src.core.keycloak_auth import (
     KeycloakUserPrincipal,
     TEACHER,
-    CAMPUS_PRINCIPAL,
+    SCHOOL_ADMIN,
     SUPER_ADMIN,
     STUDENT,
     get_optional_user_principal,

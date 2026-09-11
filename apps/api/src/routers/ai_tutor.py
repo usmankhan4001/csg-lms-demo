@@ -18,7 +18,7 @@ from src.core.events.database import get_db_session
 from src.core.keycloak_auth import (
     KeycloakUserPrincipal,
     TEACHER,
-    CAMPUS_PRINCIPAL,
+    SCHOOL_ADMIN,
     SUPER_ADMIN,
     get_optional_user_principal,
     require_roles,
@@ -27,7 +27,10 @@ from src.db.ai_models import (
     AISafetyIncident,
     AISafetyIncidentRead,
 )
-from src.services.ai.socratic_tutor import stream_socratic_guidance
+from src.services.ai.socratic_tutor import (
+    stream_socratic_guidance,
+    check_tutor_daily_rate_limit,
+)
 from src.services.ai.base import get_chat_session_history, save_message_to_history
 
 logger = logging.getLogger(__name__)
@@ -131,6 +134,27 @@ async def api_socratic_tutor_chat(
     user_id = principal.sub if principal else "anonymous_student"
     org_id = principal.org_id if principal else None
 
+    # Rate limit BEFORE any LLM call is made: ~1000 requests/day per student,
+    # Redis-backed (see check_tutor_daily_rate_limit for the key convention
+    # and UTC-midnight reset window).
+    rate_result = check_tutor_daily_rate_limit(student_id=user_id, org_id=org_id)
+    if not rate_result.is_allowed:
+        retry_after = rate_result.retry_after_seconds
+        hours = max(1, round(retry_after / 3600))
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "code": "TUTOR_DAILY_LIMIT_REACHED",
+                "message": (
+                    f"You've reached today's limit of {rate_result.limit} questions with the AI "
+                    f"tutor. Your quota resets in about {hours} hour(s) (midnight UTC) — in the "
+                    "meantime, please ask your teacher or check your course materials for help."
+                ),
+                "retry_after": retry_after,
+            },
+            headers={"Retry-After": str(retry_after)},
+        )
+
     # If history is not explicitly passed in payload, attempt retrieval from session_uuid
     effective_history = payload.history
     if effective_history is None and payload.session_uuid:
@@ -182,7 +206,7 @@ async def api_get_socratic_history(
     response_model=List[AISafetyIncidentRead],
     summary="List Student Wellbeing & Crisis Safety Incidents",
     description="Protected endpoint for teachers and campus principals to review AI safety flags and counselor notifications.",
-    dependencies=[Depends(require_roles([TEACHER, CAMPUS_PRINCIPAL, SUPER_ADMIN]))],
+    dependencies=[Depends(require_roles([TEACHER, SCHOOL_ADMIN, SUPER_ADMIN]))],
 )
 async def api_list_safety_flags(
     student_id: Optional[str] = Query(None, description="Filter incidents by student ID"),
@@ -191,7 +215,7 @@ async def api_list_safety_flags(
     limit: int = Query(50, ge=1, le=200, description="Max number of incidents to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     db_session: AsyncSession = Depends(get_db_session),
-    principal: KeycloakUserPrincipal = Depends(require_roles([TEACHER, CAMPUS_PRINCIPAL, SUPER_ADMIN])),
+    principal: KeycloakUserPrincipal = Depends(require_roles([TEACHER, SCHOOL_ADMIN, SUPER_ADMIN])),
 ):
     """
     GET /api/v1/ai/tutor/safety-flags - Role-protected safety incident review
