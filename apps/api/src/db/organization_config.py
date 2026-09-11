@@ -200,6 +200,12 @@ class AdminToggles(BaseModel):
     sms_hr_payroll: FeatureAdminToggle = FeatureAdminToggle()
     sms_library: FeatureAdminToggle = FeatureAdminToggle()
     revops: FeatureAdminToggle = FeatureAdminToggle()
+    # Phase 4, Part B: Counseling / Wellbeing / Career Guidance module
+    # (src/routers/sms_counseling.py). Part A's teacher-module additions
+    # (lesson plans, coursework-hour allocation, report-card draft/send
+    # lifecycle) deliberately reuse the sms_gradebook toggle above instead of
+    # a new key, since they extend that module rather than introducing one.
+    tutor_counseling: FeatureAdminToggle = FeatureAdminToggle()
 
 
 # ============================================================================

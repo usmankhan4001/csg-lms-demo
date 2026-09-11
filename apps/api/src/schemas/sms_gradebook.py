@@ -1,4 +1,5 @@
 import datetime
+from enum import Enum
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -95,3 +96,51 @@ class StudentTermReportCardResponse(BaseModel):
     remarks: Optional[str] = None
     courses: List[CourseGradeSummary]
     generated_at: datetime.datetime
+
+
+# ---------------------------------------------------------------------------
+# Report-card draft -> sent distribution lifecycle (Phase 4, Part A.4)
+# ---------------------------------------------------------------------------
+
+class ReportCardStatus(str, Enum):
+    DRAFT = "draft"
+    SENT = "sent"
+
+
+class GenerateReportCardDraftRequest(BaseModel):
+    section_id: int
+    academic_term_id: int
+    # Whether to (re)generate the AI-assisted narrative comment alongside the
+    # GPA/grade recalculation. False lets a teacher refresh grade data without
+    # spending an AI call / clobbering a narrative they already hand-edited.
+    generate_narrative: bool = True
+
+
+class ReportCardDraftUpdate(BaseModel):
+    """Teacher edits to a still-DRAFT report card. Both fields optional so a
+    PATCH can touch just one."""
+    ai_narrative: Optional[str] = None
+    remarks: Optional[str] = None
+
+
+class TermReportCardRecordRead(BaseModel):
+    """The persisted report-card record, including its draft/sent lifecycle
+    state -- distinct from `StudentTermReportCardResponse`, which is the
+    on-the-fly GPA-calculation preview returned by the pre-existing
+    GET /report-card/student/{student_id} endpoint."""
+    id: int
+    student_id: int
+    section_id: int
+    academic_term_id: int
+    status: ReportCardStatus
+    total_credits: float
+    cumulative_gpa: float
+    overall_letter_grade: Optional[str] = None
+    remarks: Optional[str] = None
+    ai_narrative: Optional[str] = None
+    courses: List[CourseGradeSummary] = Field(default_factory=list)
+    calculated_at: datetime.datetime
+    sent_at: Optional[datetime.datetime] = None
+    sent_by: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)

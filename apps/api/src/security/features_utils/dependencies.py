@@ -37,6 +37,14 @@ FeatureName = Literal[
     "sms_hr_payroll",
     "sms_library",
     "revops",
+    # Phase 4, Part B: Counseling / Wellbeing / Career Guidance module.
+    # Part A (teacher module additions: lesson plans, coursework-hour
+    # allocation, report-card draft/send lifecycle) deliberately reuses the
+    # existing "sms_gradebook" toggle instead of adding a new key -- it's an
+    # extension of that module, not a new one. See
+    # src/routers/sms_teacher_tools.py and the report-card lifecycle
+    # additions in src/routers/sms_gradebook.py.
+    "tutor_counseling",
 ]
 
 
@@ -508,3 +516,12 @@ async def require_revops_feature(
 ) -> bool:
     """Router-level dependency gating the AI RevOps / Admissions module behind its admin toggle."""
     return await _check_sms_feature_enabled("revops", principal, db_session)
+
+
+async def require_tutor_counseling_feature(
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+    db_session: AsyncSession = Depends(get_db_session),
+) -> bool:
+    """Router-level dependency gating the Counseling/Wellbeing/Career Guidance
+    module (src/routers/sms_counseling.py) behind its admin toggle."""
+    return await _check_sms_feature_enabled("tutor_counseling", principal, db_session)

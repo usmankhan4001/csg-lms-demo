@@ -29,6 +29,8 @@ ALL_FEATURES = [
     # in ALWAYS_ON_FEATURES below instead, so it has no admin toggle).
     "sms_attendance", "sms_timetable", "sms_gradebook", "sms_fees",
     "sms_financials", "sms_hr_payroll", "sms_library", "revops",
+    # Phase 4, Part B: Counseling / Wellbeing / Career Guidance module.
+    "tutor_counseling",
 ]
 
 

@@ -43,6 +43,7 @@ from src.security.features_utils.dependencies import (
     require_sms_hr_payroll_feature,
     require_sms_library_feature,
     require_sms_timetable_feature,
+    require_tutor_counseling_feature,
 )
 
 ROUTER_CASES = [
@@ -54,6 +55,16 @@ ROUTER_CASES = [
     pytest.param("/api/v1/sms/hr/staff", require_sms_hr_payroll_feature, id="sms_hr"),
     pytest.param("/api/v1/sms/payroll/slips", require_sms_hr_payroll_feature, id="sms_payroll"),
     pytest.param("/api/v1/sms/library/books", require_sms_library_feature, id="sms_library"),
+    # Phase 4: new sms_counseling module + sms_teacher_tools (which reuses
+    # the sms_gradebook toggle -- see src/routers/sms_teacher_tools.py).
+    pytest.param(
+        "/api/v1/sms/counseling/activity-logs/student/1", require_tutor_counseling_feature,
+        id="sms_counseling",
+    ),
+    pytest.param(
+        "/api/v1/sms/teacher-tools/lesson-plans", require_sms_gradebook_feature,
+        id="sms_teacher_tools",
+    ),
 ]
 
 

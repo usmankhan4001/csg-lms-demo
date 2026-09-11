@@ -13,6 +13,7 @@ from src.routers import dev, trail, users, auth, orgs, roles, search
 from src.routers import (
     sms_attendance,
     sms_campus,
+    sms_counseling,
     sms_fees,
     sms_financials,
     sms_gradebook,
@@ -20,6 +21,7 @@ from src.routers import (
     sms_library,
     sms_payroll,
     sms_revops,
+    sms_teacher_tools,
     sms_timetable,
     live_classes,
 )
@@ -534,6 +536,25 @@ v1_router.include_router(
     prefix="/revops",
     tags=["sms-revops"],
     dependencies=[Depends(require_authenticated_user_or_api_token)],
+)
+
+# Phase 4: Counseling / Wellbeing / Career Guidance (new module) and the
+# Teacher Module additions (lesson plans + coursework-hour allocation,
+# gated behind the existing sms_gradebook toggle). Mounted the same way as
+# the 8 SMS routers above -- feature-toggle dependency lives INSIDE each
+# router file (require_tutor_counseling_feature / require_sms_gradebook_feature),
+# and NOT repeated here at the mount level, so as not to reintroduce the
+# double-auth-gate bug documented above.
+v1_router.include_router(
+    sms_counseling.router,
+    prefix="/sms/counseling",
+    tags=["sms-counseling"],
+)
+
+v1_router.include_router(
+    sms_teacher_tools.router,
+    prefix="/sms/teacher-tools",
+    tags=["sms-teacher-tools"],
 )
 
 

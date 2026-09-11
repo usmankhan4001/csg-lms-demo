@@ -4,7 +4,13 @@ from sqlalchemy import and_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.events.database import get_db_session
-from src.core.keycloak_auth import KeycloakUserPrincipal, get_current_user_principal
+from src.core.keycloak_auth import (
+    KeycloakUserPrincipal,
+    SCHOOL_ADMIN,
+    SUPER_ADMIN,
+    TEACHER,
+    get_current_user_principal,
+)
 from src.db.sms_gradebook import (
     AssessmentPlan,
     GradebookEntry,
@@ -15,18 +21,57 @@ from src.schemas.sms_gradebook import (
     AssessmentPlanCreate,
     AssessmentPlanRead,
     BatchGradebookEntryRequest,
+    CourseGradeSummary,
+    GenerateReportCardDraftRequest,
     GradebookEntryRead,
     GradingScaleCreate,
     GradingScaleRead,
+    ReportCardDraftUpdate,
     StudentTermReportCardResponse,
+    TermReportCardRecordRead,
 )
 from src.security.features_utils.dependencies import require_sms_gradebook_feature
 from src.services.sms.gradebook import (
+    ReportCardAlreadySentError,
+    ReportCardNotFoundError,
+    generate_report_card_draft,
     generate_student_term_report_card,
+    get_report_card_for_viewer,
     resolve_letter_and_gpa,
+    send_report_card,
+    update_report_card_draft,
 )
 
 router = APIRouter(dependencies=[Depends(require_sms_gradebook_feature)])
+
+# Roles that may generate/edit/send a report-card draft. Per the product
+# decision, the TEACHER approves and sends -- SCHOOL_ADMIN/SUPER_ADMIN are
+# included as administrative overrides, not a required second approval step.
+REPORT_CARD_STAFF_ROLES = [TEACHER, SCHOOL_ADMIN, SUPER_ADMIN]
+
+
+def _to_record_read(record: TermReportCard) -> TermReportCardRecordRead:
+    """TermReportCard (DB row) -> TermReportCardRecordRead. Field names
+    diverge deliberately (gpa -> cumulative_gpa, letter_grade ->
+    overall_letter_grade, course_summaries -> courses) to match
+    StudentTermReportCardResponse's existing public naming, so this can't be
+    a plain `model_validate(record)` -- built explicitly instead."""
+    return TermReportCardRecordRead(
+        id=record.id,
+        student_id=record.student_id,
+        section_id=record.section_id,
+        academic_term_id=record.academic_term_id,
+        status=record.status,
+        total_credits=record.total_credits,
+        cumulative_gpa=record.gpa,
+        overall_letter_grade=record.letter_grade,
+        remarks=record.remarks,
+        ai_narrative=record.ai_narrative,
+        courses=[CourseGradeSummary(**c) for c in (record.course_summaries or [])],
+        calculated_at=record.calculated_at,
+        sent_at=record.sent_at,
+        sent_by=record.sent_by,
+    )
 
 
 # ── Grading Scales ──
@@ -217,3 +262,129 @@ async def get_student_report_card(
         section_id=section_id,
         academic_term_id=academic_term_id,
     )
+
+
+# ── Report Card Draft -> Sent Distribution Lifecycle (Phase 4, Part A.4) ──
+#
+# TEACHER approves, then explicitly sends. The endpoint above
+# (GET /report-card/student/{id}) is the pre-existing on-the-fly GPA preview;
+# these endpoints add the persisted draft/sent lifecycle on top of the same
+# TermReportCard row without changing that endpoint's behavior.
+
+@router.post(
+    "/report-card/student/{student_id}/draft",
+    response_model=TermReportCardRecordRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Generate/Refresh a DRAFT Report Card",
+    description=(
+        "Recomputes GPA/grade data (reusing the existing calculation engine) and "
+        "generates an AI-assisted narrative comment, producing/refreshing a DRAFT "
+        "report card. Fails with 409 if the report card has already been sent."
+    ),
+)
+async def generate_report_card_draft_endpoint(
+    student_id: int,
+    payload: GenerateReportCardDraftRequest,
+    session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+) -> TermReportCardRecordRead:
+    if not principal.has_any_role(REPORT_CARD_STAFF_ROLES):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only teachers or school admins can generate a report card.",
+        )
+    try:
+        record = await generate_report_card_draft(
+            session=session,
+            student_id=student_id,
+            section_id=payload.section_id,
+            academic_term_id=payload.academic_term_id,
+            generate_narrative=payload.generate_narrative,
+        )
+    except ReportCardAlreadySentError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    return _to_record_read(record)
+
+
+@router.patch(
+    "/report-card/{report_card_id}",
+    response_model=TermReportCardRecordRead,
+    summary="Edit a DRAFT Report Card",
+    description="Teacher edits to the narrative/remarks of a still-DRAFT report card. 409 once sent.",
+)
+async def update_report_card_draft_endpoint(
+    report_card_id: int,
+    payload: ReportCardDraftUpdate,
+    session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+) -> TermReportCardRecordRead:
+    if not principal.has_any_role(REPORT_CARD_STAFF_ROLES):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only teachers or school admins can edit a report card.",
+        )
+    try:
+        record = await update_report_card_draft(
+            session=session,
+            report_card_id=report_card_id,
+            ai_narrative=payload.ai_narrative,
+            remarks=payload.remarks,
+        )
+    except ReportCardNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except ReportCardAlreadySentError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    return _to_record_read(record)
+
+
+@router.post(
+    "/report-card/{report_card_id}/send",
+    response_model=TermReportCardRecordRead,
+    summary="Send a Report Card",
+    description=(
+        "Explicit TEACHER-initiated send action -- the only thing that makes a "
+        "report card visible to the PARENT role. Never happens automatically."
+    ),
+)
+async def send_report_card_endpoint(
+    report_card_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+) -> TermReportCardRecordRead:
+    if not principal.has_any_role(REPORT_CARD_STAFF_ROLES):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only teachers or school admins can send a report card.",
+        )
+    try:
+        record = await send_report_card(
+            session=session,
+            report_card_id=report_card_id,
+            sent_by=principal.sub,
+        )
+    except ReportCardNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except ReportCardAlreadySentError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    return _to_record_read(record)
+
+
+@router.get(
+    "/report-card/{report_card_id}",
+    response_model=TermReportCardRecordRead,
+    summary="Get a Report Card by ID",
+    description=(
+        "Teachers/admins may view a report card in any status. Every other "
+        "role (PARENT, STUDENT, ...) can only view it once it has been SENT."
+    ),
+)
+async def get_report_card_by_id_endpoint(
+    report_card_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+) -> TermReportCardRecordRead:
+    is_staff = principal.has_any_role(REPORT_CARD_STAFF_ROLES)
+    record = await get_report_card_for_viewer(session, report_card_id, is_staff)
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report card not found.")
+    return _to_record_read(record)

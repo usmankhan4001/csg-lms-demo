@@ -87,9 +87,32 @@ class GradebookEntry(SQLModel, table=True):
     )
 
 
+class ReportCardStatus:
+    """Explicit draft->sent lifecycle for TermReportCard (plain string constants,
+    not an Enum, so the JSON-facing status column stays a simple SQLModel str
+    field -- matches the style of `letter_grade`/other free-text columns in
+    this file rather than introducing a DB-level enum type).
+
+    Product decision (Phase 4): the TEACHER approves and explicitly sends a
+    report card -- it never auto-sends, and there is no separate
+    SCHOOL_ADMIN approval gate. A report card is visible to the PARENT role
+    only once it is SENT; while DRAFT it is teacher/admin-only.
+    """
+    DRAFT = "draft"
+    SENT = "sent"
+
+
 class TermReportCard(SQLModel, table=True):
     """
     Aggregated end-of-term student report card summary with GPA and credits.
+
+    ``status``/``ai_narrative``/``sent_at``/``sent_by`` implement the explicit
+    draft -> sent report-card distribution lifecycle (Phase 4, Part A.4): a
+    TEACHER generates a DRAFT (GPA/grade data here plus an AI-assisted
+    narrative), may edit it, then explicitly sends it -- which is the only
+    thing that makes it visible to the PARENT role. See
+    src/services/sms/gradebook.py for the lifecycle functions and
+    src/routers/sms_gradebook.py for the endpoints.
     """
     __tablename__ = "sms_term_report_card"
     __table_args__ = (
@@ -117,3 +140,16 @@ class TermReportCard(SQLModel, table=True):
             default=lambda: datetime.datetime.now(datetime.timezone.utc),
         ),
     )
+    # --- Draft -> Sent distribution lifecycle (Phase 4, Part A.4) ---
+    status: str = Field(
+        default=ReportCardStatus.DRAFT,
+        sa_column=Column(String(20), nullable=False, index=True),
+    )
+    ai_narrative: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    sent_at: Optional[datetime.datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    # Keycloak `sub` of the TEACHER who sent it -- a string, not a Learnhouse
+    # user.id FK, since the sender is identified from the Keycloak principal
+    # (see get_current_user_principal), not a Learnhouse-native user row.
+    sent_by: Optional[str] = Field(default=None, sa_column=Column(String(255), nullable=True))
