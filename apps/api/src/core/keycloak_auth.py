@@ -12,6 +12,7 @@ and multi-campus isolation requirements.
 import os
 import logging
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Union
+from datetime import datetime, timezone
 from enum import Enum
 import jwt
 from jwt.exceptions import PyJWTError, ExpiredSignatureError, InvalidTokenError
@@ -21,6 +22,11 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2Pas
 from fastapi.security.utils import get_authorization_scheme_param
 
 logger = logging.getLogger("keycloak_auth")
+
+
+def get_utc_now_iso() -> str:
+    """Returns the current UTC timestamp formatted in ISO-8601 format."""
+    return datetime.now(timezone.utc).isoformat()
 
 
 # ---------------------------------------------------------

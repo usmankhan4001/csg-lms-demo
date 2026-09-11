@@ -22,9 +22,9 @@ from src.core.keycloak_auth import (
     ACCOUNTANT,
     get_current_user_principal,
     require_roles,
-    get_utc_now_iso,
 )
 from src.db.sms_campus import (
+    get_utc_now_iso,
     Campus,
     CampusCreate,
     CampusRead,
