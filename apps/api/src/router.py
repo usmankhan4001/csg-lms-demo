@@ -448,18 +448,36 @@ v1_router.include_router(
 )
 
 # Academic SMS Routes (Attendance, Leave Requests, Timetable & Conflict Solver)
+#
+# NOTE on auth (fixed as part of the CSG-LMS dashboard-rewrite Step 0): these
+# 8 routers (all except sms_campus, which was already correct) used to carry
+# BOTH this router-mount-level `require_authenticated_user_or_api_token`
+# (Learnhouse's own native session/API-token auth, from src/security/auth.py)
+# AND a per-handler `Depends(get_current_user_principal)` (Keycloak OIDC,
+# from src/core/keycloak_auth.py) inside every single endpoint in each of
+# these router files. Both read the *same* `Authorization: Bearer <token>`
+# header but expect mutually incompatible token formats/secrets -- a request
+# could satisfy at most one of them, so these routers were unreachable over
+# HTTP by any caller once the Keycloak per-handler gate was added (the
+# existing src/tests/sms/test_sms_auth.py suite didn't catch this because it
+# mounts each router standalone, bypassing this file's wrapper entirely).
+# sms_campus.py never had this wrapper, which is what the per-handler
+# Keycloak checks alone were always meant to be for. Removing the redundant
+# wrapper here makes these consistent with sms_campus and restores a
+# Keycloak-only Bearer token as sufficient, matching every handler's own
+# `get_current_user_principal` dependency. See
+# src/tests/routers/test_sms_router_mount_auth.py for a regression test
+# against the real composed `v1_router` (not a bare per-router test app).
 v1_router.include_router(
     sms_attendance.router,
     prefix="/sms/attendance",
     tags=["sms-attendance"],
-    dependencies=[Depends(require_authenticated_user_or_api_token)],
 )
 
 v1_router.include_router(
     sms_timetable.router,
     prefix="/sms/timetable",
     tags=["sms-timetable"],
-    dependencies=[Depends(require_authenticated_user_or_api_token)],
 )
 
 v1_router.include_router(
@@ -472,14 +490,12 @@ v1_router.include_router(
     sms_gradebook.router,
     prefix="/sms/gradebook",
     tags=["sms-gradebook"],
-    dependencies=[Depends(require_authenticated_user_or_api_token)],
 )
 
 v1_router.include_router(
     sms_fees.router,
     prefix="/sms/fees",
     tags=["sms-fees"],
-    dependencies=[Depends(require_authenticated_user_or_api_token)],
 )
 
 v1_router.include_router(
@@ -493,28 +509,24 @@ v1_router.include_router(
     sms_financials.router,
     prefix="/sms/financials",
     tags=["sms-financials"],
-    dependencies=[Depends(require_authenticated_user_or_api_token)],
 )
 
 v1_router.include_router(
     sms_hr.router,
     prefix="/sms/hr",
     tags=["sms-hr"],
-    dependencies=[Depends(require_authenticated_user_or_api_token)],
 )
 
 v1_router.include_router(
     sms_payroll.router,
     prefix="/sms/payroll",
     tags=["sms-payroll"],
-    dependencies=[Depends(require_authenticated_user_or_api_token)],
 )
 
 v1_router.include_router(
     sms_library.router,
     prefix="/sms/library",
     tags=["sms-library"],
-    dependencies=[Depends(require_authenticated_user_or_api_token)],
 )
 
 v1_router.include_router(
