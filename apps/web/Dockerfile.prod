@@ -1,0 +1,84 @@
+# syntax=docker/dockerfile:1.4
+# ==============================================================================
+# CSG-LMS Web Next.js 15 Production Dockerfile
+# Optimized Multi-Stage Build with Bun, Standalone Output, Sharp, and Non-Root User
+# ==============================================================================
+
+# ── Stage 1: Base & Dependencies ──────────────────────────────────────────────
+FROM oven/bun:1.4.0-alpine AS deps
+
+RUN apk upgrade --no-cache && apk add --no-cache libc6-compat
+
+WORKDIR /app
+
+COPY package.json bun.lock* ./
+RUN bun install --frozen-lockfile
+
+# ── Stage 2: Next.js Production Builder ───────────────────────────────────────
+FROM oven/bun:1.4.0-alpine AS builder
+
+RUN apk upgrade --no-cache && apk add --no-cache libc6-compat
+
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    NODE_ENV=production
+
+# Remove local dev environment files if any exist
+RUN rm -f .env*
+
+# Handle public vs enterprise modules
+ARG LEARNHOUSE_PUBLIC=false
+RUN if [ "$LEARNHOUSE_PUBLIC" = "true" ]; then rm -rf /app/ee; fi
+
+# Build standalone Next.js artifact
+RUN bun run build
+
+# ── Stage 3: Minimal Production Runner ────────────────────────────────────────
+FROM oven/bun:1.4.0-alpine AS runner
+
+LABEL maintainer="CSG Infotech <devops@csginfotech.com>" \
+      application="CSG-LMS Frontend" \
+      version="1.3.6"
+
+RUN apk upgrade --no-cache && apk add --no-cache curl libc6-compat
+
+WORKDIR /app
+
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0
+
+# Security: Create non-root system user & group (UID: 1001, GID: 1001)
+RUN addgroup --system --gid 1001 nodejs \
+    && adduser --system --uid 1001 nextjs
+
+# Copy static assets and standalone bundle
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Copy runtime server wrappers and entrypoints
+COPY --chown=nextjs:nodejs server-wrapper.js ./
+COPY --chown=nextjs:nodejs docker-entrypoint.sh ./
+
+RUN chmod +x server-wrapper.js docker-entrypoint.sh \
+    && mkdir -p .next \
+    && chown -R nextjs:nodejs .next \
+    && rm -f public/runtime-config.js \
+    && touch runtime-config.json \
+    && chown nextjs:nodejs runtime-config.json
+
+USER nextjs
+
+EXPOSE 3000
+
+# Health check probe
+HEALTHCHECK --interval=20s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -f http://localhost:3000/ || exit 1
+
+ENTRYPOINT ["./docker-entrypoint.sh"]

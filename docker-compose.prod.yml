@@ -1,0 +1,298 @@
+services:
+  # ==============================================================================
+  # 1. POSTGRESQL 16 WITH PGVECTOR EXTENSION
+  # ==============================================================================
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: csg-lms-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-learnhouse}
+      POSTGRES_USER: ${POSTGRES_USER:-learnhouse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_secure_postgres_password}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-learnhouse} -d ${POSTGRES_DB:-learnhouse}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - csg-network
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
+        reservations:
+          memory: 512M
+
+  # ==============================================================================
+  # 2. REDIS 7.2 IN-MEMORY CACHE & PUB/SUB
+  # ==============================================================================
+  redis:
+    image: redis:7.2-alpine
+    container_name: csg-lms-redis
+    restart: always
+    command: >
+      sh -c 'if [ -n "$${REDIS_PASSWORD}" ]; then
+        redis-server --appendonly yes --requirepass "$${REDIS_PASSWORD}" --maxmemory 512mb --maxmemory-policy allkeys-lru;
+      else
+        redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru;
+      fi'
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-change_me_secure_redis_password}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: >
+        sh -c 'if [ -n "$${REDIS_PASSWORD}" ]; then
+          redis-cli -a "$${REDIS_PASSWORD}" ping | grep PONG || exit 1;
+        else
+          redis-cli ping | grep PONG || exit 1;
+        fi'
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - csg-network
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+        reservations:
+          memory: 256M
+
+  # ==============================================================================
+  # 3. KEYCLOAK 24/26 OIDC IDENTITY & ACCESS MANAGEMENT
+  # ==============================================================================
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1.0
+    container_name: csg-lms-keycloak
+    restart: always
+    command: ["start", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-learnhouse}
+      KC_DB_USERNAME: ${POSTGRES_USER:-learnhouse}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-change_me_secure_postgres_password}
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-auth.csginfotech.com}
+      KC_HOSTNAME_ADMIN: ${KEYCLOAK_HOSTNAME:-auth.csginfotech.com}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: "xforwarded"
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-change_me_keycloak_admin_password}
+    volumes:
+      - ./deploy/keycloak/realm-export-csg-lms.json:/opt/keycloak/data/import/realm-export-csg-lms.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 6
+      start_period: 45s
+    networks:
+      - csg-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.csg-auth.rule=Host(`${KEYCLOAK_HOSTNAME:-auth.csginfotech.com}`)"
+      - "traefik.http.routers.csg-auth.entrypoints=websecure"
+      - "traefik.http.routers.csg-auth.tls.certresolver=letsencrypt"
+      - "traefik.http.services.csg-auth.loadbalancer.server.port=8080"
+      - "traefik.http.middlewares.csg-auth-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
+      - "traefik.http.routers.csg-auth.middlewares=csg-auth-headers"
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+        reservations:
+          memory: 512M
+
+  # ==============================================================================
+  # 4. FASTAPI PYTHON BACKEND (MIGRATIONS + CORE BUSINESS LOGIC)
+  # ==============================================================================
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile.prod
+    image: csg-lms/api:latest
+    container_name: csg-lms-api
+    restart: always
+    environment:
+      LEARNHOUSE_ENV: production
+      LEARNHOUSE_PORT: 9000
+      WORKERS: ${WORKERS:-4}
+      LEARNHOUSE_SQL_CONNECTION_STRING: postgresql+asyncpg://${POSTGRES_USER:-learnhouse}:${POSTGRES_PASSWORD:-change_me_secure_postgres_password}@postgres:5432/${POSTGRES_DB:-learnhouse}
+      LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD:-change_me_secure_redis_password}@redis:6379/0
+      LEARNHOUSE_REDIS_CONNECTION_STRING: redis://:${REDIS_PASSWORD:-change_me_secure_redis_password}@redis:6379/0
+      LEARNHOUSE_URL: ${LEARNHOUSE_URL:-https://app.csginfotech.com}
+      KEYCLOAK_URL: ${KEYCLOAK_URL:-https://auth.csginfotech.com}
+      KEYCLOAK_SERVER_URL: http://keycloak:8080
+      KEYCLOAK_REALM: csg-lms
+      KEYCLOAK_CLIENT_ID: csg-lms-api
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/csg-lms/protocol/openid-connect/certs
+      KEYCLOAK_ISSUER: ${KEYCLOAK_URL:-https://auth.csginfotech.com}/realms/csg-lms
+      KEYCLOAK_VERIFY_SIGNATURE: "true"
+      LEARNHOUSE_AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:-change_me_jwt_secret_key_minimum_64_chars}
+      AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:-change_me_jwt_secret_key_minimum_64_chars}
+      COLLAB_INTERNAL_KEY: ${COLLAB_INTERNAL_KEY:-change_me_collab_internal_key_minimum_32_chars}
+      LEARNHOUSE_MEDIA_SECRET_KEY: ${LEARNHOUSE_MEDIA_SECRET_KEY:-change_me_media_secret_key}
+      # AI Provider API Keys
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      # S3 / CDN Storage
+      LEARNHOUSE_STORAGE_TYPE: ${LEARNHOUSE_STORAGE_TYPE:-local}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:-}
+      S3_PUBLIC_DOMAIN: ${S3_PUBLIC_DOMAIN:-}
+      # Email
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-notifications@csginfotech.com}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-CSG-LMS}
+      # Sentry
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/api/v1/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
+    networks:
+      - csg-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.csg-api.rule=Host(`${API_HOSTNAME:-api.csginfotech.com}`)"
+      - "traefik.http.routers.csg-api.entrypoints=websecure"
+      - "traefik.http.routers.csg-api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.csg-api.loadbalancer.server.port=9000"
+      - "traefik.http.middlewares.csg-api-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
+      - "traefik.http.routers.csg-api.middlewares=csg-api-headers"
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
+        reservations:
+          memory: 512M
+
+  # ==============================================================================
+  # 5. HOCUSPOCUS CRDT REAL-TIME COLLABORATION SERVICE
+  # ==============================================================================
+  collab:
+    build:
+      context: ./apps/collab
+      dockerfile: Dockerfile.prod
+    image: csg-lms/collab:latest
+    container_name: csg-lms-collab
+    restart: always
+    environment:
+      NODE_ENV: production
+      COLLAB_PORT: 4000
+      LEARNHOUSE_API_URL: http://api:9000
+      LEARNHOUSE_AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:-change_me_jwt_secret_key_minimum_64_chars}
+      COLLAB_INTERNAL_KEY: ${COLLAB_INTERNAL_KEY:-change_me_collab_internal_key_minimum_32_chars}
+      LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD:-change_me_secure_redis_password}@redis:6379/0
+      COLLAB_TRUST_PROXY: "true"
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 20s
+    networks:
+      - csg-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.csg-collab.rule=Host(`${COLLAB_HOSTNAME:-collab.csginfotech.com}`)"
+      - "traefik.http.routers.csg-collab.entrypoints=websecure"
+      - "traefik.http.routers.csg-collab.tls.certresolver=letsencrypt"
+      - "traefik.http.services.csg-collab.loadbalancer.server.port=4000"
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+        reservations:
+          memory: 256M
+
+  # ==============================================================================
+  # 6. NEXT.JS 15 PRODUCTION STANDALONE FRONTEND
+  # ==============================================================================
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile.prod
+    image: csg-lms/web:latest
+    container_name: csg-lms-web
+    restart: always
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      NEXT_PUBLIC_APP_URL: ${LEARNHOUSE_URL:-https://app.csginfotech.com}
+      NEXT_PUBLIC_LEARNHOUSE_API_URL: ${LEARNHOUSE_API_URL:-https://api.csginfotech.com}
+      NEXT_PUBLIC_LEARNHOUSE_COLLAB_URL: ${LEARNHOUSE_COLLAB_URL:-wss://collab.csginfotech.com}
+      NEXT_PUBLIC_KEYCLOAK_URL: ${KEYCLOAK_URL:-https://auth.csginfotech.com}
+      NEXT_PUBLIC_KEYCLOAK_REALM: csg-lms
+      NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: csg-lms-web
+      NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 25s
+    networks:
+      - csg-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.csg-web.rule=Host(`${APP_HOSTNAME:-app.csginfotech.com}`)"
+      - "traefik.http.routers.csg-web.entrypoints=websecure"
+      - "traefik.http.routers.csg-web.tls.certresolver=letsencrypt"
+      - "traefik.http.services.csg-web.loadbalancer.server.port=3000"
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+        reservations:
+          memory: 512M
+
+# ==============================================================================
+# VOLUMES & ISOLATED NETWORK DEFINITIONS
+# ==============================================================================
+volumes:
+  postgres_data:
+    name: csg_lms_postgres_data
+  redis_data:
+    name: csg_lms_redis_data
+
+networks:
+  csg-network:
+    name: csg-lms-network
+    driver: bridge

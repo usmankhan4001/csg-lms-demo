@@ -1,0 +1,518 @@
+{
+  "id": "csg-lms",
+  "realm": "csg-lms",
+  "displayName": "CSG-LMS Enterprise Learning Management",
+  "displayNameHtml": "<div class=\"kc-logo-text\"><span>CSG</span>-LMS</div>",
+  "notBefore": 0,
+  "defaultSignatureAlgorithm": "RS256",
+  "revokeRefreshToken": false,
+  "refreshTokenMaxReuse": 0,
+  "accessTokenLifespan": 1800,
+  "accessTokenLifespanForImplicitFlow": 900,
+  "ssoSessionIdleTimeout": 86400,
+  "ssoSessionMaxLifespan": 604800,
+  "ssoSessionIdleTimeoutRememberMe": 604800,
+  "ssoSessionMaxLifespanRememberMe": 2592000,
+  "offlineSessionIdleTimeout": 2592000,
+  "offlineSessionMaxLifespanEnabled": false,
+  "offlineSessionMaxLifespan": 5184000,
+  "clientSessionIdleTimeout": 0,
+  "clientSessionMaxLifespan": 0,
+  "clientOfflineSessionIdleTimeout": 0,
+  "clientOfflineSessionMaxLifespan": 0,
+  "accessCodeLifespan": 60,
+  "accessCodeLifespanUserAction": 300,
+  "accessCodeLifespanLogin": 1800,
+  "actionTokenGeneratedByAdminLifespan": 43200,
+  "actionTokenGeneratedByUserLifespan": 300,
+  "oauth2DeviceCodeLifespan": 600,
+  "oauth2DevicePollingInterval": 5,
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": true,
+  "rememberMe": true,
+  "verifyEmail": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxTemporaryLockouts": 0,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 60,
+  "waitIncrementSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 43200,
+  "failureFactor": 5,
+  "roles": {
+    "realm": [
+      {
+        "id": "d001-superadmin-role",
+        "name": "SUPER_ADMIN",
+        "description": "CSG-LMS Global Super Administrator with multi-campus system control and management",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "csg-lms"
+      },
+      {
+        "id": "d002-principal-role",
+        "name": "CAMPUS_PRINCIPAL",
+        "description": "Campus Principal with campus-level administrative and reporting privileges",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "csg-lms"
+      },
+      {
+        "id": "d003-teacher-role",
+        "name": "TEACHER",
+        "description": "Faculty member and educator with course authoring, grading, and classroom tools",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "csg-lms"
+      },
+      {
+        "id": "d004-student-role",
+        "name": "STUDENT",
+        "description": "Enrolled student with course viewing, assignment submissions, and peer collaboration",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "csg-lms"
+      },
+      {
+        "id": "d005-parent-role",
+        "name": "PARENT",
+        "description": "Parent or guardian with student academic progress and attendance monitoring",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "csg-lms"
+      },
+      {
+        "id": "d006-accountant-role",
+        "name": "ACCOUNTANT",
+        "description": "Campus accountant for student fee collection, tuition invoicing, and finance ledger",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "csg-lms"
+      }
+    ],
+    "client": {
+      "csg-lms-web": [],
+      "csg-lms-api": []
+    }
+  },
+  "groups": [],
+  "defaultRoles": [
+    "STUDENT"
+  ],
+  "requiredCredentials": [
+    "password"
+  ],
+  "clients": [
+    {
+      "id": "c001-csg-lms-web",
+      "clientId": "csg-lms-web",
+      "name": "CSG-LMS Web Application",
+      "description": "Next.js 15 Single-Page / Standalone Frontend Client (PKCE Public OIDC)",
+      "rootUrl": "https://app.csginfotech.com",
+      "baseUrl": "/",
+      "surrogateAuthRequired": false,
+      "enabled": true,
+      "alwaysDisplayInConsole": false,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": [
+        "https://app.csginfotech.com/*",
+        "https://app.csginfotech.com/api/auth/callback/keycloak",
+        "http://localhost:3000/*",
+        "http://localhost:3000/api/auth/callback/keycloak"
+      ],
+      "webOrigins": [
+        "https://app.csginfotech.com",
+        "http://localhost:3000",
+        "+"
+      ],
+      "notBefore": 0,
+      "bearerOnly": false,
+      "consentRequired": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "publicClient": true,
+      "frontchannelLogout": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "oidc.ciba.grant.enabled": "false",
+        "client.secret.creation.time": "1710000000",
+        "backchannel.logout.session.required": "true",
+        "post.logout.redirect.uris": "https://app.csginfotech.com/*##http://localhost:3000/*",
+        "display.on.consent.screen": "false",
+        "oauth2.device.authorization.grant.enabled": "false",
+        "backchannel.logout.revoke.offline.tokens": "false",
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "id": "m001-org-id",
+          "name": "org_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "org_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "org_id",
+            "jsonType.label": "int"
+          }
+        },
+        {
+          "id": "m002-campus-id",
+          "name": "campus_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "campus_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "campus_id",
+            "jsonType.label": "int"
+          }
+        },
+        {
+          "id": "m003-realm-roles",
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "id": "m004-audience-api",
+          "name": "audience-to-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "csg-lms-api",
+            "id.token.claim": "true",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "id": "m005-username",
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "username",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "id": "m006-email",
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "email",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "email",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "id": "m007-full-name",
+          "name": "full name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-full-name-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "address",
+        "phone",
+        "offline_access",
+        "microprofile-jwt"
+      ]
+    },
+    {
+      "id": "c002-csg-lms-api",
+      "clientId": "csg-lms-api",
+      "name": "CSG-LMS FastAPI Backend",
+      "description": "Bearer-only Resource Server for FastAPI token validation and claims verification",
+      "rootUrl": "https://api.csginfotech.com",
+      "baseUrl": "/",
+      "surrogateAuthRequired": false,
+      "enabled": true,
+      "alwaysDisplayInConsole": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "csg_lms_api_client_secret_token_change_in_production",
+      "notBefore": 0,
+      "bearerOnly": true,
+      "consentRequired": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "publicClient": false,
+      "frontchannelLogout": false,
+      "protocol": "openid-connect",
+      "attributes": {},
+      "protocolMappers": [
+        {
+          "id": "m008-api-aud",
+          "name": "audience-csg-lms-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "csg-lms-api",
+            "id.token.claim": "true",
+            "access.token.claim": "true"
+          }
+        }
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "optionalClientScopes": []
+    }
+  ],
+  "users": [
+    {
+      "id": "u001-superadmin-user",
+      "createdTimestamp": 1710000000000,
+      "username": "superadmin@csginfotech.com",
+      "enabled": true,
+      "totp": false,
+      "emailVerified": true,
+      "firstName": "Super",
+      "lastName": "Administrator",
+      "email": "superadmin@csginfotech.com",
+      "attributes": {
+        "org_id": [
+          "1"
+        ],
+        "campus_id": [
+          "1"
+        ]
+      },
+      "credentials": [
+        {
+          "id": "cred-001",
+          "type": "password",
+          "userLabel": "Initial Password",
+          "createdTimestamp": 1710000000000,
+          "secretData": "{\"value\":\"s7yVpY3g8R1Q9W4P0Z5n6J7=\",\"salt\":\"8kQ2JpW1rL9vNm5T4yZ8Qw==\",\"additionalParameters\":{}}",
+          "credentialData": "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
+        }
+      ],
+      "realmRoles": [
+        "SUPER_ADMIN"
+      ],
+      "clientRoles": {}
+    },
+    {
+      "id": "u002-principal-user",
+      "createdTimestamp": 1710000000000,
+      "username": "principal@csginfotech.com",
+      "enabled": true,
+      "totp": false,
+      "emailVerified": true,
+      "firstName": "Campus",
+      "lastName": "Principal",
+      "email": "principal@csginfotech.com",
+      "attributes": {
+        "org_id": [
+          "1"
+        ],
+        "campus_id": [
+          "1"
+        ]
+      },
+      "credentials": [
+        {
+          "id": "cred-002",
+          "type": "password",
+          "userLabel": "Initial Password",
+          "createdTimestamp": 1710000000000,
+          "secretData": "{\"value\":\"s7yVpY3g8R1Q9W4P0Z5n6J7=\",\"salt\":\"8kQ2JpW1rL9vNm5T4yZ8Qw==\",\"additionalParameters\":{}}",
+          "credentialData": "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
+        }
+      ],
+      "realmRoles": [
+        "CAMPUS_PRINCIPAL"
+      ],
+      "clientRoles": {}
+    },
+    {
+      "id": "u003-teacher-user",
+      "createdTimestamp": 1710000000000,
+      "username": "teacher@csginfotech.com",
+      "enabled": true,
+      "totp": false,
+      "emailVerified": true,
+      "firstName": "Lead",
+      "lastName": "Teacher",
+      "email": "teacher@csginfotech.com",
+      "attributes": {
+        "org_id": [
+          "1"
+        ],
+        "campus_id": [
+          "1"
+        ]
+      },
+      "credentials": [
+        {
+          "id": "cred-003",
+          "type": "password",
+          "userLabel": "Initial Password",
+          "createdTimestamp": 1710000000000,
+          "secretData": "{\"value\":\"s7yVpY3g8R1Q9W4P0Z5n6J7=\",\"salt\":\"8kQ2JpW1rL9vNm5T4yZ8Qw==\",\"additionalParameters\":{}}",
+          "credentialData": "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
+        }
+      ],
+      "realmRoles": [
+        "TEACHER"
+      ],
+      "clientRoles": {}
+    },
+    {
+      "id": "u004-student-user",
+      "createdTimestamp": 1710000000000,
+      "username": "student@csginfotech.com",
+      "enabled": true,
+      "totp": false,
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Student",
+      "email": "student@csginfotech.com",
+      "attributes": {
+        "org_id": [
+          "1"
+        ],
+        "campus_id": [
+          "1"
+        ]
+      },
+      "credentials": [
+        {
+          "id": "cred-004",
+          "type": "password",
+          "userLabel": "Initial Password",
+          "createdTimestamp": 1710000000000,
+          "secretData": "{\"value\":\"s7yVpY3g8R1Q9W4P0Z5n6J7=\",\"salt\":\"8kQ2JpW1rL9vNm5T4yZ8Qw==\",\"additionalParameters\":{}}",
+          "credentialData": "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
+        }
+      ],
+      "realmRoles": [
+        "STUDENT"
+      ],
+      "clientRoles": {}
+    },
+    {
+      "id": "u005-parent-user",
+      "createdTimestamp": 1710000000000,
+      "username": "parent@csginfotech.com",
+      "enabled": true,
+      "totp": false,
+      "emailVerified": true,
+      "firstName": "Robert",
+      "lastName": "Parent",
+      "email": "parent@csginfotech.com",
+      "attributes": {
+        "org_id": [
+          "1"
+        ],
+        "campus_id": [
+          "1"
+        ]
+      },
+      "credentials": [
+        {
+          "id": "cred-005",
+          "type": "password",
+          "userLabel": "Initial Password",
+          "createdTimestamp": 1710000000000,
+          "secretData": "{\"value\":\"s7yVpY3g8R1Q9W4P0Z5n6J7=\",\"salt\":\"8kQ2JpW1rL9vNm5T4yZ8Qw==\",\"additionalParameters\":{}}",
+          "credentialData": "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
+        }
+      ],
+      "realmRoles": [
+        "PARENT"
+      ],
+      "clientRoles": {}
+    },
+    {
+      "id": "u006-accountant-user",
+      "createdTimestamp": 1710000000000,
+      "username": "accountant@csginfotech.com",
+      "enabled": true,
+      "totp": false,
+      "emailVerified": true,
+      "firstName": "Finance",
+      "lastName": "Accountant",
+      "email": "accountant@csginfotech.com",
+      "attributes": {
+        "org_id": [
+          "1"
+        ],
+        "campus_id": [
+          "1"
+        ]
+      },
+      "credentials": [
+        {
+          "id": "cred-006",
+          "type": "password",
+          "userLabel": "Initial Password",
+          "createdTimestamp": 1710000000000,
+          "secretData": "{\"value\":\"s7yVpY3g8R1Q9W4P0Z5n6J7=\",\"salt\":\"8kQ2JpW1rL9vNm5T4yZ8Qw==\",\"additionalParameters\":{}}",
+          "credentialData": "{\"hashIterations\":27500,\"algorithm\":\"pbkdf2-sha256\",\"additionalParameters\":{}}"
+        }
+      ],
+      "realmRoles": [
+        "ACCOUNTANT"
+      ],
+      "clientRoles": {}
+    }
+  ],
+  "keycloakVersion": "26.1.0"
+}

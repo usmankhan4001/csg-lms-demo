@@ -1,0 +1,51 @@
+# syntax=docker/dockerfile:1.4
+# ==============================================================================
+# CSG-LMS Real-time Collaboration Service (Hocuspocus Yjs CRDT)
+# Multi-stage production build with Node 22 runtime and non-root execution
+# ==============================================================================
+
+# ── Stage 1: TypeScript Builder ───────────────────────────────────────────────
+FROM oven/bun:1.4.0-alpine AS builder
+
+WORKDIR /app
+
+COPY package.json bun.lock* ./
+RUN bun install --frozen-lockfile
+
+COPY tsconfig.json ./
+COPY src/ ./src/
+
+RUN bun run build
+
+# ── Stage 2: Node Production Runner ───────────────────────────────────────────
+# Note: @hocuspocus/server uses crossws Node adapter which requires standard Node.js runtime.
+FROM node:22-alpine AS runner
+
+LABEL maintainer="CSG Infotech <devops@csginfotech.com>" \
+      application="CSG-LMS Collab Service" \
+      version="1.3.6"
+
+RUN apk upgrade --no-cache && apk add --no-cache wget curl
+
+WORKDIR /app
+
+# Security: Create non-root system user & group (UID: 1001, GID: 1001)
+RUN addgroup -g 1001 -S collab && adduser -S collab -u 1001 -G collab
+
+COPY package.json bun.lock* ./
+RUN npm install --omit=dev --ignore-scripts && npm cache clean --force
+
+COPY --from=builder --chown=collab:collab /app/dist ./dist
+
+ENV NODE_ENV=production \
+    COLLAB_PORT=4000
+
+USER collab
+
+EXPOSE 4000
+
+# Health check probe against /health
+HEALTHCHECK --interval=20s --timeout=5s --start-period=15s --retries=3 \
+    CMD node -e "fetch('http://localhost:4000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+
+CMD ["node", "dist/index.js"]

@@ -1,0 +1,61 @@
+"""
+Database Models Package Init
+============================
+Exports core LearnHouse models and CSG-LMS multi-campus academic hierarchy models.
+"""
+
+from src.db.sms_campus import (
+    Campus,
+    CampusBase,
+    CampusCreate,
+    CampusUpdate,
+    CampusRead,
+    AcademicYear,
+    AcademicYearBase,
+    AcademicYearCreate,
+    AcademicYearUpdate,
+    AcademicYearRead,
+    AcademicTerm,
+    AcademicTermBase,
+    AcademicTermCreate,
+    AcademicTermUpdate,
+    AcademicTermRead,
+    ClassSection,
+    ClassSectionBase,
+    ClassSectionCreate,
+    ClassSectionUpdate,
+    ClassSectionRead,
+    StudentEnrollment,
+    StudentEnrollmentBase,
+    StudentEnrollmentCreate,
+    StudentEnrollmentUpdate,
+    StudentEnrollmentRead,
+)
+
+__all__ = [
+    "Campus",
+    "CampusBase",
+    "CampusCreate",
+    "CampusUpdate",
+    "CampusRead",
+    "AcademicYear",
+    "AcademicYearBase",
+    "AcademicYearCreate",
+    "AcademicYearUpdate",
+    "AcademicYearRead",
+    "AcademicTerm",
+    "AcademicTermBase",
+    "AcademicTermCreate",
+    "AcademicTermUpdate",
+    "AcademicTermRead",
+    "ClassSection",
+    "ClassSectionBase",
+    "ClassSectionCreate",
+    "ClassSectionUpdate",
+    "ClassSectionRead",
+    "StudentEnrollment",
+    "StudentEnrollmentBase",
+    "StudentEnrollmentCreate",
+    "StudentEnrollmentUpdate",
+    "StudentEnrollmentRead",
+]
