@@ -45,7 +45,7 @@ export function RollCallScreen({ route }: Props) {
   const { subjectId: teacherId } = useSessionSubject();
 
   const roster = useApiResource(
-    () => listSectionEnrollments(sectionId, 'ACTIVE'),
+    () => listSectionEnrollments(sectionId, 'active'),
     [sectionId],
     { cacheKey: `section-roster-${sectionId}` }
   );

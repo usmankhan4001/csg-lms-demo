@@ -19,7 +19,7 @@ export function GradeEntryScreen({ route }: Props) {
   const sectionId = plan.section_id ?? mySectionId;
 
   const roster = useApiResource(
-    () => listSectionEnrollments(sectionId as number, 'ACTIVE'),
+    () => listSectionEnrollments(sectionId as number, 'active'),
     [sectionId],
     { skip: !sectionId, cacheKey: sectionId ? `section-roster-${sectionId}` : undefined }
   );
