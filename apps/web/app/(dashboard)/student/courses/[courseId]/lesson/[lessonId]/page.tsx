@@ -650,12 +650,12 @@ print(f"Net Torque generated: {net_tau} N·m")
                     </button>
                   </h3>
                   <p className="mt-2 text-neutral-600 dark:text-neutral-300">
-                    Torque is the rotational counterpart of linear force. It measures the effectiveness of a force in causing or modifying rotational motion around a pivot axis. Mathematically, the vector torque $\vec{\tau}$ produced by a force $\vec{F}$ acting at position vector $\vec{r}$ relative to the pivot is:
+                    {'Torque is the rotational counterpart of linear force. It measures the effectiveness of a force in causing or modifying rotational motion around a pivot axis. Mathematically, the vector torque $\\vec{\\tau}$ produced by a force $\\vec{F}$ acting at position vector $\\vec{r}$ relative to the pivot is:'}
                   </p>
 
                   {/* LaTeX / Equation Card */}
                   <div className="my-4 p-4 rounded-xl bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-center font-mono text-base font-bold text-blue-600 dark:text-blue-400">
-                    $$\vec{\tau} = \vec{r} \times \vec{F} = |\vec{r}| |\vec{F}| \sin(\theta) \hat{n}$$
+                    {'$$\\vec{\\tau} = \\vec{r} \\times \\vec{F} = |\\vec{r}| |\\vec{F}| \\sin(\\theta) \\hat{n}$$'}
                   </div>
                 </div>
 
@@ -684,11 +684,11 @@ print(f"Net Torque generated: {net_tau} N·m")
                     </button>
                   </h3>
                   <p className="mt-2 text-neutral-600 dark:text-neutral-300">
-                    Just as $\Sigma \vec{F} = m \vec{a}$ governs translational dynamics, the rotational counterpart relates net external torque $\Sigma \vec{\tau}$ to the moment of inertia $I$ and angular acceleration $\vec{\alpha}$:
+                    {'Just as $\\Sigma \\vec{F} = m \\vec{a}$ governs translational dynamics, the rotational counterpart relates net external torque $\\Sigma \\vec{\\tau}$ to the moment of inertia $I$ and angular acceleration $\\vec{\\alpha}$:'}
                   </p>
 
                   <div className="my-4 p-4 rounded-xl bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-center font-mono text-base font-bold text-emerald-600 dark:text-emerald-400">
-                    $$\Sigma \vec{\tau}_{\text{ext}} = I \vec{\alpha} = \frac{d\vec{L}}{dt}$$
+                    {'$$\\Sigma \\vec{\\tau}_{\\text{ext}} = I \\vec{\\alpha} = \\frac{d\\vec{L}}{dt}$$'}
                   </div>
                 </div>
               </div>

@@ -168,7 +168,7 @@ export default function RemoteCursors({ provider, canvasRef, pan, zoom }: Remote
       const states = provider.awareness!.getStates()
       const now = Date.now()
 
-      states.forEach((state, clientId) => {
+      states.forEach((state: any, clientId: number) => {
         if (clientId === provider.awareness!.clientID) return
         if (state.user && state.cursor) {
           cursorsRef.current.set(clientId, {

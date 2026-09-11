@@ -1,0 +1,154 @@
+# Local-only Docker stack for manual end-to-end testing of the CSG-LMS
+# experiment track: Postgres + Redis + API + Web, deliberately WITHOUT
+# Keycloak.
+#
+# Why no Keycloak: docker-compose.prod.yml defines a real Keycloak service,
+# but it has never been started or tested end-to-end in this project (the
+# realm-export JSON has never been verified to actually import cleanly, and
+# the API's JWT validation has never been checked against a live Keycloak
+# instance). That is real, separate, riskier work from validating the
+# application itself. This file instead keeps the already-verified dev-only
+# HMAC token path active (see apps/api/src/core/keycloak_auth.py's
+# is_hmac_dev_verification_active() and apps/api/scripts/mint_dev_keycloak_token.py):
+# it stays active as long as KEYCLOAK_URL/KEYCLOAK_SERVER_URL resolve to
+# localhost/127.0.0.1 and neither KEYCLOAK_JWKS_URL nor KEYCLOAK_PUBLIC_KEY
+# is set -- both true below.
+#
+# This file is separate from docker-compose.prod.yml on purpose: that file
+# is the real deployment artifact (Traefik labels, production hostnames,
+# Keycloak+realm import) and isn't meant to be casually altered for local
+# testing.
+#
+# Usage:
+#   docker compose -f docker-compose.local.yml up --build
+#   docker compose -f docker-compose.local.yml exec api \
+#     python scripts/mint_dev_keycloak_token.py --role TEACHER
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: csg-lms-local-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: csg_lms_local
+      POSTGRES_USER: csg_lms_local
+      POSTGRES_PASSWORD: csg_lms_local_dev_password
+    volumes:
+      - csg_local_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "55433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U csg_lms_local -d csg_lms_local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - csg-local-network
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: csg-lms-local-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - csg_local_redis_data:/data
+    ports:
+      - "6390:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - csg-local-network
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile.prod
+    image: csg-lms/api:local
+    container_name: csg-lms-local-api
+    restart: unless-stopped
+    environment:
+      LEARNHOUSE_ENV: dev
+      LEARNHOUSE_DEVELOPMENT_MODE: "true"
+      LEARNHOUSE_PORT: 9000
+      WORKERS: 1
+      LEARNHOUSE_SQL_CONNECTION_STRING: postgresql+asyncpg://csg_lms_local:csg_lms_local_dev_password@postgres:5432/csg_lms_local
+      LEARNHOUSE_REDIS_URL: redis://redis:6379/0
+      LEARNHOUSE_REDIS_CONNECTION_STRING: redis://redis:6379/0
+      LEARNHOUSE_SITE_NAME: "CSG LMS Enterprise Platform (local Docker)"
+      LEARNHOUSE_INITIAL_ADMIN_EMAIL: admin@csg.dev
+      LEARNHOUSE_INITIAL_ADMIN_PASSWORD: AdminPassword123!
+      LEARNHOUSE_AUTO_INSTALL: "true"
+      LEARNHOUSE_AI_ENABLED: "false"
+      LEARNHOUSE_SAAS: "false"
+      LEARNHOUSE_USE_DEFAULT_ORG: "false"
+      # Deliberately localhost + no JWKS/public-key override, so
+      # is_hmac_dev_verification_active() stays true inside the container.
+      KEYCLOAK_URL: http://localhost:8080
+      KEYCLOAK_SERVER_URL: http://localhost:8080
+      KEYCLOAK_REALM: csg-lms
+      KEYCLOAK_CLIENT_ID: csg-lms-api
+      LEARNHOUSE_AUTH_JWT_SECRET_KEY: csg_lms_super_secure_dev_jwt_secret_key_32chars_minimum_2026
+      AUTH_JWT_SECRET_KEY: csg_lms_super_secure_dev_jwt_secret_key_32chars_minimum_2026
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:9000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/api/v1/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - csg-local-network
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile.prod
+    image: csg-lms/web:local
+    container_name: csg-lms-local-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      # This is the variable name actually read by lib/api/api-client.ts,
+      # lib/api/org-features.ts, lib/auth/server.ts and the auth route
+      # handlers -- NOT NEXT_PUBLIC_LEARNHOUSE_API_URL (that one only feeds
+      # config.ts's deriveAPIUrl(), used by Learnhouse's own pre-existing
+      # native API calls, not the SMS modules). Since it's read at container
+      # runtime via server-wrapper.js's runtime-config injection, this value
+      # must be reachable from the *browser*, not just from inside the web
+      # container -- hence localhost:8000 (the host-mapped API port), not
+      # the Docker-internal service name "api".
+      NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL: http://localhost:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - csg-local-network
+
+networks:
+  csg-local-network:
+    driver: bridge
+
+volumes:
+  csg_local_postgres_data:
+  csg_local_redis_data:

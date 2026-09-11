@@ -24,7 +24,7 @@ export default function PresenceAvatars({ provider }: PresenceAvatarsProps) {
       if (!states) return
 
       const connected: AwarenessUser[] = []
-      states.forEach((state, clientId) => {
+      states.forEach((state: any, clientId: number) => {
         if (state.user) {
           connected.push({
             clientId,

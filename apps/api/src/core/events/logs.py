@@ -4,8 +4,17 @@ import sys
 
 
 async def create_logs_dir():
-    if not os.path.exists("logs"):
-        os.mkdir("logs")
+    """Best-effort only: nothing in this codebase reads or writes into
+    ``logs/`` (see init_logging()'s docstring -- logging is stdout-only).
+    A container running as a non-root user with a read-only-ish ``/app``
+    (see apps/api/Dockerfile.prod) can't create this directory at all;
+    that must not crash app startup for a directory nothing depends on.
+    """
+    try:
+        if not os.path.exists("logs"):
+            os.mkdir("logs")
+    except OSError:
+        pass
 
 
 def _log_level() -> int:
