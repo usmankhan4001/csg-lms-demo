@@ -305,14 +305,14 @@ export const ROLE_NAV_ITEMS: Record<UserRole, NavItem[]> = {
     {
       id: 'admin-console',
       title: 'Admin Console',
-      href: '/admin',
+      href: '/campus-admin',
       icon: ShieldCheck,
       description: 'Campuses, admissions, finance & health',
     },
     {
       id: 'admin-admissions-crm',
       title: 'Admissions CRM & SDR',
-      href: '/admin/admissions/crm',
+      href: '/admissions/crm',
       icon: Users,
       badge: '540 Leads',
       badgeColor: 'primary',
@@ -321,14 +321,14 @@ export const ROLE_NAV_ITEMS: Record<UserRole, NavItem[]> = {
     {
       id: 'admin-campuses',
       title: 'Campus Manager',
-      href: '/admin#campuses',
+      href: '/campus-admin#campuses',
       icon: Building2,
       badge: '4 Campuses',
     },
     {
       id: 'admin-finance',
       title: 'Fee Collection & KPIs',
-      href: '/admin#finance',
+      href: '/campus-admin#finance',
       icon: CreditCard,
       badge: '88.4%',
       badgeColor: 'success',
@@ -336,7 +336,7 @@ export const ROLE_NAV_ITEMS: Record<UserRole, NavItem[]> = {
     {
       id: 'admin-health',
       title: 'System Health & Logs',
-      href: '/admin#health',
+      href: '/campus-admin#health',
       icon: Activity,
       badge: '99.98%',
       badgeColor: 'success',
@@ -344,13 +344,13 @@ export const ROLE_NAV_ITEMS: Record<UserRole, NavItem[]> = {
     {
       id: 'admin-faculty',
       title: 'Staff & HR Directory',
-      href: '/admin#faculty',
+      href: '/campus-admin#faculty',
       icon: FolderLock,
     },
     {
       id: 'admin-settings',
       title: 'System Settings',
-      href: '/admin#settings',
+      href: '/campus-admin#settings',
       icon: Settings,
     },
   ],

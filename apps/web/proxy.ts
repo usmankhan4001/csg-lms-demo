@@ -420,6 +420,27 @@ export default async function proxy(req: NextRequest) {
   }
 
   // -------------------------------------------------------------------------
+  // 5b. CSG LMS Unified Role Portals & Admissions CRM — direct route pass-through
+  // -------------------------------------------------------------------------
+  if (
+    pathname === '/student' || pathname.startsWith('/student/') ||
+    pathname === '/teacher' || pathname.startsWith('/teacher/') ||
+    pathname === '/parent' || pathname.startsWith('/parent/') ||
+    pathname === '/campus-admin' || pathname.startsWith('/campus-admin/') ||
+    pathname === '/admissions' || pathname.startsWith('/admissions/') ||
+    pathname === '/live' || pathname.startsWith('/live/')
+  ) {
+    const resolved = await resolveTenant(req, instance)
+    const requestHeaders = tenantRequestHeaders(req, resolved, instance)
+    const response = NextResponse.rewrite(new URL(`${pathname}${search}`, req.url), {
+      request: { headers: requestHeaders },
+    })
+    setOrgCookies(response, resolved, instance)
+    setInstanceCookies(response, instance)
+    return response
+  }
+
+  // -------------------------------------------------------------------------
   // 6. Stripe Connect OAuth callback — preserve search params + add orgslug
   // -------------------------------------------------------------------------
   if (req.nextUrl.pathname.startsWith('/payments/stripe/connect/oauth')) {

@@ -83,7 +83,7 @@ const ROLE_CONFIG: Record<
     badgeBg: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
     badgeText: 'ADMIN',
     icon: ShieldCheck,
-    path: '/admin',
+    path: '/campus-admin',
   },
 }
 

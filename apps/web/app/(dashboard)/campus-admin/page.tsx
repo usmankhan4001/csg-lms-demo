@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
+import Link from 'next/link'
 import {
   Building2,
   Users,
@@ -141,7 +142,7 @@ export default function AdminConsolePage() {
         </div>
 
         <Link
-          href="/admin/admissions/crm"
+          href="/admissions/crm"
           className="group p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-2xs hover:border-purple-400 dark:hover:border-purple-500 transition-all block"
         >
           <div className="flex items-center justify-between mb-2">

@@ -168,18 +168,7 @@
   "overrides": {
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.5",
-    "lodash": ">=4.17.23",
-    "lodash-es": ">=4.17.23",
-    "preact": ">=10.27.3",
-    "js-yaml": ">=4.1.1",
-    "jspdf": ">=4.2.1",
     "prosemirror-view": "1.42.3",
-    "prosemirror-model": "1.25.11",
-    "dompurify": ">=3.2.4",
-    "postcss": ">=8.4.31",
-    "ws": ">=8.21.1",
-    "fast-uri": "^4.1.4",
-    "brace-expansion@5": ">=5.0.7",
-    "@xmldom/xmldom": "^0.9.12"
+    "prosemirror-model": "1.25.11"
   }
 }

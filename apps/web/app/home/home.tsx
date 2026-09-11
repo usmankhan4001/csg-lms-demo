@@ -231,7 +231,7 @@ function HomeClient() {
                   <Link href="/parent" className="flex items-center gap-2 p-2.5 bg-white rounded-xl text-xs font-semibold text-gray-800 hover:text-indigo-600 border border-gray-100 shadow-xs hover:border-indigo-200 transition-all">
                     <span>👨‍👩‍👧</span> Parent Portal
                   </Link>
-                  <Link href="/admin/admissions/crm" className="flex items-center gap-2 p-2.5 bg-white rounded-xl text-xs font-semibold text-gray-800 hover:text-indigo-600 border border-gray-100 shadow-xs hover:border-indigo-200 transition-all">
+                  <Link href="/admissions/crm" className="flex items-center gap-2 p-2.5 bg-white rounded-xl text-xs font-semibold text-gray-800 hover:text-indigo-600 border border-gray-100 shadow-xs hover:border-indigo-200 transition-all">
                     <span>🏛️</span> Admissions CRM
                   </Link>
                 </div>
