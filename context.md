@@ -1,5 +1,7 @@
 # CSG LMS — Verified Platform Context & Honest Status Report
 
+> **⚠️ Historical document.** This was accurate as of 2026-09-11. Significant work has landed since (auth fixed on all SMS routers, RevOps/Tutor re-scoped, Teacher/Counseling modules and a mobile scaffold added, a full Docker deployment debugged end-to-end). **For the current, up-to-date status, see [`PROJECT_DOCS/STATUS.md`](./PROJECT_DOCS/STATUS.md).** This file is kept because §4 below's module-by-module fabrication tally (what the *original* pre-this-project spec claimed vs. what existed) is still accurate and worth keeping as a record.
+
 > **Document Version:** 4.3.0-venture (audit revision)
 > **Classification:** Confidential / Proprietary Venture Documentation
 > **Base Engine:** Learnhouse (AGPLv3 fork) — FastAPI / Next.js / PostgreSQL / Redis, with a partial set of custom "CSG-LMS" modules added on top.

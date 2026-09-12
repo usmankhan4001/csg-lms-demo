@@ -1,173 +1,42 @@
-# 🎓 CSG LMS — Enterprise Academic, Learning & RevOps Platform
+# CSG LMS — Experimental Fork
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/usmankhan4001/csg-lms-demo/main/docs/assets/csg-lms-banner.png" alt="CSG LMS Banner" width="100%" onerror="this.style.display='none'"/>
-</p>
+An experiment in how far a fork of [Learnhouse](https://github.com/learnhouse/learnhouse) (AGPLv3 — Next.js + FastAPI + Postgres) can be extended toward a functioning School Management System + AI RevOps + AI Tutor platform, for internal, non-commercial evaluation.
 
-<h3 align="center">The Next-Generation Unified AI-Powered Academic SMS, LMS, Financial ERP & Admissions RevOps System</h3>
+This is **not** the official CSG-LMS product (that's a separate NestJS/Drizzle system, specified in the sibling `CSG-LMS.wiki` repository) — it's a parallel experiment to see what's achievable on top of an existing open-source LMS instead of building everything from zero.
 
-<p align="center">
-  <a href="#-architecture--pillars"><img src="https://img.shields.io/badge/Architecture-Unified%20Composable%20Monolith-blueviolet?style=for-the-badge" alt="Architecture" /></a>
-  <a href="#-tech-stack"><img src="https://img.shields.io/badge/Stack-Next.js%2015%20%7C%20FastAPI%20%7C%20Postgres%2016-blue?style=for-the-badge" alt="Stack" /></a>
-  <a href="#-50-core-modules"><img src="https://img.shields.io/badge/Modules-50%2F50%20Delivered-success?style=for-the-badge" alt="Modules" /></a>
-  <a href="#-security--compliance"><img src="https://img.shields.io/badge/Compliance-FERPA%20%7C%20COPPA%20%7C%20ISO%2027001-green?style=for-the-badge" alt="Compliance" /></a>
-</p>
+**Read [`PROJECT_DOCS/README.md`](./PROJECT_DOCS/README.md) before assuming anything about this codebase.** It's the honest, current account of what's real, what's stubbed, and what's never been started — an earlier AI-assisted session on this project reported fabricated "100% complete" status for work that didn't exist, and the docs there exist specifically to replace that with something verified.
 
----
+## Quick start
 
-## 🌟 Overview
-
-**CSG LMS** is an enterprise-grade, multi-tenant educational ecosystem engineered specifically for modern K-12 school networks, universities, and polytechnics. It completely bridges the historical divide between **Academic Operations (SMS)**, **Interactive Learning (LMS)**, **Double-Entry Financial Accounting (ERP)**, and **AI-Driven Admissions Revenue Operations (RevOps CRM)** into a single unified monorepo.
-
-Zero fragmented iframes. Zero disjointed databases. Zero duplicate student records.
-
----
-
-## 🏛️ The 6 Core Strategic Pillars
-
-```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                               CSG LMS UNIFIED PLATFORM                                 │
-├────────────────────────────────────────────────────────────────────────────────────────┤
-│ 1. Core LMS & Authoring      │ 2. Academic SMS & Operations │ 3. Financials & Payroll  │
-│ • TipTap Notion-like Editor  │ • Multi-Campus Hierarchy     │ • Chart of Accounts (GL) │
-│ • Yjs Real-Time CRDT Collab  │ • 1-Click Roll-Call & Leaves │ • 3-Copy Bank Challan    │
-│ • In-Browser Code Sandboxes  │ • Clash-Solver Timetable     │ • Online 1Bill / Stripe  │
-│ • LiveKit WebRTC Classes     │ • Weighted GPA Gradebook     │ • Salary Slip Engine     │
-├──────────────────────────────┼──────────────────────────────┼──────────────────────────┤
-│ 4. AI RevOps Admissions CRM  │ 5. Socratic AI & Safety      │ 6. Role-Based Portals    │
-│ • 7-Stage Admissions Kanban  │ • 3-Tier Socratic Guidance   │ • Student Dashboard      │
-│ • Predictive Lead Scoring    │ • Crisis & Safety Guardrail  │ • Teacher Class Hub      │
-│ • 24/7 SDR WhatsApp Agent    │ • Concept Knowledge Graph    │ • Parent Fee & Track Portal│
-│ • Dynamic Scholarship Offers │ • Student 360 Mastery Radar  │ • Super-Admin / Ops Suite│
-└────────────────────────────────────────────────────────────────────────────────────────┘
+```bash
+docker compose -f docker-compose.local.yml up --build -d
 ```
 
----
+Then see [`PROJECT_DOCS/LOCAL_SETUP.md`](./PROJECT_DOCS/LOCAL_SETUP.md) for login credentials and how to reach the SMS dashboards (there's a real, non-obvious extra step — the doc explains why).
 
-## 📋 Comprehensive 50-Module Matrix
+## What's actually here
 
-### 🎓 Pillar 1: Unified LMS Core & Authoring (M01 – M04, M13 – M20)
-- **M01: Notion-style Interactive Course Authoring Engine** (TipTap, Markdown, Rich Embeds)
-- **M02: Virtual Classroom & WebRTC Live Sessions** (LiveKit low-latency HD streaming)
-- **M03: Real-Time Interactive Code Sandboxes & Auto-Grader** (30+ languages)
-- **M04: Real-Time Collaborative Whiteboards** (Yjs CRDT live multi-user sync)
-- **M13: Course Bundling & Curricular Pathways**
-- **M14: Interactive Assessment & Randomized Quiz Engine**
-- **M15: Plagiarism Detection & Code Similarity Checker**
-- **M16: Automated Verifiable Certificate Generator** (Cryptographic QR verification)
-- **M17: Student Peer-Review & Group Collaboration Workspaces**
-- **M18: Offline Content Sync & Progressive Web App (PWA)**
-- **M19: SCORM 1.2 / 2004 & xAPI TinCan Engine**
-- **M20: Gamification, Badges & Leaderboard Engine**
+- **Base platform**: real, working Learnhouse — course authoring, org/auth model, real-time collaboration. Upstream code, not built by this project.
+- **Custom layer**: School Management System modules (attendance, timetable, gradebook, fees, financials, HR, payroll, library, multi-campus), an AI-driven RevOps admissions funnel, an AI Socratic tutor (student + teacher + counseling), and role-based portal UIs (Student/Teacher/Parent/Campus Admin). Backend logic and auth are real and unit-tested; see [`PROJECT_DOCS/STATUS.md`](./PROJECT_DOCS/STATUS.md) for exactly what's wired to real data vs. still empty for lack of seed data.
+- **Not built**: video classrooms (no LiveKit dependency exists anywhere despite earlier claims), gamification, SCORM as a CSG feature, automated homework grading, lecture translation, and several other modules that were listed in an earlier fabricated spec but have zero code. Full list in [`PROJECT_DOCS/STATUS.md`](./PROJECT_DOCS/STATUS.md).
 
-### 🏫 Pillar 2: Academic SMS & Multi-Campus Hierarchy (M05 – M07, M12, M29 – M33)
-- **M05: Configurable Weighted GPA Gradebook & Report Card Generator**
-- **M06: 1-Click Attendance Roll-Call & Biometric/RFID Sync**
-- **M07: Algorithmic Timetable Clash-Solver Engine**
-- **M12: Digital Library, E-Books & Barcode Circulation Desk**
-- **M29: Multi-Campus & Multi-Entity Federation**
-- **M30: Student Enrollment, Roll Numbers & Section Assignment**
-- **M31: Faculty Workload Allocation & Subject Mapping**
-- **M32: Disciplinary Incident Tracking & Merit/Demerit System**
-- **M33: Alumni Tracking & Career Placement Network**
-
-### 💳 Pillar 3: Financial Management, ERP & HR/Payroll (M08 – M11, M34 – M38)
-- **M08: Student Fee Billing, Fee Structures & 3-Copy Bank Challans**
-- **M09: Double-Entry Financial Accounting & General Ledger (GL)**
-- **M10: Faculty & Staff Directory, Leaves & HR Management**
-- **M11: Automated Multi-Campus Payroll Engine & Salary Slips**
-- **M34: Campus Inventory, Asset Lifecycle & Procurement Management**
-- **M35: School Transport, Fleet GPS & Route Optimization**
-- **M36: Hostel & Dormitory Room Allocation System**
-- **M37: Cafeteria POS, Meal Plans & Smart Card Wallets**
-- **M38: Event Management, Sports & Facility Booking**
-
-### 📈 Pillar 4: AI RevOps & Admissions CRM (M21 – M28)
-- **M21: Admissions CRM & Multi-Campus Intake Pipeline** (7-Stage Kanban)
-- **M22: Predictive AI Lead Scoring & Intent Classifier** (Hot / Warm / Cold)
-- **M23: Multichannel Ingestion Engine** (WhatsApp, Meta Ads, Google Ads, Web Forms)
-- **M24: Conversational Admissions SDR AI Agent** (24/7 WhatsApp & Web Inquiries)
-- **M25: Automated Multi-Stage Marketing Drip Engine**
-- **M26: Campus Tour & Assessment Booking Scheduler**
-- **M27: Dynamic Tuition Quotation & Scholarship Calculator**
-- **M28: Digital Document Verification & KYC Vault**
-
-### 🤖 Pillar 5: Pedagogy AI, Safety & Adaptive Learning (M39 – M50)
-- **M39: Socratic AI 1-on-1 Academic Tutor** (Strict non-giving-away pedagogy)
-- **M40: Automated Lesson Plan & Rubric Generator for Teachers**
-- **M41: Multilingual Real-Time Lecture Translation & Subtitling**
-- **M42: Student Emotional Wellbeing, Sentiment & Crisis Guardrail**
-- **M43: Personalized Adaptive Learning Path Generator**
-- **M44: Concept Dependency Knowledge Graph**
-- **M45: Student 360 Holistic Mastery & Behavior Radar**
-- **M46: Automated Homework Grading & Formative Feedback**
-- **M47: NeMo-Style AI Safety & Content Interceptor**
-- **M48: Parent Weekly AI Narrative Digest & Insights**
-- **M49: At-Risk Student Early-Warning Dropout Predictor**
-- **M50: Live Class AI Q&A Assistant & Real-Time Note Summarizer**
-
----
-
-## 🛠️ Unified Tech Stack
+## Repository layout
 
 ```
-Frontend (Next.js 15)  ───►  FastAPI Backend (Python 3.12)  ───►  PostgreSQL 16 (pgvector)
-Tailwind CSS + Radix UI       SQLAlchemy 2.0 + Pydantic v2         Redis 7.2 Cache & Queues
-TipTap + Yjs CRDT Collab     Keycloak 26 OIDC & RLS               LiveKit WebRTC Media Server
-```
-
-| Layer | Technologies |
-|---|---|
-| **Web Frontend** | Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS v4, Radix UI, Lucide Icons, TipTap v3 |
-| **Backend Core** | FastAPI 0.115+, Python 3.12, SQLAlchemy 2.0 Async, Pydantic v2, Uvicorn |
-| **Database & Cache** | PostgreSQL 16 with `pgvector`, Redis 7.2 (Sessions, Queues, PubSub) |
-| **Authentication** | Keycloak 24/26 OIDC with Multi-Tenant Row-Level Security (RLS) & PKCE |
-| **Real-time Engine** | Hocuspocus CRDT Server (Yjs), LiveKit WebRTC (SFU Video/Audio) |
-| **AI & Guardrails** | Google Gemini 2.5 / OpenAI GPT-4o, Pydantic-AI, pgvector Semantic RAG, NeMo Safety Filters |
-
----
-
-## 📁 Repository Structure
-
-```
-csg-lms/
+learnhouse-dev/
 ├── apps/
-│   ├── web/                     # Next.js 15 Unified Portals (Student, Teacher, Parent, Admin)
-│   │   ├── app/(dashboard)/     # Role-based dashboard interfaces
-│   │   │   ├── student/         # Student Hub & Socratic AI Drawer
-│   │   │   ├── teacher/         # Teacher Gradebook & 1-Click Roll-Call Hub
-│   │   │   ├── parent/          # Parent Fee Vouchers & Child Progress Tracker
-│   │   │   └── admin/           # Super-Admin Console & Admissions CRM Kanban
-│   │   ├── app/live/            # LiveKit WebRTC Virtual Classrooms
-│   │   └── components/          # CSG Design System & Navigation
-│   ├── api/                     # FastAPI Backend Monolith
-│   │   ├── src/db/              # SQLAlchemy 2.0 Database Models (SMS, LMS, RevOps, AI)
-│   │   ├── src/schemas/         # Pydantic v2 Validation Schemas
-│   │   ├── src/services/        # Business Logic, Clash Solvers & Financial Ledger
-│   │   ├── src/services/ai/     # Socratic Tutor, Lead Scoring, Crisis Classifier
-│   │   ├── src/routers/         # REST API Endpoints (All 50 Modules)
-│   │   └── src/core/            # Keycloak OIDC Authentication & Security
-│   └── collab/                  # Hocuspocus Yjs Real-Time Collaboration Server
-├── deploy/                      # Production Deployment Manifests
-│   ├── keycloak/                # Pre-configured Realm Export (`csg-lms`)
-│   └── scripts/                 # Healthcheck & Automated Provisioning
-├── dokploy-compose.yml          # Production Multi-Container Compose Configuration
-└── docker-compose.prod.yml      # Standalone Docker Compose Orchestration
+│   ├── web/       # Next.js 16 frontend — Learnhouse's own pages + CSG (dashboard) portals
+│   ├── api/       # FastAPI backend — Learnhouse's own routers + sms_*/revops_*/ai_* modules
+│   ├── collab/    # Hocuspocus/Yjs real-time collaboration (upstream Learnhouse)
+│   ├── mobile/    # Expo/React Native scaffold for the CSG portals
+│   └── e2e/       # Playwright test scaffold
+├── PROJECT_DOCS/  # This project's real, current documentation — start here
+├── context.md     # The original fabrication-correcting audit (2026-09-11) — historical
+├── docker-compose.local.yml   # The only deployment path actually run end-to-end
+├── docker-compose.prod.yml    # Defined, never run to completion
+└── dokploy-compose.yml        # Defined, never run to completion
 ```
 
----
+## License
 
-## 🔐 Security, Tenancy & Compliance
-
-- **Role-Based Access Control (RBAC):** `SUPER_ADMIN`, `SCHOOL_ADMIN`, `TEACHER`, `STUDENT`, `PARENT`, `STAFF`.
-- **Row-Level Security (RLS):** Every query enforces `org_id` and `campus_id` isolation at the database layer.
-- **Safety Interceptor:** Real-time AI interceptor routes any self-harm, distress, or bullying queries to counseling staff immediately.
-- **Compliance:** Built strictly adhering to **FERPA**, **COPPA**, and **ISO/IEC 27001** educational privacy standards.
-
----
-
-## 📄 License & Intellectual Property
-
-Licensed under GNU AGPL v3 with CSG Enterprise extensions.
-Copyright © 2026 CSG Infotech Venture. All rights reserved.
+Base platform licensed under AGPLv3 (see `LICENSE`) — anything derived from it and run as a network service must make its source available to users of that service (AGPLv3 §13). This has not yet been formally addressed for this project; see the open items in [`PROJECT_DOCS/STATUS.md`](./PROJECT_DOCS/STATUS.md).
