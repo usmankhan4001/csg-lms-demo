@@ -1,6 +1,13 @@
 import { cookies } from 'next/headers'
+import { getConfig } from '@services/config/config'
 
-const BACKEND_URL = (process.env.NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL || 'http://localhost:1338').replace(/\/+$/, '')
+// Matches the pattern app/api/auth/[...path]/route.ts and
+// app/api/auth/token-exchange/route.ts already use, and for the same reason
+// lib/api/api-client.ts now does too: read live via getConfig() so a
+// container-runtime env var actually takes effect, instead of a
+// process.env.X reference that (for anything reachable from a client
+// bundle) gets permanently inlined at `next build` time.
+const BACKEND_URL = (getConfig('NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL', 'http://localhost:1338')).replace(/\/+$/, '')
 
 // Cookie names (must match the API routes)
 const ACCESS_TOKEN_COOKIE = 'LH_access'

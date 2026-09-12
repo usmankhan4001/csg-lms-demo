@@ -14,6 +14,7 @@ import {
   Building2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/components/Contexts/AuthContext'
 import {
   UserRole,
   ROLE_NAV_ITEMS,
@@ -94,6 +95,7 @@ export function RoleSidebar({
 }: RoleSidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
+  const { signOut } = useAuth()
   const [roleMenuOpen, setRoleMenuOpen] = useState(false)
   const [currentHash, setCurrentHash] = useState('')
 
@@ -357,14 +359,15 @@ export function RoleSidebar({
           )}
           {!isCollapsed && (
             <div className="flex items-center gap-1">
-              <Link
-                href="/auth/logout"
+              <button
+                type="button"
+                onClick={() => signOut({ callbackUrl: '/auth/login' })}
                 title="Sign out"
                 className="p-1.5 rounded-lg text-neutral-400 hover:text-rose-600 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
                 aria-label="Sign out"
               >
                 <LogOut className="size-4" />
-              </Link>
+              </button>
             </div>
           )}
         </div>

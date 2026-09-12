@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '@/components/Contexts/AuthContext'
 import {
   Menu,
   Bell,
@@ -59,6 +60,7 @@ export function PortalHeader({
   className,
 }: PortalHeaderProps) {
   const router = useRouter()
+  const { signOut } = useAuth()
   const [selectedCampus, setSelectedCampus] = useState<Campus>(activeCampus)
   const [selectedTerm, setSelectedTerm] = useState<AcademicTerm>(activeTerm)
   const [campusDropdownOpen, setCampusDropdownOpen] = useState(false)
@@ -504,13 +506,14 @@ export function PortalHeader({
 
               <div className="h-px bg-neutral-100 dark:bg-neutral-800 my-1" />
 
-              <Link
-                href="/auth/logout"
+              <button
+                type="button"
+                onClick={() => signOut({ callbackUrl: '/auth/login' })}
                 className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors font-medium"
               >
                 <LogOut className="size-4" />
                 <span>Sign Out</span>
-              </Link>
+              </button>
             </div>
           )}
         </div>

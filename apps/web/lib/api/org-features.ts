@@ -16,18 +16,30 @@
  * carries a numeric `org_id` claim -- there is no endpoint in this codebase
  * that resolves an org by bare numeric id without already having a session
  * tied to it. So this reads the slug from `NEXT_PUBLIC_ORG_SLUG` (falling
- * back to `"demo"`, LearnHouse's seeded demo org) rather than deriving it
- * from the token. A real integration would either embed the slug as a
- * token claim or add a small `/orgs/by-id/{id}` lookup -- both are outside
- * this task's scope (no `sms_*` router or org-service changes).
+ * back to `"default"`, matching the hardcoded default in
+ * `src/routers/instance.py`'s own `default_org_slug` and what
+ * LEARNHOUSE_AUTO_INSTALL actually seeds -- NOT "demo", which was this
+ * file's original, unverified guess and 404'd on every real deployment)
+ * rather than deriving it from the token. A real integration would either
+ * embed the slug as a token claim or add a small `/orgs/by-id/{id}` lookup --
+ * both are outside this task's scope (no `sms_*` router or org-service
+ * changes).
  *
  * Fails open: if the org can't be resolved (wrong slug, offline, org has no
  * config yet), callers get `null` and should render every nav item rather
  * than hide the whole sidebar over a features fetch that didn't load.
  */
 
-const BACKEND_URL = (process.env.NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL || 'http://localhost:1338').replace(/\/+$/, '')
-const ORG_SLUG = process.env.NEXT_PUBLIC_ORG_SLUG || 'demo'
+import { getConfig } from '@services/config/config'
+
+// See lib/api/api-client.ts's getBackendUrl() for why this must be read live
+// via getConfig() rather than a frozen `process.env.X` module constant.
+function getBackendUrl(): string {
+  return (getConfig('NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL', 'http://localhost:1338')).replace(/\/+$/, '')
+}
+function getOrgSlugDefault(): string {
+  return getConfig('NEXT_PUBLIC_ORG_SLUG', 'default')
+}
 
 export interface ResolvedFeature {
   enabled: boolean
@@ -38,9 +50,9 @@ export interface ResolvedFeature {
 
 export type ResolvedFeatureMap = Record<string, ResolvedFeature>
 
-export async function fetchOrgResolvedFeatures(orgSlug: string = ORG_SLUG): Promise<ResolvedFeatureMap | null> {
+export async function fetchOrgResolvedFeatures(orgSlug: string = getOrgSlugDefault()): Promise<ResolvedFeatureMap | null> {
   try {
-    const res = await fetch(`${BACKEND_URL}/api/v1/orgs/slug/${encodeURIComponent(orgSlug)}`, {
+    const res = await fetch(`${getBackendUrl()}/api/v1/orgs/slug/${encodeURIComponent(orgSlug)}`, {
       headers: { Accept: 'application/json' },
       cache: 'no-store',
     })
