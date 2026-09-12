@@ -11,7 +11,22 @@ import {
 } from '@services/auth/cookies'
 import { isLocalhost } from '@services/utils/ts/hostUtils'
 
-const BACKEND_URL = (getConfig('NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL') || 'http://localhost:1338').replace(/\/+$/, '')
+// This is a Route Handler -- it always runs server-side, so it must prefer
+// LEARNHOUSE_INTERNAL_API_URL when set: NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL is
+// the *browser*-facing address, unreachable from inside a container that
+// runs the API as a separate service (Docker Compose). Using it here made
+// every /api/auth/* call (login, refresh, logout, signup, mfa, magic-link)
+// throw ConnectionRefused inside proxyRequest()'s unguarded fetch(), which a
+// Route Handler turns into a bodyless 500 -- the client's `.json()` call then
+// throws "Unexpected end of JSON input", which the login form mislabels as
+// "wrong email or password". See services/config/config.ts's deriveAPIUrl()
+// for the full story; same bug, same fix, independently necessary here
+// because this route builds its own backend URL instead of going through it.
+const BACKEND_URL = (
+  getConfig('LEARNHOUSE_INTERNAL_API_URL') ||
+  getConfig('NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL') ||
+  'http://localhost:1338'
+).replace(/\/+$/, '')
 
 // Paths that return tokens in response body (relative to /api/v1/auth/)
 // `verify-email` auto-signs-in the user on successful email verification, so

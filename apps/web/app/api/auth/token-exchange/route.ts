@@ -8,7 +8,15 @@ import {
   getCookieOptions,
 } from '@services/auth/cookies'
 
-const BACKEND_URL = (getConfig('NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL') || 'http://localhost:1338').replace(/\/+$/, '')
+// Route Handler -- always server-side, so it must prefer
+// LEARNHOUSE_INTERNAL_API_URL over the browser-facing
+// NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL. See app/api/auth/[...path]/route.ts's
+// BACKEND_URL comment / services/config/config.ts's deriveAPIUrl() for why.
+const BACKEND_URL = (
+  getConfig('LEARNHOUSE_INTERNAL_API_URL') ||
+  getConfig('NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL') ||
+  'http://localhost:1338'
+).replace(/\/+$/, '')
 // Dormant cross-domain handoff safety valve. Post learnhouse.app deprecation the
 // .io apex and org subdomains share .{top_domain} cookies, so this route is no
 // longer used by the app (handleGoToOrg navigates directly). No hardcoded .app
