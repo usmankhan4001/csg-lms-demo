@@ -7,7 +7,19 @@ import { getConfig } from '@services/config/config'
 // container-runtime env var actually takes effect, instead of a
 // process.env.X reference that (for anything reachable from a client
 // bundle) gets permanently inlined at `next build` time.
-const BACKEND_URL = (getConfig('NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL', 'http://localhost:1338')).replace(/\/+$/, '')
+//
+// This module is server-only (imports next/headers), so it must prefer
+// LEARNHOUSE_INTERNAL_API_URL when set: in a multi-container deployment (e.g.
+// Docker Compose) NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL is the *browser*-facing
+// address and is unreachable from inside this process -- using it here
+// connects back to the web container's own loopback and throws
+// ConnectionRefused on every call (see services/config/config.ts's
+// deriveAPIUrl() for the full explanation; same bug, same fix, independently
+// necessary here because this file never goes through getAPIUrl()).
+const BACKEND_URL = (
+  getConfig('LEARNHOUSE_INTERNAL_API_URL') ||
+  getConfig('NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL', 'http://localhost:1338')
+).replace(/\/+$/, '')
 
 // Cookie names (must match the API routes)
 const ACCESS_TOKEN_COOKIE = 'LH_access'

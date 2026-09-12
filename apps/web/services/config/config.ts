@@ -147,6 +147,24 @@ const deriveAPIUrl = (): string => {
   // Backward compat: if explicit API URL is set, use it
   const explicitApiUrl = getConfig('NEXT_PUBLIC_LEARNHOUSE_API_URL')
   if (explicitApiUrl) return explicitApiUrl
+
+  // Server-side (SSR/Server Components/Route Handlers): when the web process
+  // runs in a different container from the API (e.g. Docker Compose),
+  // NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL is the *browser*-facing address and is
+  // unreachable from inside this process -- calling it here connects back to
+  // the web container's own loopback (nothing listens there), producing a
+  // ConnectionRefused that crashes every SSR org-resolution page with a
+  // generic "Minified React error #441" (confirmed via docker logs: digest
+  // matched a live user report exactly, path was `http://localhost:8000/...`
+  // from inside the web container). LEARNHOUSE_INTERNAL_API_URL (no
+  // NEXT_PUBLIC_ prefix -- must never reach the browser bundle) is the
+  // container-network address the server should use instead. Falls back to
+  // the public URL for single-host deployments where the two are the same.
+  if (typeof window === 'undefined') {
+    const internalUrl = getConfig('LEARNHOUSE_INTERNAL_API_URL')
+    if (internalUrl) return `${internalUrl.replace(/\/+$/, '')}/api/v1/`
+  }
+
   // Derive from backend URL
   const backendUrl = getLEARNHOUSE_BACKEND_URL().replace(/\/+$/, '')
   return `${backendUrl}/api/v1/`

@@ -131,6 +131,17 @@ services:
       # container -- hence localhost:8000 (the host-mapped API port), not
       # the Docker-internal service name "api".
       NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL: http://localhost:8000
+      # Server-side counterpart: Server Components, Route Handlers, and
+      # lib/auth/server.ts run INSIDE this container, where "localhost:8000"
+      # is this container's own loopback, not the api container -- nothing
+      # listens there, so every SSR org-lookup (login page, signup page, the
+      # entire /orgs/[slug] tree) threw ConnectionRefused, surfacing to users
+      # as a blank "Minified React error #441" page on literally the first
+      # page load. This uses Docker's internal service DNS + the api
+      # container's actual listen port (LEARNHOUSE_PORT: 9000 above, not the
+      # host-mapped 8000). No NEXT_PUBLIC_ prefix -- must never ship to the
+      # browser bundle, and doesn't need to (browsers can't resolve "api").
+      LEARNHOUSE_INTERNAL_API_URL: http://api:9000
     depends_on:
       api:
         condition: service_healthy
