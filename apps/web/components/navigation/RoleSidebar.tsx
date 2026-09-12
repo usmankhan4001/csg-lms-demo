@@ -137,8 +137,12 @@ export function RoleSidebar({
     if (onRoleChange) {
       onRoleChange(role)
     }
-    const targetPath = ROLE_CONFIG[role].path
-    router.push(targetPath)
+    // Route through /dev-login rather than pushing the portal path directly:
+    // the dev Keycloak token in localStorage is minted for ONE role at a
+    // time, so jumping straight to another role's portal left the old
+    // role's token in place and every widget 403'd/failed against it.
+    const devRole = role === 'ADMIN' ? 'SCHOOL_ADMIN' : role
+    router.push(`/dev-login?role=${devRole}`)
     if (onMobileClose) {
       onMobileClose()
     }

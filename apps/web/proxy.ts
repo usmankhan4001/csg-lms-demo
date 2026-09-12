@@ -428,7 +428,8 @@ export default async function proxy(req: NextRequest) {
     pathname === '/parent' || pathname.startsWith('/parent/') ||
     pathname === '/campus-admin' || pathname.startsWith('/campus-admin/') ||
     pathname === '/admissions' || pathname.startsWith('/admissions/') ||
-    pathname === '/live' || pathname.startsWith('/live/')
+    pathname === '/live' || pathname.startsWith('/live/') ||
+    pathname === '/dev-login'
   ) {
     const resolved = await resolveTenant(req, instance)
     const requestHeaders = tenantRequestHeaders(req, resolved, instance)

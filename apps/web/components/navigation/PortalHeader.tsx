@@ -148,13 +148,12 @@ export function PortalHeader({
   const handleQuickRoleSwitch = (role: UserRole) => {
     setProfileDropdownOpen(false)
     if (onRoleChange) onRoleChange(role)
-    const paths: Record<UserRole, string> = {
-      STUDENT: '/student',
-      TEACHER: '/teacher',
-      PARENT: '/parent',
-      ADMIN: '/admin',
-    }
-    router.push(paths[role])
+    // Route through /dev-login: the dev Keycloak token in localStorage is
+    // minted for ONE role at a time (see RoleSidebar.handleSwitchRole for the
+    // full explanation), so pushing a portal path directly left the previous
+    // role's token in place and every widget failed against it.
+    const devRole = role === 'ADMIN' ? 'SCHOOL_ADMIN' : role
+    router.push(`/dev-login?role=${devRole}`)
   }
 
   return (
