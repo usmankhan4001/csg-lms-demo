@@ -20,6 +20,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2PasswordBearer
 from fastapi.security.utils import get_authorization_scheme_param
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from src.core.events.database import get_db_session
+from src.db.sms_identity import SMSUserRole, StudentGuardian  # noqa: F401 -- import registers these tables with SQLModel.metadata for create_all at startup (see school_principal.py, which resolve_school_principal queries against them)
+from src.db.users import AnonymousUser
+from src.security.auth import get_authenticated_user, get_current_user
 
 logger = logging.getLogger("keycloak_auth")
 
@@ -462,32 +468,42 @@ async def get_bearer_token(
 
 
 async def get_current_user_principal(
-    token: Optional[str] = Depends(get_bearer_token),
+    current_user=Depends(get_authenticated_user),
+    db_session: AsyncSession = Depends(get_db_session),
 ) -> KeycloakUserPrincipal:
     """
-    FastAPI dependency: Requires a valid Keycloak JWT Bearer token and
-    returns the decoded `KeycloakUserPrincipal`.
+    FastAPI dependency: requires a real, authenticated Learnhouse user and
+    returns a `KeycloakUserPrincipal` built from that session plus their
+    `SMSUserRole` grant(s) -- see school_principal.py for why. Every one of
+    the ~90+ call sites across the SMS/RevOps/Tutor routers and
+    services/sms/*.py that depend on this function is unchanged; only how
+    the principal is CONSTRUCTED changed, not its shape.
+
+    The token-decoding path (`decode_and_verify_token`, `get_bearer_token`)
+    is left in place below but unreferenced by this dependency -- dormant
+    insurance for a possible future real-Keycloak cutover, not dead code to
+    delete.
     """
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing Authorization Bearer token header",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    return decode_and_verify_token(token)
+    from src.security.school_principal import resolve_school_principal  # local import: avoids a circular import (school_principal.py imports KeycloakUserPrincipal/SUPER_ADMIN from this module at its own top level)
+
+    return await resolve_school_principal(current_user, db_session)
 
 
 async def get_optional_user_principal(
-    token: Optional[str] = Depends(get_bearer_token),
+    current_user=Depends(get_current_user),
+    db_session: AsyncSession = Depends(get_db_session),
 ) -> Optional[KeycloakUserPrincipal]:
     """
-    FastAPI dependency: Returns `KeycloakUserPrincipal` if a valid Bearer token
-    is provided, otherwise returns `None` without raising 401.
+    FastAPI dependency: returns a `KeycloakUserPrincipal` for a real,
+    authenticated Learnhouse user, or `None` for an anonymous visitor --
+    without raising 401. See `get_current_user_principal` above.
     """
-    if not token:
+    from src.security.school_principal import resolve_school_principal  # local import: see get_current_user_principal above
+
+    if isinstance(current_user, AnonymousUser):
         return None
     try:
-        return decode_and_verify_token(token)
+        return await resolve_school_principal(current_user, db_session)
     except HTTPException:
         return None
 

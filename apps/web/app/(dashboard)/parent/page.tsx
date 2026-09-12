@@ -3,11 +3,15 @@
 /**
  * Parent dashboard -- thin composition over the real SMS modules.
  *
- * "My children" come from the dev Keycloak session's `children_ids`
- * convenience claim (see `lib/api/dev-token.ts`). Per-child grades use the
- * session's single `section_id`/`academic_term_id` claims for every child --
- * a documented simplification of this dev harness (a real token would carry
- * each child's own section).
+ * "My children" come from the real school session's `children_ids` (see
+ * `lib/api/useSchoolSession.ts`, backed by `StudentGuardian`). Per-child
+ * grades use the session's own `section_id`/`academic_term_id`, which are
+ * only ever populated for the STUDENT role -- a parent has none of their
+ * own, so this is always undefined for a parent today. KNOWN GAP, tracked,
+ * not silently papered over: resolving each child's own current
+ * section/term would need a new per-student lookup (e.g. extending
+ * GET /sms/me or adding a dedicated endpoint) that doesn't exist yet, so
+ * report cards won't show per-child until that's built.
  */
 
 import { CalendarClock, CreditCard, TrendingUp, Users } from 'lucide-react'
@@ -15,7 +19,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { DataTable, EmptyState, SectionCard, StatGrid } from '@/components/widgets'
 import { useApiResource } from '@/lib/api/useApiResource'
-import { useDevSession } from '@/lib/api/useDevSession'
+import { useSchoolSession } from '@/lib/api/useSchoolSession'
 import { getMonthlyStudentAttendance } from '@/modules/sms/attendance/api'
 import { getStudentFeeLedger } from '@/modules/sms/fees/api'
 import { getStudentReportCard } from '@/modules/sms/gradebook/api'
@@ -41,7 +45,7 @@ async function loadChildSummary(studentId: number, sectionId?: number, termId?: 
 }
 
 export default function ParentDashboardPage() {
-  const { session, checked } = useDevSession()
+  const { session, checked } = useSchoolSession()
   const childrenIds = session?.children_ids ?? []
   const sectionId = session?.section_id ?? undefined
   const termId = session?.academic_term_id ?? undefined
@@ -74,7 +78,7 @@ export default function ParentDashboardPage() {
         <EmptyState
           tone="caution"
           title="No children linked to this session"
-          description="Mint a dev token with --children-ids to see this dashboard populated -- see apps/api/scripts/mint_dev_keycloak_token.py."
+          description="Ask your school admin to link your account as a guardian for your child's record."
         />
       ) : (
         <>

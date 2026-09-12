@@ -2,10 +2,9 @@
 
 /**
  * Campus / School Admin dashboard -- thin composition over the real SMS
- * modules. Campus scoping comes from the caller's Keycloak `org_id`
+ * modules. Campus scoping comes from the caller's real session `org_id`
  * (resolved server-side by `sms_campus.py` from the principal, not passed
- * explicitly here) -- see `lib/api/dev-token.ts` for how the dev session
- * carries that claim.
+ * explicitly here) -- see `lib/api/useSchoolSession.ts`.
  *
  * Admissions CRM (`/admissions/crm`) is a separate, already-real page owned
  * by a parallel in-flight AI RevOps workstream (see AGENT scope boundary)
@@ -15,13 +14,13 @@
 import { Building2, CreditCard, ScrollText, Users } from 'lucide-react'
 import { DataTable, EmptyState, SectionCard, StatGrid, StatusChip } from '@/components/widgets'
 import { useApiResource } from '@/lib/api/useApiResource'
-import { useDevSession } from '@/lib/api/useDevSession'
+import { useSchoolSession } from '@/lib/api/useSchoolSession'
 import { listCampuses } from '@/modules/sms/campus/api'
 import { getTrialBalance, listChartOfAccounts } from '@/modules/sms/financials/api'
 import { listStaffLeaves, listStaffProfiles } from '@/modules/sms/hr_payroll/api'
 
 export default function CampusAdminDashboardPage() {
-  const { checked } = useDevSession()
+  const { checked } = useSchoolSession()
 
   const campuses = useApiResource(() => listCampuses(), [])
   const staff = useApiResource(() => listStaffProfiles(), [])

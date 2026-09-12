@@ -6,13 +6,13 @@ import { RoleSidebar } from '@/components/navigation/RoleSidebar'
 import { PortalHeader } from '@/components/navigation/PortalHeader'
 import { UserRole, Campus, AcademicTerm, CAMPUSES, ACADEMIC_TERMS } from '@/components/navigation/types'
 import Toast from '@/components/Objects/StyledElements/Toast/Toast'
-import { useDevSession } from '@/lib/api/useDevSession'
+import { useSchoolSession } from '@/lib/api/useSchoolSession'
 
-// Real Keycloak realm roles (7: SUPER_ADMIN, SCHOOL_ADMIN, TEACHER, STUDENT,
-// PARENT, STAFF, PSYCHOLOGIST -- see src/core/keycloak_auth.py) bucketed
-// into this UI's 4 nav personas. STAFF/PSYCHOLOGIST have no dedicated portal
-// built yet (same as web's own scope), so they fall back to STUDENT nav
-// rather than crashing on an unmapped value.
+// Real school roles (7: SUPER_ADMIN, SCHOOL_ADMIN, TEACHER, STUDENT, PARENT,
+// STAFF, PSYCHOLOGIST -- see apps/api/src/db/sms_identity.py's SchoolRole)
+// bucketed into this UI's 4 nav personas. STAFF/PSYCHOLOGIST have no
+// dedicated portal built yet (same as web's own scope), so they fall back to
+// STUDENT nav rather than crashing on an unmapped value.
 function bucketRealmRole(realmRole: string | undefined): UserRole {
   switch (realmRole) {
     case 'SCHOOL_ADMIN':
@@ -34,15 +34,15 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname()
   const router = useRouter()
-  const { session, checked } = useDevSession()
+  const { session, checked } = useSchoolSession()
   const [isMobileOpen, setIsMobileOpen] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [activeCampus, setActiveCampus] = useState<Campus>(CAMPUSES[0])
   const [activeTerm, setActiveTerm] = useState<AcademicTerm>(ACADEMIC_TERMS[0])
 
   // Path-derived guess, used only until the real session is checked (avoids
-  // a hydration mismatch, since useDevSession() intentionally reads
-  // localStorage after mount, not during render).
+  // a hydration mismatch, since useSchoolSession() intentionally fetches
+  // after mount, not during render).
   const pathRole = useMemo<UserRole>(() => {
     if (pathname.startsWith('/teacher')) return 'TEACHER'
     if (pathname.startsWith('/parent')) return 'PARENT'
@@ -50,13 +50,13 @@ export default function DashboardLayout({
     return 'STUDENT'
   }, [pathname])
 
-  // Once the real Keycloak dev session is known, it is authoritative --
-  // NOT the URL. Bug this replaces: the previous path-only check tested
+  // Once the real school session is known, it is authoritative -- NOT the
+  // URL. Bug this replaces: the previous path-only check tested
   // `pathname.startsWith('/admin')`, but the real route is `/campus-admin`,
   // so it never matched and every visitor saw STUDENT nav regardless of
   // their actual role or token.
   const currentRole = useMemo<UserRole>(() => {
-    if (checked && session) return bucketRealmRole(session.realm_access?.roles?.[0])
+    if (checked && session) return bucketRealmRole(session.roles[0])
     return pathRole
   }, [checked, session, pathRole])
 

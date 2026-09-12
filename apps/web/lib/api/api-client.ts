@@ -3,12 +3,16 @@
  * =====================================================================
  *
  * Talks to the FastAPI backend's `/api/v1` surface and attaches a Bearer
- * token to every request:
- *   - the dev Keycloak token from `./dev-token` when present (see that file
- *     and `apps/api/src/core/dev_tokens.py` for how to obtain one locally --
- *     this project has no real Keycloak server deployed yet), otherwise
- *   - the Learnhouse native session's access token from `./learnhouse-session`
- *     if this code ever runs where BOTH systems happen to be present.
+ * token to every request: the real Learnhouse session's access token
+ * (mirrored into `./session-token-bridge` by `AuthContext.tsx`, since this
+ * is a plain module with no React hook access) -- the backend resolves the
+ * SMS-specific principal (role/campus/student-staff-parent linkage) from
+ * that real session via `src/security/school_principal.py`. See
+ * PROJECT_DOCS/ARCHITECTURE.md.
+ *
+ * The dev Keycloak token (`./dev-token`) is kept as a fallback ONLY so this
+ * change is independently revertible; it is removed once the dev-token
+ * bridge itself is retired (see `./dev-token.ts`'s module doc).
  *
  * Every module `api.ts` file should call `apiGet`/`apiPost`/etc. from here
  * rather than calling `fetch` directly, so auth attachment, base URL, and
@@ -16,6 +20,7 @@
  */
 
 import { getDevToken } from './dev-token'
+import { getActiveAccessToken } from './session-token-bridge'
 import { getConfig } from '@services/config/config'
 
 // NOT a frozen module-level constant: this file runs in the browser, and
@@ -62,9 +67,9 @@ function classifyStatus(status: number): ApiErrorKind {
 }
 
 function getBearerToken(): string | null {
-  // Dev Keycloak token takes priority -- it's what every sms_* endpoint
-  // actually authenticates against right now (see module doc comment above).
-  return getDevToken()
+  // Real Learnhouse session token first; dev Keycloak token only as a
+  // fallback (see module doc comment above).
+  return getActiveAccessToken() ?? getDevToken()
 }
 
 export interface ApiFetchOptions extends RequestInit {

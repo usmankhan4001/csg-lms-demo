@@ -5,8 +5,7 @@
  *
  * Every section below fetches from the real backend via `modules/sms/*`
  * (no mock arrays). "My" identity (student_id/section_id/academic_term_id)
- * comes from the dev Keycloak session's convenience claims -- see
- * `lib/api/dev-token.ts` for why those claims exist and how to mint one.
+ * comes from the real school session -- see `lib/api/useSchoolSession.ts`.
  *
  * AI Tutor and course/lesson sections were intentionally removed from this
  * rewrite: they belong to a separate, still-in-flight AI RevOps/Tutor
@@ -19,15 +18,15 @@
 import { Award, BookMarked, CalendarClock, CheckSquare, Clock, GraduationCap } from 'lucide-react'
 import { DataTable, EmptyState, KpiCard, SectionCard, StatGrid, StatusChip } from '@/components/widgets'
 import { useApiResource } from '@/lib/api/useApiResource'
-import { useDevSession } from '@/lib/api/useDevSession'
+import { useSchoolSession } from '@/lib/api/useSchoolSession'
 import { getMonthlyStudentAttendance } from '@/modules/sms/attendance/api'
 import { getStudentReportCard } from '@/modules/sms/gradebook/api'
 import { listLoans } from '@/modules/sms/library/api'
 import { getStudentTimetable, slotsForToday } from '@/modules/sms/timetable/api'
 
 export default function StudentDashboardPage() {
-  const { session, checked } = useDevSession()
-  const studentId = session?.subject_id ?? undefined
+  const { session, checked } = useSchoolSession()
+  const studentId = session?.student_id ?? undefined
   const sectionId = session?.section_id ?? undefined
   const termId = session?.academic_term_id ?? undefined
   const ready = checked && studentId !== undefined && sectionId !== undefined
@@ -72,7 +71,7 @@ export default function StudentDashboardPage() {
         <EmptyState
           tone="caution"
           title="No dev session found"
-          description="Attach a dev Keycloak Bearer token to see your real data here -- see apps/api/scripts/mint_dev_keycloak_token.py."
+          description="Ask your school admin to enroll you in a class section."
         />
       ) : (
         <>

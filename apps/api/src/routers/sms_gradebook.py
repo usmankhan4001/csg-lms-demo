@@ -31,6 +31,7 @@ from src.schemas.sms_gradebook import (
     TermReportCardRecordRead,
 )
 from src.security.features_utils.dependencies import require_sms_gradebook_feature
+from src.security.school_ownership import require_own_student_or_privileged
 from src.services.sms.gradebook import (
     ReportCardAlreadySentError,
     ReportCardNotFoundError,
@@ -254,7 +255,7 @@ async def get_student_report_card(
     section_id: int = Query(..., description="Student Section ID"),
     academic_term_id: int = Query(..., description="Academic Term ID"),
     session: AsyncSession = Depends(get_db_session),
-    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+    principal: KeycloakUserPrincipal = Depends(require_own_student_or_privileged()),
 ) -> StudentTermReportCardResponse:
     return await generate_student_term_report_card(
         session=session,

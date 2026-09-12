@@ -17,25 +17,40 @@ router standalone (bypassing this file's router-level wrapper entirely), so
 it only ever exercised the per-handler Keycloak gate in isolation.
 
 This test mounts the REAL `v1_router` from `src.router` (exactly how `app.py`
-mounts it) and sends a request carrying ONLY a Keycloak-shaped Bearer token
--- no Learnhouse session, cookie, or API token -- to prove each of the 8
-affected routers is now reachable that way, matching every one of their
-handlers' own `get_current_user_principal` dependency. `sms_revops.py` and
-`live_classes.py` are deliberately NOT covered here: they still carry the
-Learnhouse-native wrapper unchanged (left alone -- see the AGENT scope
-boundary on not touching AI RevOps/Tutor-adjacent code), so are out of scope
-for this particular regression.
+mounts it) to prove each of the 8 affected routers is reachable given only a
+real, authenticated Learnhouse session -- matching every one of their
+handlers' own `get_current_user_principal` dependency.
+
+`sms_revops.py` had the identical double-gate bug (confirmed: every one of
+its handlers already has its own `get_current_user_principal` dependency,
+same as the 8 routers above) and is now covered by the same fix + test below.
+
+`live_classes.py` is deliberately NOT covered here and must not be "fixed"
+the same way: unlike every other router in this list, none of its handlers
+have a per-handler Keycloak dependency at all -- the router-mount-level
+`require_authenticated_user_or_api_token` wrapper is its ONLY auth gate, not
+a redundant second one. Removing it would leave the router unauthenticated.
+
+NOTE on the auth mechanism itself: `get_current_user_principal` no longer
+decodes a Keycloak-shaped JWT at all -- it derives a `KeycloakUserPrincipal`
+from a real, already-authenticated Learnhouse user via
+`src/security/school_principal.py` (see that module and
+`src/tests/security/test_school_principal.py` for the principal-construction
+tests). This file only proves ROUTER REACHABILITY given a real session; it
+overrides `get_authenticated_user` directly rather than performing a real
+login, since a real login is out of scope for a router-mount regression test.
 """
 
-import jwt
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from src.core.events.database import get_db_session
-from src.core.keycloak_auth import settings as keycloak_settings
+from src.db.users import PublicUser
 from src.router import v1_router
+from src.security.auth import get_authenticated_user
 from src.security.features_utils.dependencies import (
+    require_revops_feature,
     require_sms_attendance_feature,
     require_sms_fees_feature,
     require_sms_financials_feature,
@@ -65,6 +80,10 @@ ROUTER_CASES = [
         "/api/v1/sms/teacher-tools/lesson-plans", require_sms_gradebook_feature,
         id="sms_teacher_tools",
     ),
+    pytest.param(
+        "/api/v1/revops/leads/pipeline", require_revops_feature,
+        id="sms_revops",
+    ),
 ]
 
 
@@ -75,27 +94,31 @@ def _make_app(db):
     return app
 
 
-def _keycloak_only_token() -> str:
-    """A minimal, realistically-shaped Keycloak HS256 token -- no Learnhouse claims at all."""
-    claims = {"sub": "integration-test-user", "realm_access": {"roles": ["SUPER_ADMIN"]}}
-    if keycloak_settings.issuer:
-        claims["iss"] = keycloak_settings.issuer
-    return jwt.encode(claims, keycloak_settings.shared_secret, algorithm="HS256")
+def _stub_superadmin() -> PublicUser:
+    """A real Learnhouse user (superadmin, so no SMSUserRole row is needed to
+    satisfy any of these routers' RBAC/feature checks) -- overridden in place
+    of a real login, since this test proves router reachability, not login."""
+    return PublicUser(
+        id=1,
+        user_uuid="test-superadmin-uuid",
+        username="test-superadmin",
+        first_name="Test",
+        last_name="Superadmin",
+        email="test-superadmin@example.com",
+        is_superadmin=True,
+    )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("path,feature_dependency", ROUTER_CASES)
-async def test_keycloak_only_bearer_reaches_the_really_mounted_router(db, path, feature_dependency, monkeypatch):
-    """A Keycloak-only Bearer token -- no Learnhouse session/cookie/API token -- must be sufficient."""
-    monkeypatch.delenv("KEYCLOAK_JWKS_URL", raising=False)
-    monkeypatch.delenv("KEYCLOAK_PUBLIC_KEY", raising=False)
-
+async def test_authenticated_learnhouse_session_reaches_the_really_mounted_router(db, path, feature_dependency):
+    """A real, authenticated Learnhouse session -- no Keycloak JWT involved at all -- must be sufficient."""
     app = _make_app(db)
     app.dependency_overrides[feature_dependency] = lambda: True
-    token = _keycloak_only_token()
+    app.dependency_overrides[get_authenticated_user] = _stub_superadmin
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get(path, headers={"Authorization": f"Bearer {token}"})
+        response = await client.get(path)
 
     assert response.status_code == 200, response.text
 

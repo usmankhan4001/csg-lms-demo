@@ -21,6 +21,7 @@ from src.schemas.sms_fees import (
     StudentFeeVoucherRead,
 )
 from src.security.features_utils.dependencies import require_sms_fees_feature
+from src.security.school_ownership import require_own_student_or_privileged
 from src.services.sms.fees import (
     fetch_student_fee_ledger,
     generate_vouchers_for_students,
@@ -154,6 +155,6 @@ async def record_payment(
 async def get_student_fee_ledger_endpoint(
     student_id: int,
     session: AsyncSession = Depends(get_db_session),
-    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+    principal: KeycloakUserPrincipal = Depends(require_own_student_or_privileged()),
 ) -> StudentFeeLedgerResponse:
     return await fetch_student_fee_ledger(session=session, student_id=student_id)

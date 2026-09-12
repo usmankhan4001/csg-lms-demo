@@ -2,15 +2,15 @@
 
 /**
  * Parent fee vouchers page -- thin composition over the real `sms_fees`
- * module. "My children" comes from the dev Keycloak session's
- * `children_ids` claim (see `lib/api/dev-token.ts`).
+ * module. "My children" comes from the real school session's
+ * `children_ids` (see `lib/api/useSchoolSession.ts`).
  */
 
 import { CreditCard } from 'lucide-react'
 import { DataTable, EmptyState, SectionCard, StatGrid } from '@/components/widgets'
 import { StatusChip } from '@/components/widgets'
 import { useApiResource } from '@/lib/api/useApiResource'
-import { useDevSession } from '@/lib/api/useDevSession'
+import { useSchoolSession } from '@/lib/api/useSchoolSession'
 import { getStudentFeeLedger } from '@/modules/sms/fees/api'
 import { PayVoucherDialog } from '@/modules/sms/fees/components/PayVoucherDialog'
 import type { StudentFeeVoucherRead, VoucherStatus } from '@/modules/sms/fees/types'
@@ -28,7 +28,7 @@ interface ChildVoucherRow extends StudentFeeVoucherRead {
 }
 
 export default function ParentFeesPage() {
-  const { session, checked } = useDevSession()
+  const { session, checked } = useSchoolSession()
   const childrenIds = session?.children_ids ?? []
   const ready = checked && childrenIds.length > 0
 
@@ -59,7 +59,7 @@ export default function ParentFeesPage() {
         <EmptyState
           tone="caution"
           title="No children linked to this session"
-          description="Mint a dev token with --children-ids to see fee data here -- see apps/api/scripts/mint_dev_keycloak_token.py."
+          description="Ask your school admin to link your account as a guardian for your child's record."
         />
       ) : (
         <>

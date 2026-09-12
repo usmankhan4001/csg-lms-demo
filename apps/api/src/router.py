@@ -18,6 +18,7 @@ from src.routers import (
     sms_financials,
     sms_gradebook,
     sms_hr,
+    sms_identity,
     sms_library,
     sms_payroll,
     sms_revops,
@@ -489,6 +490,12 @@ v1_router.include_router(
 )
 
 v1_router.include_router(
+    sms_identity.router,
+    prefix="/sms",
+    tags=["sms-identity"],
+)
+
+v1_router.include_router(
     sms_gradebook.router,
     prefix="/sms/gradebook",
     tags=["sms-gradebook"],
@@ -504,6 +511,10 @@ v1_router.include_router(
     live_classes.router,
     prefix="/live",
     tags=["live-classes"],
+    # Unlike the routers above, live_classes.py has NO per-handler Keycloak
+    # dependency at all -- this mount-level wrapper is its only auth gate, not
+    # a redundant second one. Do not remove it under the same "double-gate"
+    # fix applied to sms_revops.router above; that would leave it unauthenticated.
     dependencies=[Depends(require_authenticated_user_or_api_token)],
 )
 
@@ -535,7 +546,6 @@ v1_router.include_router(
     sms_revops.router,
     prefix="/revops",
     tags=["sms-revops"],
-    dependencies=[Depends(require_authenticated_user_or_api_token)],
 )
 
 # Phase 4: Counseling / Wellbeing / Career Guidance (new module) and the

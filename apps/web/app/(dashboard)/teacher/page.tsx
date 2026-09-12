@@ -3,21 +3,20 @@
 /**
  * Teacher dashboard -- thin composition over the real SMS modules.
  * "My" identity (teacher/staff id, home section, academic term) comes from
- * the dev Keycloak session's convenience claims -- see
- * `lib/api/dev-token.ts`.
+ * the real school session -- see `lib/api/useSchoolSession.ts`.
  */
 
 import { Award, CalendarClock, Layers } from 'lucide-react'
 import { DataTable, EmptyState, SectionCard, StatGrid } from '@/components/widgets'
 import { useApiResource } from '@/lib/api/useApiResource'
-import { useDevSession } from '@/lib/api/useDevSession'
+import { useSchoolSession } from '@/lib/api/useSchoolSession'
 import { listAssessmentPlans } from '@/modules/sms/gradebook/api'
 import { getTeacherTimetable, slotsForToday } from '@/modules/sms/timetable/api'
 import { RollCallRoster } from '@/modules/sms/attendance/components/RollCallRoster'
 
 export default function TeacherDashboardPage() {
-  const { session, checked } = useDevSession()
-  const teacherId = session?.subject_id ?? undefined
+  const { session, checked } = useSchoolSession()
+  const teacherId = session?.staff_id ?? undefined
   const sectionId = session?.section_id ?? undefined
   const termId = session?.academic_term_id ?? undefined
   const ready = checked && teacherId !== undefined
@@ -51,7 +50,7 @@ export default function TeacherDashboardPage() {
         <EmptyState
           tone="caution"
           title="No dev session found"
-          description="Attach a dev Keycloak Bearer token to see your real data here -- see apps/api/scripts/mint_dev_keycloak_token.py."
+          description="Ask your school admin to assign you a school role."
         />
       ) : (
         <>
@@ -92,7 +91,7 @@ export default function TeacherDashboardPage() {
             <RollCallRoster sectionId={sectionId} markedBy={teacherId} />
           ) : (
             <SectionCard id="attendance" title="1-Click Roll-Call" icon={<CalendarClock className="size-4 text-muted-foreground" />}>
-              <EmptyState title="No home section on this session" description="Mint a dev token with --section-id to try roll-call." />
+              <EmptyState title="No home section assigned" description="Ask your school admin to assign you as class teacher for a section." />
             </SectionCard>
           )}
 

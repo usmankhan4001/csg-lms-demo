@@ -17,6 +17,7 @@ import { isSubdomainOf, isSameHost, isLocalhost as isLocalhostCheck } from '@ser
 import { safeRedirectUrl } from '@services/auth/redirects'
 import { safeExternalUrl } from '@services/security/url'
 import { AUTH_EXPIRED_EVENT, AUTH_REFRESHED_EVENT } from '@/lib/auth/events'
+import { setActiveAccessToken } from '@/lib/api/session-token-bridge'
 
 // Types matching NextAuth's session structure
 export interface Session {
@@ -228,6 +229,7 @@ export function SessionProvider({
 
   const accessTokenRef = useRef<string | null>(accessToken)
   accessTokenRef.current = accessToken
+  setActiveAccessToken(accessToken)
 
   const refreshSessionInternalRef = useRef<() => Promise<void>>(async () => {})
 

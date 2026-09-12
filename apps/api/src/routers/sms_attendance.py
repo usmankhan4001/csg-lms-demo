@@ -24,6 +24,7 @@ from src.schemas.sms_attendance import (
     StudentAttendanceRead,
 )
 from src.security.features_utils.dependencies import require_sms_attendance_feature
+from src.security.school_ownership import assert_owns_section_or_privileged, require_own_student_or_privileged
 
 router = APIRouter(dependencies=[Depends(require_sms_attendance_feature)])
 
@@ -50,6 +51,11 @@ async def submit_batch_roll_call(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Roll-call entries list cannot be empty.",
         )
+
+    # section_id only exists once the body is parsed, so this can't be a
+    # plain path/query dependency like require_own_student_or_privileged --
+    # see school_ownership.py's module docstring.
+    await assert_owns_section_or_privileged(principal, payload.section_id, session)
 
     student_ids = [entry.student_id for entry in payload.entries]
 
@@ -117,7 +123,7 @@ async def get_monthly_student_attendance(
     month: int = Query(..., ge=1, le=12, description="Month (1-12)"),
     section_id: Optional[int] = Query(None, description="Optional Section ID filter"),
     session: AsyncSession = Depends(get_db_session),
-    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+    principal: KeycloakUserPrincipal = Depends(require_own_student_or_privileged()),
 ) -> MonthlyStudentAttendanceSheet:
     """
     Generates institutional monthly attendance breakdown & weighted attendance percentage.

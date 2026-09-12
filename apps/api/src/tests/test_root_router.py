@@ -105,6 +105,7 @@ def _install_stub_modules(monkeypatch: pytest.MonkeyPatch) -> None:
         "sms_financials",
         "sms_gradebook",
         "sms_hr",
+        "sms_identity",
         "sms_library",
         "sms_payroll",
         "sms_revops",
