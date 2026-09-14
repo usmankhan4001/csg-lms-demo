@@ -125,15 +125,6 @@ services:
     networks:
       - dokploy-network
       - csg-internal
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.csg-api.rule=Host(`${API_DOMAIN:-${API_HOSTNAME:-api-demo.csginfotech.co}}`)"
-      - "traefik.http.routers.csg-api.entrypoints=websecure"
-      - "traefik.http.routers.csg-api.tls=true"
-      - "traefik.http.routers.csg-api.tls.certresolver=letsencrypt"
-      - "traefik.http.services.csg-api.loadbalancer.server.port=9000"
-      - "traefik.http.middlewares.csg-api-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
-      - "traefik.http.routers.csg-api.middlewares=csg-api-headers"
     deploy:
       resources:
         limits:
@@ -159,13 +150,6 @@ services:
     networks:
       - dokploy-network
       - csg-internal
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.csg-livekit.rule=Host(`${LIVEKIT_DOMAIN:-${LIVEKIT_HOSTNAME:-livekit-demo.csginfotech.co}}`)"
-      - "traefik.http.routers.csg-livekit.entrypoints=websecure"
-      - "traefik.http.routers.csg-livekit.tls=true"
-      - "traefik.http.routers.csg-livekit.tls.certresolver=letsencrypt"
-      - "traefik.http.services.csg-livekit.loadbalancer.server.port=7880"
     deploy:
       resources:
         limits:
@@ -201,13 +185,6 @@ services:
     networks:
       - dokploy-network
       - csg-internal
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.csg-collab.rule=Host(`${COLLAB_DOMAIN:-${COLLAB_HOSTNAME:-collab-demo.csginfotech.co}}`)"
-      - "traefik.http.routers.csg-collab.entrypoints=websecure"
-      - "traefik.http.routers.csg-collab.tls=true"
-      - "traefik.http.routers.csg-collab.tls.certresolver=letsencrypt"
-      - "traefik.http.services.csg-collab.loadbalancer.server.port=4000"
     deploy:
       resources:
         limits:
@@ -273,13 +250,6 @@ services:
     networks:
       - dokploy-network
       - csg-internal
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.csg-web.rule=Host(`${APP_DOMAIN:-${APP_HOSTNAME:-lms-demo.csginfotech.co}}`)"
-      - "traefik.http.routers.csg-web.entrypoints=websecure"
-      - "traefik.http.routers.csg-web.tls=true"
-      - "traefik.http.routers.csg-web.tls.certresolver=letsencrypt"
-      - "traefik.http.services.csg-web.loadbalancer.server.port=3000"
     deploy:
       resources:
         limits:
