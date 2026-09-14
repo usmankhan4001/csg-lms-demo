@@ -45,6 +45,21 @@ from src.schemas.sms_fees_extended import (
     RefundRead,
     TransferMatchSuggestion,
 )
+from src.db.sms_fee_payments import FeePaymentIntent
+from src.schemas.sms_fee_payments import (
+    FeePaymentIntentRead,
+    StartCheckoutRequest,
+    StartCheckoutResponse,
+    VoucherPaymentAttempts,
+)
+from src.services.payments.money import Money
+from src.services.sms.fee_checkout import (
+    assert_owns_student_or_privileged,
+    list_intents_for_voucher,
+    reconcile_stale_intent,
+    refund_online_payment,
+    start_checkout,
+)
 from src.security.features_utils.dependencies import require_sms_fees_feature
 from src.security.school_ownership import (
     assert_campus_allowed,
@@ -605,3 +620,201 @@ async def list_fee_reminders(
         stmt = stmt.where(and_(*conditions))
     rows = (await session.execute(stmt)).scalars().all()
     return [FeeReminderLogRead.model_validate(r) for r in rows]
+
+
+# ===========================================================================
+# Online payment (M11 completion).
+#
+# Every endpoint above this point assumes a human already took money somewhere
+# else and is now typing it in. These three let a parent actually pay.
+#
+# The provider callback is NOT here: it cannot carry a user principal, and
+# this router requires one at router level. See routers/sms_fee_webhooks.py.
+# ===========================================================================
+
+@router.post(
+    "/vouchers/{voucher_id}/checkout",
+    response_model=StartCheckoutResponse,
+    summary="Start An Online Fee Payment",
+    description=(
+        "Opens a payment session for one voucher and returns where to send the "
+        "payer. A parent may only start a checkout for their own child; the "
+        "linkage is verified server-side against StudentGuardian and never "
+        "taken from the request."
+    ),
+    responses={
+        403: {"description": "Not your record, or your account has no school"},
+        409: {"description": "Online payment is off, or the amount is not exactly chargeable"},
+        502: {"description": "The payment provider refused to open a session"},
+    },
+)
+async def start_fee_checkout(
+    voucher_id: int,
+    payload: StartCheckoutRequest,
+    session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+) -> StartCheckoutResponse:
+    intent = await start_checkout(
+        session=session,
+        voucher_id=voucher_id,
+        principal=principal,
+        success_url=payload.success_url,
+        cancel_url=payload.cancel_url,
+    )
+    return StartCheckoutResponse(
+        intent_id=intent.id,
+        reference=intent.reference,
+        voucher_id=intent.voucher_id,
+        amount_minor=intent.amount_minor,
+        amount_display=Money(intent.amount_minor, intent.currency).as_ledger_amount,
+        currency=intent.currency,
+        provider=intent.provider,
+        redirect_url=getattr(intent, "_redirect_url", ""),
+    )
+
+
+@router.get(
+    "/vouchers/{voucher_id}/payment-attempts",
+    response_model=VoucherPaymentAttempts,
+    summary="List Online Payment Attempts For A Voucher",
+    description=(
+        "Every attempt, including abandoned and failed ones. Abandonment is "
+        "the normal way an online payment goes wrong — the payer closes the "
+        "tab — so it is shown rather than hidden."
+    ),
+)
+async def list_voucher_payment_attempts(
+    voucher_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+) -> VoucherPaymentAttempts:
+    voucher = (
+        await session.execute(
+            select(StudentFeeVoucher).where(StudentFeeVoucher.id == voucher_id)
+        )
+    ).scalar_one_or_none()
+    if voucher is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Voucher ID {voucher_id} not found.",
+        )
+    await assert_owns_student_or_privileged(principal, voucher.student_id, session)
+
+    intents = await list_intents_for_voucher(session, voucher_id)
+    return VoucherPaymentAttempts(
+        voucher_id=voucher_id,
+        attempts=[
+            FeePaymentIntentRead(
+                id=i.id,
+                reference=i.reference,
+                voucher_id=i.voucher_id,
+                student_id=i.student_id,
+                provider=i.provider,
+                amount_minor=i.amount_minor,
+                amount_display=Money(i.amount_minor, i.currency).as_ledger_amount,
+                currency=i.currency,
+                status=i.status,
+                provider_payment_ref=i.provider_payment_ref,
+                receipt_id=i.receipt_id,
+                failure_reason=i.failure_reason,
+                created_at=i.created_at,
+                updated_at=i.updated_at,
+            )
+            for i in intents
+        ],
+    )
+
+
+@router.post(
+    "/payment-intents/{intent_id}/reconcile",
+    response_model=FeePaymentIntentRead,
+    summary="Resolve A Payment Attempt Whose Callback Never Arrived",
+    description=(
+        "Asks the provider directly what became of a still-pending attempt. "
+        "Back-office only. A successful payment found this way is NOT credited "
+        "here — crediting happens only on the signed webhook path, which "
+        "carries the replay guard."
+    ),
+    responses={403: {"description": "Only back-office staff may reconcile payments"}},
+)
+async def reconcile_payment_intent(
+    intent_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(require_roles(_BURSAR)),
+) -> FeePaymentIntentRead:
+    intent = (
+        await session.execute(
+            select(FeePaymentIntent).where(FeePaymentIntent.id == intent_id)
+        )
+    ).scalar_one_or_none()
+    if intent is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Payment attempt {intent_id} not found.",
+        )
+    # Campus/tenant isolation: an attempt belongs to the org that raised it.
+    if principal.org_id is not None and intent.org_id != principal.org_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Payment attempt {intent_id} not found.",
+        )
+
+    intent = await reconcile_stale_intent(session, intent)
+    return FeePaymentIntentRead(
+        id=intent.id,
+        reference=intent.reference,
+        voucher_id=intent.voucher_id,
+        student_id=intent.student_id,
+        provider=intent.provider,
+        amount_minor=intent.amount_minor,
+        amount_display=Money(intent.amount_minor, intent.currency).as_ledger_amount,
+        currency=intent.currency,
+        status=intent.status,
+        provider_payment_ref=intent.provider_payment_ref,
+        receipt_id=intent.receipt_id,
+        failure_reason=intent.failure_reason,
+        created_at=intent.created_at,
+        updated_at=intent.updated_at,
+    )
+
+
+@router.post(
+    "/payment-intents/{intent_id}/refund",
+    response_model=RefundRead,
+    summary="Refund An Online Payment",
+    description=(
+        "Returns money through the rail it arrived on, then writes the ledger "
+        "refund. Back-office only — issuing a refund gives money away, so it "
+        "sits at the same level as authorising a concession."
+    ),
+    responses={
+        400: {"description": "Not a completed payment, or the amount exceeds what was paid"},
+        409: {"description": "No provider reference — refund this one manually"},
+        502: {"description": "The provider refused the refund; nothing was written"},
+    },
+)
+async def refund_online_fee_payment(
+    intent_id: int,
+    payload: IssueRefundRequest,
+    session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(require_roles(_BURSAR_LEAD)),
+) -> RefundRead:
+    intent = (
+        await session.execute(
+            select(FeePaymentIntent).where(FeePaymentIntent.id == intent_id)
+        )
+    ).scalar_one_or_none()
+    if intent is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Payment attempt {intent_id} not found.",
+        )
+
+    refund, _provider_ref = await refund_online_payment(
+        session=session,
+        intent=intent,
+        amount=payload.amount,
+        reason=payload.reason,
+        principal=principal,
+    )
+    return RefundRead.model_validate(refund)

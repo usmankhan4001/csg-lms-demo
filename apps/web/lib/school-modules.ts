@@ -93,6 +93,19 @@ const MODULE_DEFS = {
       { href: '/dash/school-library/reservations', label: 'Holds' },
     ],
   },
+  fees: {
+    root: '/dash/fees',
+    tabs: [
+      { href: '/dash/fees', label: 'Vouchers' },
+      // Arrears is the screen a bursar actually lives in, so it sits second
+      // rather than at the end. There is no arrears ENDPOINT -- the tab derives
+      // overdue status from each voucher's due date -- but that is a backend
+      // gap, not a reason to hide the screen a school needs daily.
+      { href: '/dash/fees/arrears', label: 'Arrears' },
+      { href: '/dash/fees/reconciliation', label: 'Reconciliation' },
+      { href: '/dash/fees/reminders', label: 'Reminders' },
+    ],
+  },
   counseling: {
     root: '/dash/counseling',
     tabs: [
@@ -111,6 +124,19 @@ const MODULE_DEFS = {
       // controls a back-office user would find half-refused.
       { href: '/dash/revops/config', label: 'Agent config', access: 'administer' },
       { href: '/dash/revops/knowledge', label: 'Knowledge base', access: 'administer' },
+    ],
+  },
+  'school-settings': {
+    root: '/dash/school-settings',
+    tabs: [
+      { href: '/dash/school-settings', label: 'Settings', access: 'administer' },
+      // People is where accounts are CREATED; Roles grants a role to somebody
+      // who already has one. Both are administer-gated to match their routers
+      // ([SUPER_ADMIN, SCHOOL_ADMIN] on every provisioning and role endpoint
+      // in routers/sms_identity.py) -- a teacher must not be offered a screen
+      // whose every control would be refused.
+      { href: '/dash/school-settings/people', label: 'People', access: 'administer' },
+      { href: '/dash/school-settings/roles', label: 'Roles', access: 'administer' },
     ],
   },
 } satisfies Record<string, SchoolModuleDef>

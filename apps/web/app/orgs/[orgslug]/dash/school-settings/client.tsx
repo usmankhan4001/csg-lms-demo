@@ -93,6 +93,7 @@ export default function SchoolSettingsClient({ org_id }: SchoolSettingsClientPro
 
   return (
     <DashPageShell
+      module="school-settings"
       title="School settings"
       description="Grading scale, fee policy and school identity — the things a school sets once and every module then follows."
     >

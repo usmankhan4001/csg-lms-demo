@@ -107,6 +107,19 @@ class FeePolicySettings(BaseModel):
     # long-unpaid voucher grows without bound.
     late_fee_max_percent: float = 20.0
 
+    # -- Online collection ------------------------------------------------
+    # Off until a school turns it on. A payment rail that switches itself on
+    # because a key happens to be present in the environment is how a test
+    # deployment takes real money from real parents.
+    online_payments_enabled: bool = False
+    # Which rail. One school, one rail at a time; adding a second means
+    # implementing PaymentProvider, not changing the fee module.
+    payment_provider: str = "stripe"
+    # ISO-4217. Deliberately a visible, editable setting rather than a
+    # constant in payment code -- charging in the wrong currency is charging
+    # the wrong amount, and that decision belongs to the school, on a screen.
+    currency: str = "PKR"
+
 
 class AcademicCalendarSettings(BaseModel):
     """Working week and period structure.

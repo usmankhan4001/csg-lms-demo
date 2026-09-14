@@ -112,7 +112,16 @@ class NotificationDelivery(SQLModel, table=True):
         )
     )
     channel: str = Field(sa_column=Column(String(32), nullable=False))  # 'in_app' | 'email'
-    status: str = Field(sa_column=Column(String(16), nullable=False))  # 'sent' | 'failed' | 'skipped'
+    # 'sent'       provider accepted it (or the in-app row was committed)
+    # 'failed'     we tried and it did not go
+    # 'skipped'    nothing to try -- e.g. the recipient has no email address
+    # 'suppressed' the recipient asked not to receive this (M35 preferences)
+    # 'queued'     held until the end of the recipient's quiet hours
+    #
+    # 'suppressed' and 'queued' are NOT failures and must stay distinguishable
+    # from one: "why didn't this parent hear from us" has four different
+    # answers and an administrator needs the right one.
+    status: str = Field(sa_column=Column(String(16), nullable=False))
     error: Optional[str] = Field(default=None, sa_column=Column(String(500), nullable=True))
     attempted_at: datetime.datetime = Field(
         default_factory=get_utc_now,

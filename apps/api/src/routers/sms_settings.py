@@ -36,7 +36,11 @@ from src.schemas.sms_settings import (
     SettingsGroup,
     SettingsGroupUpdate,
 )
-from src.security.school_ownership import assert_campus_allowed, resolve_scoped_campus_id
+from src.security.school_ownership import (
+    assert_campus_allowed,
+    require_org_id,
+    resolve_scoped_campus_id,
+)
 from src.services.sms.settings import (
     InvalidSettingsPayload,
     resolve_all_groups,
@@ -106,9 +110,9 @@ async def get_school_settings(
     # their own campus, not an org-wide view they are not entitled to.
     scoped_campus = resolve_scoped_campus_id(principal, campus_id)
 
-    resolved = await resolve_all_groups(session, principal.org_id or 1, scoped_campus)
+    resolved = await resolve_all_groups(session, require_org_id(principal), scoped_campus)
     return SchoolSettingsRead(
-        org_id=principal.org_id or 1,
+        org_id=require_org_id(principal),
         campus_id=scoped_campus,
         groups=[
             ResolvedSettingsGroup(
@@ -152,7 +156,7 @@ async def update_settings_group(
     try:
         await write_group(
             session=session,
-            org_id=principal.org_id or 1,
+            org_id=require_org_id(principal),
             campus_id=campus_id,
             group=group,
             values=payload.values,
@@ -166,7 +170,7 @@ async def update_settings_group(
         ) from exc
 
     values, source, updated = await resolve_group(
-        session, principal.org_id or 1, campus_id, group
+        session, require_org_id(principal), campus_id, group
     )
     return ResolvedSettingsGroup(
         group=group,

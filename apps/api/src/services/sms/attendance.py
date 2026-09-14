@@ -141,6 +141,20 @@ async def check_and_emit_absence_streak(
     Compute the student's current consecutive-absence streak and, once it
     meets ABSENCE_STREAK_THRESHOLD, emit "student.absence_streak" on the
     shared event bus. Returns the streak regardless of whether it emitted.
+
+    DEPRECATED -- DO NOT CALL THIS FROM NEW CODE (Lane J).
+
+    Nothing calls it today: `submit_batch_roll_call` now raises the streak
+    through the notification fabric (`services/sms/school_events.py`) instead.
+    This and its `@bus.on` subscriber below are retained only because the
+    subscriber has a direct end-to-end test, and deleting live-tested code was
+    outside the notification work.
+
+    Calling it would REGRESS behaviour rather than duplicate it: the bus path
+    emails guardians directly, so it bypasses notification preferences (a
+    parent could not switch it off), duplicate suppression (re-saving a
+    register re-sends), the delivery log (no answer to "were they told?"), and
+    it writes no in-app copy. Use `raise_school_event(ABSENCE_STREAK, ...)`.
     """
     streak = await get_consecutive_absence_streak(session, student_id, section_id)
     if streak >= ABSENCE_STREAK_THRESHOLD:

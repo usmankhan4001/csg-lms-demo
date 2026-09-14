@@ -179,10 +179,10 @@ class TestSendMagicLoginEmail:
                 _fake_user_read(), "learner@example.com", "https://app.test", "tok"
             )
         call = send_mock.call_args.kwargs
-        assert call["subject"] == "Your LearnHouse login link"
-        assert "Sign in to LearnHouse" in call["body"]
+        assert call["subject"] == "Your CSG LMS login link"
+        assert "Sign in to CSG LMS" in call["body"]
         assert "<svg" in call["body"]
-        assert "Powered by LearnHouse" not in call["body"]
+        assert "Powered by CSG LMS" not in call["body"]
         assert call["sender_name"] is None
 
     def test_org_mail_is_the_orgs_own(self):

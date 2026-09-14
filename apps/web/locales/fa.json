@@ -52,7 +52,7 @@
       "discord": "دیسکورد",
       "report_feedback": "گزارش مشکل یا بازخورد",
       "feedback_title": "ارسال بازخورد",
-      "feedback_description": "با به اشتراک گذاشتن نظرات، گزارش اشکالات یا پیشنهاد ویژگی‌های جدید به ما در بهبود LearnHouse کمک کنید.",
+      "feedback_description": "با به اشتراک گذاشتن نظرات، گزارش اشکالات یا پیشنهاد ویژگی‌های جدید به ما در بهبود CSG LMS کمک کنید.",
       "feedback_placeholder": "به ما بگویید چه فکری دارید...",
       "feedback_success": "از بازخورد شما متشکریم!",
       "send_feedback": "ارسال بازخورد",
@@ -359,11 +359,11 @@
     "privacy_policy": "سیاست حفظ حریم خصوصی",
     "image_title_forgot": "گذرواژه خود را بازنشانی کنید.",
     "image_subtitle_forgot": "در کمترین زمان به شما کمک می‌کنیم به حساب خود بازگردید.",
-    "image_title_login": "به LearnHouse خوش آمدید.",
+    "image_title_login": "به CSG LMS خوش آمدید.",
     "image_subtitle_login": "از همان‌جا که رها کردید ادامه دهید — دوره‌ها، دانشجویان و ابزارهایتان منتظرند.",
     "image_title_reset": "تقریباً تمام شد.",
     "image_subtitle_reset": "برای حفظ امنیت حساب خود یک گذرواژه قوی بسازید.",
-    "image_title_signup": "تدریس را با LearnHouse آغاز کنید.",
+    "image_title_signup": "تدریس را با CSG LMS آغاز کنید.",
     "image_subtitle_signup": "حساب خود را بسازید و اولین دوره‌تان را در چند دقیقه راه‌اندازی کنید.",
     "image_title_verify": "ایمیل خود را تأیید کنید.",
     "image_subtitle_verify": "یک گام سریع برای ایمن‌سازی حساب و شروع کار.",
@@ -1274,7 +1274,7 @@
     "not_supported_title": "این فعالیت پشتیبانی نمی‌شود",
     "not_supported_description": "این نوع فعالیت نیاز به احراز هویت دارد و قابل جاسازی نیست.",
     "visit_activity": "بازدید از صفحه فعالیت",
-    "powered_by": "پشتیبانی شده توسط LearnHouse"
+    "powered_by": "پشتیبانی شده توسط CSG LMS"
   },
   "assignments": {
     "submit_assignment": "ارسال تکلیف",
@@ -2629,8 +2629,8 @@
         "footer_text_desc": "متن سفارشی که در پایین صفحات سازمان شما نمایش داده می‌شود",
         "default_language": "زبان پیش‌فرض",
         "default_language_desc": "زبانی که بازدیدکنندگان جدید به طور پیش‌فرض می‌بینند و زبانی که برای ایمیل‌های ارسال شده از طرف این سازمان استفاده می‌شود. اعضا همچنان می‌توانند زبان رابط کاربری خود را تغییر دهند.",
-        "watermark_label": "واترمارک \"ساخته شده با LearnHouse\"",
-        "watermark_desc": "نمایش واترمارک برند LearnHouse در صفحات سازمان شما",
+        "watermark_label": "واترمارک \"ساخته شده با CSG LMS\"",
+        "watermark_desc": "نمایش واترمارک برند CSG LMS در صفحات سازمان شما",
         "watermark_free_plan": "واترمارک همیشه در طرح رایگان نشان داده می‌شود",
         "watermark_ee": "با مجوز نسخه سازمانی شما پنهان شده است"
       },
@@ -5164,7 +5164,7 @@
       }
     },
     "welcome": {
-      "title": "به LearnHouse خوش آمدید",
+      "title": "به CSG LMS خوش آمدید",
       "subtitle": "دوره ایجاد کنید، زبان‌آموزان را دعوت کنید و دانش را با جهان به اشتراک بگذارید.",
       "get_started": "شروع کنید",
       "features_title": "همه چیزهایی که نیاز دارید",

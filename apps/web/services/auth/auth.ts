@@ -101,6 +101,27 @@ export async function resetPassword(
   return res
 }
 
+/**
+ * Redeem a school invitation and set the chosen password.
+ *
+ * Unauthenticated by design: the recipient has an account but no password yet,
+ * so there is nothing to sign in with. The single-use token in the link is
+ * what authorises this, and the backend verifies it.
+ */
+export async function acceptSchoolInvite(
+  org_id: number,
+  email: string,
+  code: string,
+  new_password: string
+) {
+  const result = await fetch(
+    `${getAPIUrl()}sms/identity/invites/accept`,
+    RequestBody('POST', { org_id, email, code, new_password }, null)
+  )
+  const res = await getResponseMetadata(result)
+  return res
+}
+
 export async function logout(): Promise<any> {
   // Request Config
 

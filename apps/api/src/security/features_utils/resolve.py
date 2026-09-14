@@ -43,6 +43,19 @@ ALL_FEATURES = [
 ]
 
 
+# Modules a PHYSICAL school needs and an online-first school does not: a book
+# stockroom with due dates, a procurement/stores ledger, and dormitory bed
+# allocation. The code stays (a campus-based school on this platform later can
+# switch them on), but for an online school they are noise -- three nav entries
+# and three settings surfaces nobody will ever use.
+#
+# Default-OFF rather than deleted, and rather than a hardcoded exclusion: every
+# other feature defaults to ON when no admin toggle is recorded, so these
+# needed a default of their own. A school that explicitly enables one gets it,
+# because an explicit toggle is read before this default applies.
+DEFAULT_DISABLED_FEATURES = {"sms_library", "sms_inventory", "sms_hostel"}
+
+
 def _get_plan_from_config(config: dict) -> str:
     """Extract plan from config, supporting both v1 and v2 formats."""
     version = config.get("config_version", "1.0")
@@ -155,7 +168,11 @@ def resolve_feature(feature: str, config: dict, org_id: int = 0, _extras: dict |
         return {"enabled": True, "available": True, "limit": effective_limit, "required_plan": required_plan}
 
     admin_toggle = _get_admin_toggle(config, feature)
-    admin_disabled = admin_toggle.get("disabled", False)
+    # A physical-school module is off unless this org explicitly recorded a
+    # toggle for it. `.get("disabled", default)` rather than a separate branch,
+    # so an explicit `disabled: false` still switches it back on.
+    _default_disabled = feature in DEFAULT_DISABLED_FEATURES
+    admin_disabled = admin_toggle.get("disabled", _default_disabled)
 
     # EE mode: everything available & unlimited (admin toggle may still turn off)
     if mode == "ee":

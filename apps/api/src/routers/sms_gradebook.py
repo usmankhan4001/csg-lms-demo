@@ -1,3 +1,4 @@
+import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import and_, select
@@ -45,6 +46,7 @@ from src.security.features_utils.dependencies import require_sms_gradebook_featu
 from src.security.school_ownership import (
     assert_owns_section_or_privileged,
     require_own_student_or_privileged,
+    require_org_id,
 )
 from src.services.sms.gradebook import (
     ReportCardAlreadySentError,
@@ -63,6 +65,16 @@ from src.services.sms.gradebook import (
     send_report_card,
     update_report_card_draft,
 )
+from src.db.sms_campus import AcademicTerm
+from src.db.users import User
+from src.services.notifications import resolve_guardians_of
+from src.services.sms.school_events import (
+    REPORT_CARD_SENT,
+    raise_school_event,
+    student_display_name,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(require_sms_gradebook_feature)])
 
@@ -632,7 +644,77 @@ async def send_report_card_endpoint(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except ReportCardAlreadySentError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+
+    # Sending is the moment the family is entitled to know. No dedupe window is
+    # needed: `send_report_card` raises ReportCardAlreadySentError on a second
+    # attempt, so this line is unreachable twice for the same card.
+    await _announce_report_card(session, record, principal)
+
     return _to_record_read(record)
+
+
+async def _announce_report_card(session, record, principal) -> None:
+    """Tell the student and their guardians that a report card was released.
+
+    Best-effort by construction: `raise_school_event` cannot propagate, so a
+    mail outage cannot undo a send that is already committed. A teacher who
+    pressed Send must never see a 500 and press it again.
+    """
+    student_id = getattr(record, "student_id", None)
+    if student_id is None:
+        return
+
+    recipients = []
+    try:
+        student = await session.get(User, student_id)
+        if student is not None:
+            recipients.append(student)
+        recipients.extend(await resolve_guardians_of(session, student_id))
+    except Exception:
+        logger.warning(
+            "Could not resolve who to tell about report card %s; it was sent "
+            "but nobody was notified.",
+            getattr(record, "id", None),
+            exc_info=True,
+        )
+        return
+
+    if not recipients:
+        logger.warning(
+            "Report card %s was sent but the student has no account and no "
+            "linked guardian, so nobody can be told.",
+            getattr(record, "id", None),
+        )
+        return
+
+    term_name = None
+    term_id = getattr(record, "academic_term_id", None)
+    if term_id is not None:
+        try:
+            term = await session.get(AcademicTerm, term_id)
+            term_name = getattr(term, "name", None)
+        except Exception:
+            # A missing term name costs one sentence, not the message: the
+            # fabric drops the paragraph that needed it. Better a short true
+            # message than "your report card for Term None".
+            logger.warning("Could not resolve term name for report card %s", term_id)
+
+    await raise_school_event(
+        session,
+        event_key=REPORT_CARD_SENT.key,
+        org_id=principal.org_id,
+        recipients=recipients,
+        context={
+            "student_name": await student_display_name(session, student_id),
+            "term_name": term_name,
+            # Deliberately NOT sent: gpa, letter_grade, remarks, ai_narrative.
+            # A mark in an email subject line is read by whoever is holding the
+            # phone. The family opens the portal for the result itself.
+        },
+        campus_id=principal.campus_id,
+        related_kind="report_card",
+        related_id=getattr(record, "id", None),
+    )
 
 
 @router.get(
@@ -919,7 +1001,7 @@ async def generate_official_transcript(
     # verification endpoint that recomputes it, and there is none.
     return {
         "student_id": student_id,
-        "org_id": principal.org_id or 1,
+        "org_id": require_org_id(principal),
         "document_type": "ACADEMIC_TRANSCRIPT_EXPORT",
         "issuing_authority": "CSG LMS Academic Registrar",
         "cumulative_summary": gpa_info,

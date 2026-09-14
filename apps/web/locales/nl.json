@@ -48,7 +48,7 @@
       "discord": "Discord",
       "report_feedback": "Probleem of feedback melden",
       "feedback_title": "Feedback Verzenden",
-      "feedback_description": "Help ons LearnHouse te verbeteren door je gedachten te delen, bugs te melden of nieuwe functies voor te stellen.",
+      "feedback_description": "Help ons CSG LMS te verbeteren door je gedachten te delen, bugs te melden of nieuwe functies voor te stellen.",
       "feedback_placeholder": "Vertel ons wat je denkt...",
       "feedback_success": "Bedankt voor je feedback!",
       "send_feedback": "Feedback Verzenden",
@@ -358,11 +358,11 @@
     "privacy_policy": "Privacybeleid",
     "image_title_forgot": "Stel je wachtwoord opnieuw in.",
     "image_subtitle_forgot": "We helpen je in een mum van tijd weer in je account.",
-    "image_title_login": "Welkom terug bij LearnHouse.",
+    "image_title_login": "Welkom terug bij CSG LMS.",
     "image_subtitle_login": "Ga verder waar je gebleven was — je cursussen, studenten en tools staan klaar.",
     "image_title_reset": "Bijna klaar.",
     "image_subtitle_reset": "Maak een sterk wachtwoord om je account veilig te houden.",
-    "image_title_signup": "Begin met lesgeven met LearnHouse.",
+    "image_title_signup": "Begin met lesgeven met CSG LMS.",
     "image_subtitle_signup": "Maak je account aan en lanceer je eerste cursus in enkele minuten.",
     "image_title_verify": "Verifieer je e-mailadres.",
     "image_subtitle_verify": "Eén snelle stap om je account te beveiligen en aan de slag te gaan.",
@@ -2342,9 +2342,9 @@
         "footer_text_desc": "Aangepaste tekst die onderaan je organisatiepagina's wordt weergegeven",
         "default_language": "Standaardtaal",
         "default_language_desc": "De taal die nieuwe bezoekers standaard zien en die wordt gebruikt voor e-mails namens deze organisatie. Leden kunnen hun eigen interfacetaal nog steeds wijzigen.",
-        "watermark_desc": "LearnHouse-watermerk tonen op organisatiepagina's",
+        "watermark_desc": "CSG LMS-watermerk tonen op organisatiepagina's",
         "watermark_free_plan": "Watermerk wordt altijd getoond bij het gratis plan",
-        "watermark_label": "\"Made with LearnHouse\"-watermerk",
+        "watermark_label": "\"Made with CSG LMS\"-watermerk",
         "watermark_ee": "Verborgen door je Enterprise Edition-licentie"
       },
       "images": {
@@ -4833,7 +4833,7 @@
       }
     },
     "welcome": {
-      "title": "Welkom bij LearnHouse",
+      "title": "Welkom bij CSG LMS",
       "subtitle": "Maak cursussen, nodig leerlingen uit en deel kennis met de wereld.",
       "get_started": "Aan de slag",
       "features_title": "Alles wat je nodig hebt",
@@ -5133,7 +5133,7 @@
   "embed": {
     "not_supported_description": "Dit type activiteit vereist authenticatie en kan niet worden ingebed.",
     "not_supported_title": "Deze activiteit wordt niet ondersteund",
-    "powered_by": "Mogelijk gemaakt door LearnHouse",
+    "powered_by": "Mogelijk gemaakt door CSG LMS",
     "visit_activity": "Activiteitpagina bezoeken"
   },
   "migration": {

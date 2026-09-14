@@ -374,7 +374,11 @@ export default async function proxy(req: NextRequest) {
   // -------------------------------------------------------------------------
   // 3. Auth pages — resolve tenant for cookie context, rewrite to /auth
   // -------------------------------------------------------------------------
-  const authPaths = ['/login', '/signup', '/reset', '/forgot', '/verify-email']
+  // '/accept-invite' is where a provisioned teacher, student or parent lands
+  // from their invitation email to choose a password. It belongs here rather
+  // than as a pass-through because, like '/reset', it needs the tenant resolved
+  // for org branding and cookie context.
+  const authPaths = ['/login', '/signup', '/reset', '/forgot', '/verify-email', '/accept-invite']
   if (authPaths.includes(pathname)) {
     const hasSession = !!req.cookies.get('LH_session')?.value
 

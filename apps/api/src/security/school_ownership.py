@@ -190,3 +190,45 @@ def assert_campus_allowed(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: Multi-campus isolation policy prohibits cross-campus operations",
         )
+
+
+# ---------------------------------------------------------------------------
+# Organisation scoping -- the tenant boundary one level above campus.
+#
+# Eighteen call sites across sms_cognia, sms_gradebook, sms_revops_config and
+# sms_settings resolved their tenant as `principal.org_id or 1`: when a
+# principal carried no organisation, every one of them silently read AND WROTE
+# the data of organisation 1 -- whichever school happens to hold the lowest id.
+# `update_settings_group` wrote another school's settings, `delete_knowledge_
+# entry` deleted its records, and the transcript export stamped its name onto
+# a document headed "OFFICIAL".
+#
+# `resolve_school_principal` leaves `org_id` None for an authenticated user
+# holding zero SMSUserRole grants, and also for a SUPER_ADMIN on an instance
+# where `_get_default_org_id` finds no organisation at all. Neither is a
+# request that can be attributed to a school, so neither may proceed.
+# ---------------------------------------------------------------------------
+
+
+def require_org_id(principal: KeycloakUserPrincipal) -> int:
+    """The organisation this request acts on, or refuse it.
+
+    403 rather than 400, matching `assert_campus_allowed` above and
+    `routers/notifications.py`: the request is well-formed and the caller is
+    authenticated, so there is nothing for them to correct in it -- their
+    account simply is not attached to a school. (Two SMS routers,
+    sms_admissions and sms_ai_consent, answer 400 for the same condition.
+    They are outside this change; the inconsistency is noted, not widened.)
+
+    Never returns a fallback. A tenant that cannot be established is missing,
+    not organisation 1.
+    """
+    if principal.org_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Forbidden: this account is not attached to a school "
+                "organisation, so the request cannot be scoped to one."
+            ),
+        )
+    return principal.org_id

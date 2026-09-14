@@ -138,6 +138,26 @@ async def _already_reminded(
     return (today - most_recent).days < OVERDUE_REPEAT_DAYS
 
 
+async def _resolve_student_org_id(session, student_id: int):
+    """Which school a student belongs to, or None.
+
+    Returns None rather than a fallback. A fee reminder is a demand for money
+    naming a child; sending one under a guessed tenant is the worst version of
+    the cross-tenant default this codebase has spent the day removing.
+    """
+    from src.db.sms_identity import SMSUserRole
+
+    row = (
+        await session.execute(
+            select(SMSUserRole).where(
+                SMSUserRole.user_id == student_id,
+                SMSUserRole.is_active == True,  # noqa: E712
+            )
+        )
+    ).scalars().first()
+    return getattr(row, "org_id", None) if row is not None else None
+
+
 async def send_fee_reminders(ctx: Optional[dict] = None) -> Dict[str, int]:
     """arq job: remind guardians about upcoming, due and overdue fees.
 
@@ -146,7 +166,8 @@ async def send_fee_reminders(ctx: Optional[dict] = None) -> Dict[str, int]:
     failure abort the batch.
     """
     from src.core.events.database import _async_session_factory
-    from src.services.notifications.service import notify
+    from src.services.notifications import notify_event
+    from src.services.sms.school_events import FEE_REMINDER
 
     today = datetime.date.today()
     considered = 0
@@ -154,6 +175,7 @@ async def send_fee_reminders(ctx: Optional[dict] = None) -> Dict[str, int]:
     skipped_settled = 0
     skipped_recent = 0
     no_guardian = 0
+    no_org = 0
     failed = 0
 
     async with _async_session_factory() as session:
@@ -220,12 +242,59 @@ async def send_fee_reminders(ctx: Optional[dict] = None) -> Dict[str, int]:
                     getattr(student, "username", None) or f"student #{voucher.student_id}"
                 )
 
-                result = await notify(
+                # MIGRATED FROM `notify()` TO THE EVENT FABRIC (Lane J).
+                #
+                # The direct `notify()` call worked, but it sat outside
+                # everything the fabric exists for: a parent could not switch
+                # fee email off, two runs of this job in one day sent two
+                # reminders, and nothing recorded WHY a message did not arrive.
+                # It also passed no `org_id`, so the notification rows it wrote
+                # were unscoped -- in a multi-school deployment that is a row
+                # belonging to no tenant.
+                #
+                # `render_reminder_html` is deliberately still used rather than
+                # replaced by a registered template: it renders a real money
+                # figure from the voucher, and re-expressing that as template
+                # context risks formatting a balance in the one place where
+                # being approximately right is being wrong. The fabric's
+                # per-school template override therefore does not apply to this
+                # one event; that is a known limit, noted here rather than
+                # hidden.
+                # WHERE org_id COMES FROM, and why it is not on the voucher.
+                #
+                # `StudentFeeVoucher` carries no tenant column -- it is scoped
+                # only transitively, through the student. The fabric refuses to
+                # send without an explicit org (a message naming a child must
+                # never go out under a guessed tenant), so it is resolved from
+                # the student's own role grant here and the voucher is SKIPPED,
+                # loudly, when it cannot be. Defaulting would be the same
+                # eighteen-site `org_id or 1` bug that Lane C has just removed
+                # from this codebase, reintroduced in the one place that sends
+                # a family a demand for money.
+                org_id = await _resolve_student_org_id(session, voucher.student_id)
+                if org_id is None:
+                    no_org += 1
+                    logger.warning(
+                        "Fee reminder for voucher %s skipped: student %s has no "
+                        "school role, so the school it belongs to cannot be "
+                        "established.",
+                        voucher.voucher_no,
+                        voucher.student_id,
+                    )
+                    continue
+
+                result = await notify_event(
                     session,
+                    event_key=FEE_REMINDER.key,
+                    org_id=org_id,
                     recipients=recipients,
-                    kind="fee_reminder",
-                    title=f"Fee reminder: {voucher.balance_amount:.2f} outstanding",
-                    body_html=render_reminder_html(voucher, kind, student_name),
+                    context={
+                        "student_name": student_name,
+                        "amount": f"{voucher.balance_amount:.2f}",
+                        "due_date": voucher.due_date.isoformat()
+                        if getattr(voucher, "due_date", None)
+                        else None,
+                    },
                     related_kind="fee_voucher",
                     related_id=voucher.id,
                 )
@@ -259,6 +328,7 @@ async def send_fee_reminders(ctx: Optional[dict] = None) -> Dict[str, int]:
         sent,
         skipped_recent,
         no_guardian,
+        no_org,
         failed,
     )
     return {
@@ -267,5 +337,9 @@ async def send_fee_reminders(ctx: Optional[dict] = None) -> Dict[str, int]:
         "skipped_settled": skipped_settled,
         "skipped_recent": skipped_recent,
         "no_guardian": no_guardian,
+        # Vouchers whose school could not be established. Surfaced rather than
+        # folded into "failed": it is a data gap (a student with no role
+        # grant), not a delivery fault, and the fix is different.
+        "no_org": no_org,
         "failed": failed,
     }

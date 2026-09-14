@@ -471,6 +471,7 @@ export default function FeesDashClient({ org_id }: FeesDashClientProps) {
     <DashPageShell
       title="Fees"
       description="Vouchers, collections and outstanding balances across the school."
+      module="fees"
       action={
         <div className="flex flex-wrap gap-2">
           <CreateFeeStructureDialog

@@ -50,7 +50,7 @@
       "discord": "Discord",
       "report_feedback": "Reportar problema o comentario",
       "feedback_title": "Enviar comentarios",
-      "feedback_description": "Ayúdanos a mejorar LearnHouse compartiendo tus opiniones, reportando errores o sugiriendo nuevas funciones.",
+      "feedback_description": "Ayúdanos a mejorar CSG LMS compartiendo tus opiniones, reportando errores o sugiriendo nuevas funciones.",
       "feedback_placeholder": "Cuéntanos qué piensas...",
       "feedback_success": "¡Gracias por tu comentario!",
       "send_feedback": "Enviar comentarios",
@@ -358,11 +358,11 @@
     "privacy_policy": "Política de privacidad",
     "image_title_forgot": "Restablece tu contraseña.",
     "image_subtitle_forgot": "Te ayudaremos a recuperar el acceso a tu cuenta en un instante.",
-    "image_title_login": "Bienvenido de nuevo a LearnHouse.",
+    "image_title_login": "Bienvenido de nuevo a CSG LMS.",
     "image_subtitle_login": "Retoma donde lo dejaste — tus cursos, estudiantes y herramientas te esperan.",
     "image_title_reset": "Casi listo.",
     "image_subtitle_reset": "Crea una contraseña segura para mantener tu cuenta protegida.",
-    "image_title_signup": "Empieza a enseñar con LearnHouse.",
+    "image_title_signup": "Empieza a enseñar con CSG LMS.",
     "image_subtitle_signup": "Crea tu cuenta y lanza tu primer curso en minutos.",
     "image_title_verify": "Verifica tu correo electrónico.",
     "image_subtitle_verify": "Un paso rápido para proteger tu cuenta y empezar.",
@@ -2340,9 +2340,9 @@
         "footer_text_desc": "Texto personalizado que se muestra en la parte inferior de las páginas de tu organización",
         "default_language": "Idioma predeterminado",
         "default_language_desc": "El idioma que ven los nuevos visitantes por defecto y el que se utiliza para los correos enviados en nombre de esta organización. Los miembros pueden cambiar su propio idioma de la interfaz.",
-        "watermark_desc": "Mostrar la marca de agua de LearnHouse en las páginas de tu organización",
+        "watermark_desc": "Mostrar la marca de agua de CSG LMS en las páginas de tu organización",
         "watermark_free_plan": "La marca de agua siempre se muestra en el plan gratuito",
-        "watermark_label": "Marca de agua \"Hecho con LearnHouse\"",
+        "watermark_label": "Marca de agua \"Hecho con CSG LMS\"",
         "watermark_ee": "Oculto por tu licencia Enterprise Edition"
       },
       "images": {
@@ -4356,7 +4356,7 @@
   "embed": {
     "not_supported_description": "Este tipo de actividad requiere autenticación y no puede ser incrustada.",
     "not_supported_title": "Esta actividad no es compatible",
-    "powered_by": "Desarrollado por LearnHouse",
+    "powered_by": "Desarrollado por CSG LMS",
     "visit_activity": "Visitar página de actividad"
   },
   "analytics": {
@@ -5093,7 +5093,7 @@
       }
     },
     "welcome": {
-      "title": "Bienvenido a LearnHouse",
+      "title": "Bienvenido a CSG LMS",
       "subtitle": "Crea cursos, invita estudiantes y comparte conocimiento con el mundo.",
       "get_started": "Comenzar",
       "features_title": "Todo lo que necesitas",

@@ -169,8 +169,19 @@ async def test_leave_requests_lifecycle(db: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_roll_call_emits_absence_streak_at_threshold(db: AsyncSession):
-    """3 consecutive absences must actually fire the event. Before this was
-    wired, the detection existed but was never called from roll-call."""
+    """3 consecutive absences must actually notify the family.
+
+    UPDATED WITH A DELIBERATE BEHAVIOUR CHANGE (Lane J). This previously
+    asserted `bus.emit("student.absence_streak", ...)` on the in-process event
+    bus. That bus delivered mail correctly, but it bypassed notification
+    preferences, duplicate suppression and the delivery log -- so a parent
+    could not switch the message off, re-saving a register re-sent it, and
+    nobody could answer "was the family actually told?".
+
+    The streak now goes through the notification fabric instead. The test
+    asserts the same guarantee at the new seam: crossing the threshold results
+    in exactly one streak notification naming the right student.
+    """
     from unittest.mock import AsyncMock, patch
     from src.services.sms.attendance import ABSENCE_STREAK_THRESHOLD
 
@@ -190,8 +201,28 @@ async def test_roll_call_emits_absence_streak_at_threshold(db: AsyncSession):
         )
     await db.commit()
 
+    # A guardian must exist, or the handler correctly declines to notify
+    # anyone and there is nothing to assert.
+    from datetime import datetime as _dt
+
+    from src.db.sms_identity import StudentGuardian
+    from src.db.users import User
+
+    db.add(
+        User(
+            id=9901, username="g901", first_name="Parent", last_name="Nine",
+            email="g901@test.local", password="x", user_uuid="uuid-9901",
+            creation_date=str(_dt.now()), update_date=str(_dt.now()),
+        )
+    )
+    await db.flush()
+    db.add(StudentGuardian(guardian_user_id=9901, student_id=student_id))
+    await db.commit()
+
     # The threshold-hitting absence arrives through the real roll-call endpoint.
-    with patch("src.core.event_bus.bus.emit", new=AsyncMock()) as mock_emit:
+    with patch(
+        "src.routers.sms_attendance.raise_school_event", new=AsyncMock()
+    ) as mock_raise:
         await submit_batch_roll_call(
             payload=BatchRollCallRequest(
                 section_id=section_id,
@@ -205,11 +236,15 @@ async def test_roll_call_emits_absence_streak_at_threshold(db: AsyncSession):
             principal=_superadmin_principal(),
         )
 
-    mock_emit.assert_awaited_once()
-    event_name, payload = mock_emit.await_args.args
-    assert event_name == "student.absence_streak"
-    assert payload["student_id"] == student_id
-    assert payload["streak"] == ABSENCE_STREAK_THRESHOLD
+    mock_raise.assert_awaited_once()
+    kwargs = mock_raise.await_args.kwargs
+    assert kwargs["event_key"] == "attendance.absence_streak"
+    assert kwargs["context"]["streak"] == ABSENCE_STREAK_THRESHOLD
+    assert kwargs["related_id"] == student_id
+    # The streak message REPLACES the daily one rather than arriving alongside
+    # it -- two emails a minute apart saying the same thing is how a school
+    # teaches a family to stop reading.
+    assert mock_raise.await_count == 1
 
 
 @pytest.mark.asyncio

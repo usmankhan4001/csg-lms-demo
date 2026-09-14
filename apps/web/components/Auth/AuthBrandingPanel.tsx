@@ -29,7 +29,7 @@ export default function AuthBrandingPanel({ org, welcomeText, title, subtitle }:
     unsplash_photographer_url = '',
     unsplash_photo_url = '',
   } = authBranding
-  const UNSPLASH_UTM = '?utm_source=LearnHouse&utm_medium=referral'
+  const UNSPLASH_UTM = '?utm_source=CSG-LMS&utm_medium=referral'
   const withUtm = (url: string) => (url ? `${url}${UNSPLASH_UTM}` : '')
 
   // Check if org has enterprise plan - hide LearnHouse branding for enterprise users
@@ -76,7 +76,7 @@ export default function AuthBrandingPanel({ org, welcomeText, title, subtitle }:
 
   const displayMessage = welcome_message || welcomeText || ''
   // No-org platform copy (defaults mirror the platform login illustration).
-  const noOrgTitle = title || 'Welcome back to LearnHouse.'
+  const noOrgTitle = title || 'Welcome back to CSG LMS.'
   const noOrgSubtitle =
     subtitle || 'Pick up where you left off — your courses, students, and tools are waiting.'
   // Treat the no-org illustration like a photo background: dark scrim, no
@@ -149,7 +149,7 @@ export default function AuthBrandingPanel({ org, welcomeText, title, subtitle }:
               <Link prefetch href="https://learnhouse.app" target="_blank">
                 <img
                   src="/lrn.svg"
-                  alt="LearnHouse"
+                  alt="CSG LMS"
                   width={30}
                   height={30}
                   className={cn(
@@ -192,7 +192,7 @@ export default function AuthBrandingPanel({ org, welcomeText, title, subtitle }:
                             width={96}
                             height={96}
                             src={learnhouseIcon}
-                            alt="LearnHouse"
+                            alt="CSG LMS"
                             className="object-contain"
                           />
                         }
@@ -202,7 +202,7 @@ export default function AuthBrandingPanel({ org, welcomeText, title, subtitle }:
 
                   {/* Text content */}
                   <div className="space-y-1">
-                    <h1 className="font-black text-3xl tracking-tight">{org?.name || 'LearnHouse'}</h1>
+                    <h1 className="font-black text-3xl tracking-tight">{org?.name || 'CSG LMS'}</h1>
                     {displayMessage && (
                       <p className={cn(
                         "text-lg max-w-sm leading-relaxed",

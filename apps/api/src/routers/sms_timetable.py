@@ -1,3 +1,4 @@
+import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, select
@@ -67,6 +68,14 @@ _SUBSTITUTION_MANAGER = ["SUPER_ADMIN", "SCHOOL_ADMIN", "TEACHER", "STAFF"]
 # stop a teacher sanity-checking cover before proposing it, so it matches the
 # substitution audience rather than the scheduler one.
 _CLASH_CHECKER = _SUBSTITUTION_MANAGER
+
+from src.db.users import User
+from src.services.sms.school_events import (
+    SUBSTITUTION_ASSIGNED,
+    raise_school_event,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(require_sms_timetable_feature)])
 
@@ -332,6 +341,49 @@ async def create_substitution_endpoint(
         if "does not exist" in message:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=message)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=message)
+
+    # Tell the teacher they are covering. Best-effort: the substitution is
+    # committed and stands regardless. Note this is the one schedule event
+    # deliberately classed IMPORTANT rather than ROUTINE -- cover is arranged
+    # the evening before or the morning of, and a message that waits for the
+    # quiet-hours sweep arrives after the lesson it was about.
+    substitute = None
+    try:
+        substitute = await session.get(User, payload.substitute_teacher_id)
+    except Exception:
+        logger.warning(
+            "Could not load substitute teacher %s to notify them of cover on %s",
+            payload.substitute_teacher_id,
+            payload.substitution_date,
+            exc_info=True,
+        )
+
+    if substitute is not None:
+        await raise_school_event(
+            session,
+            event_key=SUBSTITUTION_ASSIGNED.key,
+            org_id=principal.org_id,
+            recipients=[substitute],
+            context={
+                "substitution_date": payload.substitution_date.isoformat()
+                if hasattr(payload.substitution_date, "isoformat")
+                else payload.substitution_date,
+                # `reason` is deliberately not sent: it is usually "sick" or
+                # "bereavement" about the ABSENT colleague, and is not the
+                # substitute's business.
+            },
+            campus_id=principal.campus_id,
+            related_kind="timetable_substitution",
+            related_id=getattr(substitution, "id", None),
+        )
+    else:
+        logger.warning(
+            "Substitution %s assigned but teacher %s has no account, so they "
+            "were not told.",
+            getattr(substitution, "id", None),
+            payload.substitute_teacher_id,
+        )
+
     return TimetableSubstitutionRead.model_validate(substitution)
 
 

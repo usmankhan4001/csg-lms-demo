@@ -48,7 +48,7 @@
       "discord": "Discord",
       "report_feedback": "Báo cáo vấn đề hoặc phản hồi",
       "feedback_title": "Gửi Phản hồi",
-      "feedback_description": "Giúp chúng tôi cải thiện LearnHouse bằng cách chia sẻ suy nghĩ, báo cáo lỗi hoặc đề xuất tính năng mới.",
+      "feedback_description": "Giúp chúng tôi cải thiện CSG LMS bằng cách chia sẻ suy nghĩ, báo cáo lỗi hoặc đề xuất tính năng mới.",
       "feedback_placeholder": "Cho chúng tôi biết bạn đang nghĩ gì...",
       "feedback_success": "Cảm ơn phản hồi của bạn!",
       "send_feedback": "Gửi Phản hồi",
@@ -371,11 +371,11 @@
     "privacy_policy": "Chính sách Bảo mật",
     "image_title_forgot": "Đặt lại mật khẩu của bạn.",
     "image_subtitle_forgot": "Chúng tôi sẽ giúp bạn nhanh chóng truy cập lại tài khoản.",
-    "image_title_login": "Chào mừng trở lại với LearnHouse.",
+    "image_title_login": "Chào mừng trở lại với CSG LMS.",
     "image_subtitle_login": "Tiếp tục từ nơi bạn dừng lại — các khóa học, học viên và công cụ của bạn đang chờ.",
     "image_title_reset": "Sắp xong rồi.",
     "image_subtitle_reset": "Tạo một mật khẩu mạnh để giữ tài khoản của bạn an toàn.",
-    "image_title_signup": "Bắt đầu giảng dạy cùng LearnHouse.",
+    "image_title_signup": "Bắt đầu giảng dạy cùng CSG LMS.",
     "image_subtitle_signup": "Tạo tài khoản và ra mắt khóa học đầu tiên của bạn chỉ trong vài phút.",
     "image_title_verify": "Xác minh email của bạn.",
     "image_subtitle_verify": "Một bước nhanh gọn để bảo mật tài khoản và bắt đầu.",
@@ -2364,9 +2364,9 @@
         "footer_text_desc": "Văn bản tùy chỉnh hiển thị ở cuối các trang của tổ chức",
         "default_language": "Ngôn ngữ mặc định",
         "default_language_desc": "Ngôn ngữ mà khách truy cập mới sẽ thấy theo mặc định và được dùng cho các email gửi thay mặt tổ chức này. Thành viên vẫn có thể thay đổi ngôn ngữ giao diện của mình.",
-        "watermark_desc": "Hiển thị watermark thương hiệu LearnHouse trên các trang tổ chức của bạn",
+        "watermark_desc": "Hiển thị watermark thương hiệu CSG LMS trên các trang tổ chức của bạn",
         "watermark_free_plan": "Watermark luôn được hiển thị trên gói miễn phí",
-        "watermark_label": "Watermark \"Made with LearnHouse\"",
+        "watermark_label": "Watermark \"Made with CSG LMS\"",
         "watermark_ee": "Bị ẩn bởi giấy phép Enterprise Edition của bạn"
       },
       "images": {
@@ -4855,7 +4855,7 @@
       }
     },
     "welcome": {
-      "title": "Chào mừng đến với LearnHouse",
+      "title": "Chào mừng đến với CSG LMS",
       "subtitle": "Tạo khóa học, mời học viên và chia sẻ kiến thức với thế giới.",
       "get_started": "Bắt đầu",
       "features_title": "Mọi thứ bạn cần",
@@ -5155,7 +5155,7 @@
   "embed": {
     "not_supported_description": "Loại hoạt động này yêu cầu xác thực và không thể được nhúng.",
     "not_supported_title": "Hoạt động này không được hỗ trợ",
-    "powered_by": "Cung cấp bởi LearnHouse",
+    "powered_by": "Cung cấp bởi CSG LMS",
     "visit_activity": "Truy cập trang hoạt động"
   },
   "migration": {

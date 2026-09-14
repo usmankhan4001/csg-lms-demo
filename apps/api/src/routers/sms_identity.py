@@ -14,6 +14,7 @@ role today -- there was previously no way to do this at all outside minting
 a throwaway dev JWT.
 """
 
+import logging
 from datetime import date
 from typing import List, Optional
 
@@ -46,10 +47,23 @@ from src.db.sms_identity import (
     StudentGuardianCreate,
     StudentGuardianRead,
 )
+from src.db.user_organizations import UserOrganization
 from src.db.users import User
 from src.routers.auth import get_cookie_domain_for_request, is_request_secure
 from src.security.auth import get_authenticated_user, resolve_acting_user_id
-from src.security.school_ownership import require_own_student_or_privileged
+from src.security.school_ownership import (
+    assert_campus_allowed,
+    require_own_student_or_privileged,
+    resolve_scoped_campus_id,
+)
+from src.services.sms.people_provisioning import PersonSpec, provision_person
+from src.db.sms_invite import RESENDABLE, InviteStatus, SMSPersonInvite
+from src.services.sms.invites import (
+    accept_invite,
+    dispatch_invite,
+    get_open_invite,
+    list_invites,
+)
 from src.security.school_principal import (
     IMPERSONATION_COOKIE_MAX_AGE_SECONDS,
     IMPERSONATION_COOKIE_NAME,
@@ -58,6 +72,8 @@ from src.security.school_principal import (
 )
 
 router = APIRouter(tags=["sms-identity"])
+
+logger = logging.getLogger(__name__)
 
 
 class MyIdentityResponse(SQLModel):
@@ -227,6 +243,15 @@ async def assign_role(
     db_session: AsyncSession = Depends(get_db_session),
     principal: KeycloakUserPrincipal = Depends(require_roles([SUPER_ADMIN, SCHOOL_ADMIN])),
 ) -> SMSUserRole:
+    # A SCHOOL_ADMIN reaches this endpoint, and `role` and `org_id` both come
+    # straight from the request body. Without the two checks below a school
+    # admin could POST {"role": "SUPER_ADMIN"} for themselves and hold every
+    # other tenant's data, or grant a role inside an org they have nothing to
+    # do with. Both were possible until now; the frontend even offered
+    # "Super Admin" in its role dropdown.
+    _assert_may_grant(principal, payload.role, payload.org_id)
+    assert_campus_allowed(principal, payload.campus_id)
+
     existing = await db_session.exec(
         select(SMSUserRole).where(
             SMSUserRole.user_id == payload.user_id,
@@ -406,6 +431,763 @@ async def list_school_people(
             )
         )
     return people
+
+
+def _assert_may_grant(
+    principal: KeycloakUserPrincipal,
+    role: SchoolRole,
+    target_org_id: Optional[int],
+) -> None:
+    """Refuse a grant that would widen the caller's own reach.
+
+    Two rules:
+
+    * **SUPER_ADMIN is never grantable by a school administrator.** It is
+      cross-organization platform control -- `has_role()` returns True for it
+      against every role check in the codebase and campus isolation exempts it
+      entirely -- so a SCHOOL_ADMIN granting it to themselves is a complete
+      escape from their own tenant. Only an existing SUPER_ADMIN may hand it
+      on, and never through the provisioning surface (see
+      `PROVISIONABLE_ROLES`, which omits it for everyone).
+
+    * **A grant lands in the caller's own org.** `org_id` arrives in the
+      request body and was previously used verbatim, so a school admin at org
+      1 could mint a SCHOOL_ADMIN at org 2.
+    """
+    if principal.is_superadmin:
+        return
+
+    if role == SchoolRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only a super admin can grant the SUPER_ADMIN role.",
+        )
+
+    if (
+        target_org_id is not None
+        and principal.org_id is not None
+        and target_org_id != principal.org_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: you can only assign roles within your own organization.",
+        )
+
+
+# ---------------------------------------------------------
+# Account provisioning (superadmin / school-admin only)
+# ---------------------------------------------------------
+#
+# `POST /identity/roles` above grants a role to a user who must ALREADY exist,
+# and nothing in this codebase let an administrator create that user: the only
+# account-creation paths are the public signup endpoints in routers/users.py,
+# which require the person themselves to choose a password. So onboarding a
+# teacher meant a psql prompt. These endpoints are the fix.
+#
+# No password is set, generated, or returned anywhere below -- see
+# `services/sms/people_provisioning.py`.
+
+# An import is one HTTP request holding one transaction open, and every row
+# costs an Argon2 hash (deliberately slow). A whole school arrives as several
+# batches rather than one request that ties up a worker for minutes.
+MAX_BULK_PROVISION_ROWS = 500
+
+
+class ProvisionPersonRequest(SQLModel):
+    role: SchoolRole
+    email: str
+    first_name: str
+    last_name: str = ""
+    campus_id: Optional[int] = None
+
+    # STUDENT only.
+    section_id: Optional[int] = None
+    academic_year_id: Optional[int] = None
+    roll_number: Optional[str] = None
+
+    # PARENT only.
+    child_student_id: Optional[int] = None
+    relationship: Optional[str] = None
+    is_primary_contact: bool = False
+
+    # Whether to email the invitation now. Defaults to true, because an account
+    # nobody can reach is the defect this endpoint exists to fix. A school
+    # preparing a cohort before term starts can set it false and chase everyone
+    # later with POST /identity/invites/resend-pending.
+    send_invite: bool = True
+
+
+class ProvisionPersonResponse(SQLModel):
+    user_id: int
+    email: str
+    role: SchoolRole
+    # Reported separately rather than as one "success" flag: "we created this
+    # account" and "this email already existed and we attached a role to it"
+    # are different facts, and an administrator importing a cohort needs to
+    # know which happened.
+    created_user: bool
+    created_role: bool
+    created_enrollment: bool
+    created_guardian_link: bool
+    # What happened to the invitation, separately from what happened to the
+    # account. An account created whose invite bounced is NOT a success: the
+    # person cannot sign in and nobody would know to chase them.
+    invite_status: Optional[str] = None
+    invite_error: Optional[str] = None
+
+
+class BulkProvisionRequest(SQLModel):
+    people: List[ProvisionPersonRequest]
+
+
+class BulkProvisionRowResult(SQLModel):
+    """One row's outcome. `row` is the caller's own 0-based index into the
+    submitted list, so a spreadsheet line can be found again."""
+
+    row: int
+    email: Optional[str] = None
+    status: str  # "created" | "reused" | "failed"
+    user_id: Optional[int] = None
+    created_enrollment: bool = False
+    created_guardian_link: bool = False
+    error: Optional[str] = None
+    # Delivery is reported per row and separately from account creation. A row
+    # whose account was created but whose invite bounced reads differently from
+    # one that fully succeeded -- otherwise the importer says "50 created" and
+    # three families are never heard from again.
+    invite_status: Optional[str] = None
+    invite_error: Optional[str] = None
+
+
+class BulkProvisionResponse(SQLModel):
+    created: int
+    reused: int
+    failed: int
+    results: List[BulkProvisionRowResult]
+    # Accounts created and invites delivered are counted separately and both
+    # are reported. "50 created" while three invites bounced is not 50
+    # successes -- three families are stranded and an administrator needs the
+    # number to be visibly different.
+    invites_sent: int = 0
+    invites_failed: int = 0
+
+
+def _resolve_provisioning_campus(
+    principal: KeycloakUserPrincipal, requested: Optional[int]
+) -> Optional[int]:
+    """The campus a provisioned person is placed at.
+
+    `assert_campus_allowed` first, so naming somebody else's campus fails
+    loudly rather than silently landing the account elsewhere -- creating a
+    person is a write, and a write that quietly goes to the wrong campus is
+    the worse outcome. `resolve_scoped_campus_id` then pins a campus-bound
+    admin who named no campus at all to their own, rather than leaving the
+    grant org-wide.
+    """
+    assert_campus_allowed(principal, requested)
+    return resolve_scoped_campus_id(principal, requested)
+
+
+def _require_org(principal: KeycloakUserPrincipal) -> int:
+    org_id = principal.org_id
+    if org_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Your session is not attached to a school, so there is no "
+                "organization to create this account in."
+            ),
+        )
+    return org_id
+
+
+def _spec_from_request(
+    payload: ProvisionPersonRequest, principal: KeycloakUserPrincipal
+) -> PersonSpec:
+    return PersonSpec(
+        role=payload.role,
+        email=payload.email,
+        first_name=payload.first_name,
+        last_name=payload.last_name,
+        campus_id=_resolve_provisioning_campus(principal, payload.campus_id),
+        section_id=payload.section_id,
+        academic_year_id=payload.academic_year_id,
+        roll_number=payload.roll_number,
+        child_student_id=payload.child_student_id,
+        relationship=payload.relationship,
+        is_primary_contact=payload.is_primary_contact,
+    )
+
+
+async def _send_invite_for(
+    db_session: AsyncSession,
+    *,
+    request: Request,
+    user_id: int,
+    org_id: int,
+    role: str,
+    actor_user_id: Optional[int],
+    existing: Optional[SMSPersonInvite] = None,
+) -> Optional[SMSPersonInvite]:
+    """Load the account and org, then dispatch. Never raises.
+
+    An invite failure must never surface as a provisioning failure: the account
+    has already been committed, and telling an administrator the import failed
+    when forty-nine of fifty rows are fine would be worse than the missing
+    email it is reporting.
+    """
+    try:
+        from src.db.organizations import Organization
+        from src.db.users import User
+
+        user = (
+            await db_session.execute(select(User).where(User.id == user_id))
+        ).scalars().first()
+        org = (
+            await db_session.execute(
+                select(Organization).where(Organization.id == org_id)
+            )
+        ).scalars().first()
+        if user is None or org is None:
+            logger.error(
+                "Cannot dispatch invite: user %s or org %s not found", user_id, org_id
+            )
+            return None
+
+        return await dispatch_invite(
+            db_session,
+            user=user,
+            org=org,
+            role=role,
+            request=request,
+            actor_user_id=actor_user_id,
+            existing=existing,
+        )
+    except Exception:
+        logger.exception("Invite dispatch failed for user %s", user_id)
+        return None
+
+
+@router.post(
+    "/identity/provision",
+    response_model=ProvisionPersonResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Provision a School Account",
+    description=(
+        "Creates a school account AND grants its role in one transaction, "
+        "optionally enrolling a student into a section or linking a parent to "
+        "a child at the same time. No password is set: the person receives one "
+        "through the normal reset flow, so none is generated or returned here. "
+        "SUPER_ADMIN cannot be provisioned."
+    ),
+    responses={
+        400: {"description": "Invalid email, missing name, or a campus/section that does not exist"},
+        403: {"description": "School-admin access required, cross-campus request, or a non-school role"},
+    },
+)
+async def provision_school_person(
+    payload: ProvisionPersonRequest,
+    # FastAPI injects Request by type annotation, so the default never applies
+    # over HTTP. It exists so the handler stays directly callable from a script
+    # or a test without fabricating a request object.
+    request: Request = None,  # type: ignore[assignment]
+    db_session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(require_roles([SUPER_ADMIN, SCHOOL_ADMIN])),
+) -> ProvisionPersonResponse:
+    org_id = _require_org(principal)
+    result = await provision_person(
+        db_session,
+        _spec_from_request(payload, principal),
+        org_id=org_id,
+        actor_user_id=principal.raw_claims.get("lh_user_id"),
+    )
+    # One commit, at the end: everything the service staged lands together or
+    # not at all, so a failure can never leave an account without its role.
+    await db_session.commit()
+
+    # Invite dispatch is deliberately AFTER the commit. The account must
+    # durably exist before anyone is told it does, and `dispatch_invite`
+    # commits its own row -- which would have torn the provisioning
+    # transaction in half had it run inside it.
+    invite = None
+    if payload.send_invite:
+        invite = await _send_invite_for(
+            db_session,
+            request=request,
+            user_id=result.user_id,
+            org_id=org_id,
+            role=getattr(result.role, "value", str(result.role)),
+            actor_user_id=principal.raw_claims.get("lh_user_id"),
+        )
+
+    if not payload.send_invite:
+        # Explicitly withheld, which is NOT the same as failed. Saying "sent"
+        # here, or leaving it blank, would both mislead.
+        invite_status, invite_error = "NOT_SENT", None
+    elif invite is not None:
+        invite_status, invite_error = invite.status, invite.delivery_error
+    else:
+        invite_status = InviteStatus.DELIVERY_FAILED.value
+        invite_error = "Invite was not dispatched."
+
+    return ProvisionPersonResponse(
+        user_id=result.user_id,
+        email=result.email,
+        role=result.role,
+        created_user=result.created_user,
+        created_role=result.created_role,
+        created_enrollment=result.created_enrollment,
+        created_guardian_link=result.created_guardian_link,
+        invite_status=invite_status,
+        invite_error=invite_error,
+    )
+
+
+@router.post(
+    "/identity/provision/bulk",
+    response_model=BulkProvisionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Bulk Provision School Accounts",
+    description=(
+        "Provisions a list of people, reporting EVERY row's outcome "
+        "individually. A school onboards a cohort, not one person, and a "
+        "result that said only '47 created, 3 failed' would leave nobody able "
+        "to tell which three families to chase -- so each failure carries its "
+        "row index, its email and its reason. One bad row does not discard the "
+        "good ones: each row is applied inside its own savepoint."
+    ),
+    responses={
+        400: {"description": "Empty or oversized list"},
+        403: {"description": "School-admin access required"},
+    },
+)
+async def bulk_provision_school_people(
+    payload: BulkProvisionRequest,
+    request: Request = None,  # type: ignore[assignment]
+    db_session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(require_roles([SUPER_ADMIN, SCHOOL_ADMIN])),
+) -> BulkProvisionResponse:
+    org_id = _require_org(principal)
+    actor_user_id = principal.raw_claims.get("lh_user_id")
+
+    if not payload.people:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No people to import.",
+        )
+    if len(payload.people) > MAX_BULK_PROVISION_ROWS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"{len(payload.people)} rows is more than one import can take. "
+                f"Split the file into batches of {MAX_BULK_PROVISION_ROWS} or fewer."
+            ),
+        )
+
+    results: List[BulkProvisionRowResult] = []
+    created = reused = failed = 0
+
+    for index, person in enumerate(payload.people):
+        # A SAVEPOINT per row. Without it a single bad row poisons the whole
+        # session -- SQLAlchemy refuses further work on a transaction that has
+        # raised -- so 49 good rows would be lost to one typo. With it, the
+        # failed row is rolled back to its savepoint and the rest carry on.
+        try:
+            async with db_session.begin_nested():
+                result = await provision_person(
+                    db_session,
+                    _spec_from_request(person, principal),
+                    org_id=org_id,
+                    actor_user_id=actor_user_id,
+                    via_bulk_import=True,
+                )
+        except HTTPException as exc:
+            failed += 1
+            results.append(
+                BulkProvisionRowResult(
+                    row=index,
+                    email=(person.email or "").strip().lower() or None,
+                    status="failed",
+                    error=str(exc.detail),
+                )
+            )
+            continue
+        except Exception as exc:  # noqa: BLE001
+            # An unexpected failure is still THIS row's failure. Reported with
+            # the row rather than turned into a 500 that would hide which 47
+            # of the 50 had already succeeded.
+            logger.exception("Bulk provisioning row %s failed", index)
+            failed += 1
+            results.append(
+                BulkProvisionRowResult(
+                    row=index,
+                    email=(person.email or "").strip().lower() or None,
+                    status="failed",
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+            )
+            continue
+
+        if result.created_user:
+            created += 1
+            row_status = "created"
+        else:
+            reused += 1
+            row_status = "reused"
+        results.append(
+            BulkProvisionRowResult(
+                row=index,
+                email=result.email,
+                status=row_status,
+                user_id=result.user_id,
+                created_enrollment=result.created_enrollment,
+                created_guardian_link=result.created_guardian_link,
+            )
+        )
+
+    await db_session.commit()
+
+    # Invites go out only once every row has durably landed. Dispatching inside
+    # the loop would have committed mid-import (dispatch_invite commits its own
+    # row), destroying the savepoint isolation that stops one bad row taking
+    # the other forty-nine with it.
+    for row in results:
+        if row.user_id is None or row.status == "failed":
+            continue
+        if not payload.people[row.row].send_invite:
+            row.invite_status = "NOT_SENT"
+            continue
+        invite = await _send_invite_for(
+            db_session,
+            request=request,
+            user_id=row.user_id,
+            org_id=org_id,
+            role=getattr(
+                payload.people[row.row].role,
+                "value",
+                str(payload.people[row.row].role),
+            ),
+            actor_user_id=actor_user_id,
+        )
+        row.invite_status = (
+            invite.status if invite else InviteStatus.DELIVERY_FAILED.value
+        )
+        row.invite_error = (
+            invite.delivery_error if invite else "Invite was not dispatched."
+        )
+
+    return BulkProvisionResponse(
+        created=created,
+        reused=reused,
+        failed=failed,
+        results=results,
+        invites_sent=sum(
+            1 for r in results if r.invite_status == InviteStatus.PENDING.value
+        ),
+        invites_failed=sum(
+            1
+            for r in results
+            if r.invite_status
+            in (InviteStatus.DELIVERY_FAILED.value, InviteStatus.UNKNOWN.value)
+        ),
+    )
+
+
+# ---------------------------------------------------------
+# Invitations
+# ---------------------------------------------------------
+#
+# Provisioning creates an account nobody can sign into by design. These
+# endpoints are the other half: issuing the single-use link that lets the owner
+# set their own password, showing an administrator who has not used it yet, and
+# resending when it is lost.
+
+
+class InviteRead(SQLModel):
+    id: int
+    subject_user_id: int
+    subject_email: str
+    subject_role: str
+    status: str
+    delivery_error: Optional[str] = None
+    sent_count: int = 0
+    last_sent_at: Optional[str] = None
+    expires_at: Optional[str] = None
+    accepted_at: Optional[str] = None
+
+
+def _invite_read(invite: SMSPersonInvite) -> InviteRead:
+    return InviteRead(
+        id=invite.id or 0,
+        subject_user_id=invite.subject_user_id,
+        subject_email=invite.subject_email,
+        subject_role=invite.subject_role,
+        status=invite.status,
+        delivery_error=invite.delivery_error,
+        sent_count=invite.sent_count or 0,
+        last_sent_at=invite.last_sent_at.isoformat() if invite.last_sent_at else None,
+        expires_at=invite.expires_at.isoformat() if invite.expires_at else None,
+        accepted_at=invite.accepted_at.isoformat() if invite.accepted_at else None,
+    )
+
+
+@router.get(
+    "/identity/invites",
+    response_model=List[InviteRead],
+    summary="List Invitations",
+    description=(
+        "Every invitation issued for the caller's organization, with what "
+        "genuinely happened to it. PENDING means the provider accepted the "
+        "message; DELIVERY_FAILED means it refused; UNKNOWN means the outcome "
+        "could not be determined and is reported as such rather than assumed "
+        "to be a success."
+    ),
+)
+async def list_school_invites(
+    status_filter: Optional[str] = Query(None, alias="status"),
+    db_session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(require_roles([SUPER_ADMIN, SCHOOL_ADMIN])),
+) -> List[InviteRead]:
+    org_id = _require_org(principal)
+    rows = await list_invites(db_session, org_id, status=status_filter)
+    return [_invite_read(r) for r in rows]
+
+
+@router.post(
+    "/identity/invites/{user_id}/resend",
+    response_model=InviteRead,
+    summary="Resend One Invitation",
+    description=(
+        "Issues a FRESH single-use link and revokes the previous one, so an "
+        "invite forwarded to the wrong address stops working. Refuses for "
+        "somebody who has already accepted -- that would hand out a new "
+        "password-setting token for a live account."
+    ),
+    responses={
+        404: {"description": "No open invitation for that person"},
+        409: {"description": "That person has already accepted"},
+    },
+)
+async def resend_school_invite(
+    user_id: int,
+    request: Request,
+    db_session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(require_roles([SUPER_ADMIN, SCHOOL_ADMIN])),
+) -> InviteRead:
+    org_id = _require_org(principal)
+
+    invite = await get_open_invite(db_session, user_id, org_id)
+    if invite is None:
+        # Scoped to the caller's own org, so this cannot be used to probe
+        # whether a user exists in another tenant.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No open invitation for that person.",
+        )
+    if InviteStatus(invite.status) not in RESENDABLE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="That person has already accepted their invitation.",
+        )
+
+    refreshed = await _send_invite_for(
+        db_session,
+        request=request,
+        user_id=user_id,
+        org_id=org_id,
+        role=invite.subject_role,
+        actor_user_id=principal.raw_claims.get("lh_user_id"),
+        existing=invite,
+    )
+    return _invite_read(refreshed or invite)
+
+
+class ResendPendingResponse(SQLModel):
+    attempted: int
+    sent: int
+    failed: int
+    results: List[InviteRead]
+
+
+@router.post(
+    "/identity/invites/resend-pending",
+    response_model=ResendPendingResponse,
+    summary="Resend Every Outstanding Invitation",
+    description=(
+        "Chases the whole cohort at once. Only invitations that have not been "
+        "accepted are touched, and every outcome is reported individually so "
+        "an address that keeps bouncing is visible rather than averaged away."
+    ),
+)
+async def resend_pending_invites(
+    request: Request,
+    db_session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(require_roles([SUPER_ADMIN, SCHOOL_ADMIN])),
+) -> ResendPendingResponse:
+    org_id = _require_org(principal)
+    actor_user_id = principal.raw_claims.get("lh_user_id")
+
+    outstanding = [
+        i
+        for i in await list_invites(db_session, org_id)
+        if InviteStatus(i.status) in RESENDABLE
+    ]
+
+    results: List[InviteRead] = []
+    sent = failed = 0
+    for invite in outstanding:
+        refreshed = await _send_invite_for(
+            db_session,
+            request=request,
+            user_id=invite.subject_user_id,
+            org_id=org_id,
+            role=invite.subject_role,
+            actor_user_id=actor_user_id,
+            existing=invite,
+        )
+        target = refreshed or invite
+        if target.status == InviteStatus.PENDING.value:
+            sent += 1
+        else:
+            failed += 1
+        results.append(_invite_read(target))
+
+    return ResendPendingResponse(
+        attempted=len(outstanding), sent=sent, failed=failed, results=results
+    )
+
+
+class AcceptInviteRequest(SQLModel):
+    org_id: int
+    email: str
+    code: str
+    new_password: str
+
+
+@router.post(
+    "/identity/invites/accept",
+    status_code=status.HTTP_200_OK,
+    summary="Accept an Invitation",
+    description=(
+        "Redeems a single-use invitation link and sets the chosen password. "
+        "DELIBERATELY UNAUTHENTICATED: the whole point of an invitation is "
+        "that its recipient cannot sign in yet. Every failure returns the same "
+        "message so this cannot be used to discover which addresses have "
+        "accounts, and attempts are rate limited per address."
+    ),
+    responses={
+        400: {"description": "Invalid or expired invitation, or a weak password"},
+        429: {"description": "Too many attempts for this address"},
+    },
+)
+async def accept_school_invite(
+    payload: AcceptInviteRequest,
+    db_session: AsyncSession = Depends(get_db_session),
+):
+    # Same limiter the password-reset path uses: 5 attempts per 5 minutes per
+    # address. Without it this endpoint is an offline-speed oracle for guessing
+    # invitation codes.
+    from src.services.security.rate_limiting import check_password_reset_rate_limit
+
+    is_allowed, retry_after = check_password_reset_rate_limit(payload.email)
+    if not is_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                "Too many attempts. Please try again in "
+                f"{max(retry_after // 60, 1)} minutes."
+            ),
+        )
+
+    await accept_invite(
+        db_session,
+        org_id=payload.org_id,
+        email=payload.email,
+        code=payload.code,
+        new_password=payload.new_password,
+    )
+    return {"detail": "Your password has been set. You can now sign in."}
+
+
+class DirectoryEntry(SQLModel):
+    user_id: int
+    name: Optional[str] = None
+    email: Optional[str] = None
+    # An empty list means exactly that: this person is a member of the school
+    # with no school role yet. It is NOT defaulted to STUDENT -- guessing here
+    # would silently hand someone a learner's view of the school.
+    roles: List[str] = []
+    campus_id: Optional[int] = None
+
+
+@router.get(
+    "/identity/directory",
+    response_model=List[DirectoryEntry],
+    summary="List Everyone at the School",
+    description=(
+        "Every member of the caller's organization with the school roles they "
+        "hold. Unlike GET /identity/people, which filters to ONE role and so "
+        "can never show somebody who has none, this includes members with no "
+        "school role yet -- the accounts that exist but cannot do anything, "
+        "which is exactly what an administrator needs to find."
+    ),
+)
+async def list_school_directory(
+    campus_id: Optional[int] = Query(None),
+    unassigned_only: bool = Query(
+        False, description="Only members holding no active school role."
+    ),
+    db_session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(require_roles([SUPER_ADMIN, SCHOOL_ADMIN])),
+) -> List[DirectoryEntry]:
+    org_id = _require_org(principal)
+    scoped_campus_id = resolve_scoped_campus_id(principal, campus_id)
+
+    members = (
+        await db_session.exec(
+            select(User)
+            .join(UserOrganization, UserOrganization.user_id == User.id)
+            .where(UserOrganization.org_id == org_id)
+        )
+    ).all()
+
+    grants = (
+        await db_session.exec(
+            select(SMSUserRole).where(
+                SMSUserRole.org_id == org_id,
+                SMSUserRole.is_active == True,  # noqa: E712
+            )
+        )
+    ).all()
+
+    by_user: dict[int, List[SMSUserRole]] = {}
+    for grant in grants:
+        by_user.setdefault(grant.user_id, []).append(grant)
+
+    entries: List[DirectoryEntry] = []
+    for user in members:
+        user_grants = by_user.get(user.id, [])
+        if scoped_campus_id is not None and user_grants:
+            # A campus-bound admin sees the people at their campus. A grant
+            # with campus_id None is org-wide and stays visible: it is not
+            # somebody else's campus, it is nobody's.
+            if not any(g.campus_id in (None, scoped_campus_id) for g in user_grants):
+                continue
+        if unassigned_only and user_grants:
+            continue
+        entries.append(
+            DirectoryEntry(
+                user_id=user.id,
+                name=" ".join(filter(None, [user.first_name, user.last_name])) or user.username,
+                email=user.email,
+                roles=sorted(
+                    g.role.value if hasattr(g.role, "value") else str(g.role)
+                    for g in user_grants
+                ),
+                campus_id=next((g.campus_id for g in user_grants if g.campus_id is not None), None),
+            )
+        )
+    return entries
 
 
 # ---------------------------------------------------------

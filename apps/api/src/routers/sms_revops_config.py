@@ -35,7 +35,11 @@ from src.schemas.sms_revops_config import (
     RevOpsConfigRead,
     RevOpsConfigUpdate,
 )
-from src.security.school_ownership import assert_campus_allowed, resolve_scoped_campus_id
+from src.security.school_ownership import (
+    assert_campus_allowed,
+    require_org_id,
+    resolve_scoped_campus_id,
+)
 from src.services.sms import revops_kb
 from src.services.sms.revops_config import (
     InvalidRevOpsConfigPayload,
@@ -116,9 +120,9 @@ async def get_revops_config(
     # their own campus, not an org-wide view they are not entitled to.
     scoped_campus = resolve_scoped_campus_id(principal, campus_id)
 
-    resolved = await resolve_all_groups(session, principal.org_id or 1, scoped_campus)
+    resolved = await resolve_all_groups(session, require_org_id(principal), scoped_campus)
     return RevOpsConfigRead(
-        org_id=principal.org_id or 1,
+        org_id=require_org_id(principal),
         campus_id=scoped_campus,
         groups=[
             ResolvedRevOpsGroup(
@@ -161,7 +165,7 @@ async def update_revops_config_group(
     try:
         await write_group(
             session=session,
-            org_id=principal.org_id or 1,
+            org_id=require_org_id(principal),
             campus_id=campus_id,
             group=group,
             values=payload.values,
@@ -173,7 +177,7 @@ async def update_revops_config_group(
         ) from exc
 
     values, source, updated = await resolve_group(
-        session, principal.org_id or 1, campus_id, group
+        session, require_org_id(principal), campus_id, group
     )
     return ResolvedRevOpsGroup(
         group=group,
@@ -258,7 +262,7 @@ async def list_knowledge_entries(
     scoped_campus = resolve_scoped_campus_id(principal, campus_id)
     entries = await revops_kb.list_entries(
         session,
-        org_id=principal.org_id or 1,
+        org_id=require_org_id(principal),
         campus_id=scoped_campus,
         status=status_filter,
         category=category,
@@ -290,7 +294,7 @@ async def search_knowledge_entries(
     scoped_campus = resolve_scoped_campus_id(principal, campus_id)
     entries = await revops_kb.search_entries(
         session,
-        org_id=principal.org_id or 1,
+        org_id=require_org_id(principal),
         query=q,
         campus_id=scoped_campus,
         published_only=not include_drafts,
@@ -320,7 +324,7 @@ async def create_knowledge_entry(
 
     entry = await revops_kb.create_entry(
         session,
-        org_id=principal.org_id or 1,
+        org_id=require_org_id(principal),
         title=payload.title,
         body=payload.body,
         campus_id=payload.campus_id,
@@ -345,7 +349,7 @@ async def update_knowledge_entry(
     session: AsyncSession = Depends(get_db_session),
     principal: KeycloakUserPrincipal = Depends(require_roles(_KB_ROLES)),
 ) -> KnowledgeEntryRead:
-    entry = await revops_kb.get_entry(session, principal.org_id or 1, entry_id)
+    entry = await revops_kb.get_entry(session, require_org_id(principal), entry_id)
     if entry is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
 
@@ -386,7 +390,7 @@ async def delete_knowledge_entry(
     session: AsyncSession = Depends(get_db_session),
     principal: KeycloakUserPrincipal = Depends(require_roles(_CONFIG_ROLES)),
 ) -> None:
-    entry = await revops_kb.get_entry(session, principal.org_id or 1, entry_id)
+    entry = await revops_kb.get_entry(session, require_org_id(principal), entry_id)
     if entry is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry not found")
 

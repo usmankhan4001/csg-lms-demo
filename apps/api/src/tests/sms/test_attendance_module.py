@@ -313,14 +313,23 @@ async def test_a_rejected_excuse_changes_nothing(db: AsyncSession):
 # ---------------------------------------------------------------------------
 
 
-async def _absent_for_streak(db: AsyncSession, *, student_id: int, section_id: int):
-    """Mark a student absent on enough consecutive days to trip the threshold."""
+async def _absent_for_streak(
+    db: AsyncSession, *, student_id: int, section_id: int, principal=None
+):
+    """Mark a student absent on enough consecutive days to trip the threshold.
+
+    `principal` is threaded through because the guardian notification now needs
+    a resolvable organisation: the fabric refuses to send a message naming a
+    child under a guessed tenant, so a principal with no org drops the send
+    before it is attempted. Most tests here do not care and pass None.
+    """
     for day_offset in range(ABSENCE_STREAK_THRESHOLD):
         await _roll_call(
             db,
             section_id=section_id,
             on=date(2026, 4, 1) + datetime.timedelta(days=day_offset),
             entries=[RollCallStudentEntry(student_id=student_id, status=AttendanceStatus.ABSENT)],
+            principal=principal,
         )
 
 
@@ -565,16 +574,52 @@ async def test_the_concern_survives_a_failing_guardian_notification(db: AsyncSes
 
     This forces the notification to raise and asserts the concern is still
     there. It is the regression test for the ordering, not for the email.
+
+    SEAM UPDATED (Lane J): this previously broke `bus.emit`, because the
+    guardian alert went out on the in-process event bus. It now goes through
+    the notification fabric, so the failure is injected at `notify_event` --
+    deliberately BELOW `raise_school_event`, so the real wrapper does the
+    swallowing and is what the test actually exercises. Patching
+    `raise_school_event` itself would replace the error handling under test
+    with a mock of it, and would assert nothing about the production path.
     """
+    from datetime import datetime as _dt
     from unittest.mock import AsyncMock, patch
 
-    with patch(
-        "src.routers.sms_attendance.bus.emit",
-        new=AsyncMock(side_effect=RuntimeError("mail provider down")),
-    ) as failing_emit:
-        await _absent_for_streak(db, student_id=8701, section_id=970)
+    from src.db.sms_identity import StudentGuardian
+    from src.db.users import User
 
-    assert failing_emit.await_count >= 1, "the notification really was attempted"
+    # A guardian is now required for the send to be ATTEMPTED at all, and that
+    # is itself a deliberate change: the old bus emitted unconditionally and
+    # discovered there was nobody to tell inside the subscriber, doing the work
+    # and then throwing it away. The fabric path resolves guardians first and
+    # skips early (logging a warning, because a child with no contactable adult
+    # is a data gap a school needs to close). Without this link the test would
+    # pass vacuously -- nothing would fail because nothing would be sent.
+    db.add(
+        User(
+            id=8791, username="g8791", first_name="Streak", last_name="Parent",
+            email="g8791@test.local", password="x", user_uuid="uuid-8791",
+            creation_date=str(_dt.now()), update_date=str(_dt.now()),
+        )
+    )
+    await db.flush()
+    db.add(StudentGuardian(guardian_user_id=8791, student_id=8701))
+    await db.commit()
+
+    with patch(
+        "src.services.sms.school_events.notify_event",
+        new=AsyncMock(side_effect=RuntimeError("mail provider down")),
+    ) as failing_send:
+        # An org-bearing principal, or the fabric correctly declines to send
+        # and there is no failure to survive.
+        scoped = _admin()
+        scoped.org_id = 1
+        await _absent_for_streak(
+            db, student_id=8701, section_id=970, principal=scoped
+        )
+
+    assert failing_send.await_count >= 1, "the notification really was attempted"
 
     concerns = (
         await db.execute(

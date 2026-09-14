@@ -16,6 +16,7 @@ from src.routers import (
     sms_campus,
     sms_counseling,
     sms_fees,
+    sms_fee_webhooks,
     sms_financials,
     sms_exam,
     sms_gradebook,
@@ -26,6 +27,7 @@ from src.routers import (
     sms_ai_consent,
     sms_hr,
     sms_identity,
+    sms_school_setup,
     sms_library,
     sms_payroll,
     sms_revops,
@@ -535,6 +537,16 @@ v1_router.include_router(
     tags=["sms-identity"],
 )
 
+# First-run school setup. Deliberately NOT gated by `require_roles` at the
+# mount: the caller bootstrapping a brand-new school holds no school roles yet
+# (roles come only from SMSUserRole), so authorisation is decided per-handler
+# against organisation ownership -- see routers/sms_school_setup.py.
+v1_router.include_router(
+    sms_school_setup.router,
+    prefix="/sms",
+    tags=["sms-school-setup"],
+)
+
 # Notifications (M35) + Communication Hub (M13). Mounted at /sms because every
 # route is per-person school context, resolved from the same principal the
 # other sms_* routers use -- see routers/notifications.py.
@@ -626,6 +638,15 @@ v1_router.include_router(
     sms_fees.router,
     prefix="/sms/fees",
     tags=["sms-fees"],
+)
+
+# Payment-provider callbacks. Mounted WITHOUT the fees router's feature/auth
+# dependency: a provider webhook carries no user principal and authenticates
+# by a signature over the raw body instead. See routers/sms_fee_webhooks.py.
+v1_router.include_router(
+    sms_fee_webhooks.router,
+    prefix="/sms/fee-payments",
+    tags=["sms-fee-payments"],
 )
 
 v1_router.include_router(

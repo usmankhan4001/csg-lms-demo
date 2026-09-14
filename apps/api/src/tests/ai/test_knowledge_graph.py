@@ -388,8 +388,20 @@ class TestAIStudentProfileRouter:
                 question="Can you repeat the wave equation?",
                 answer="The wave equation is Psi(x,t).",
             )
-            res = await api_live_class_qa(session_id="live_100", payload=payload, db_session=mock_session)
+            # A real principal, because the handler now forwards principal.org_id
+            # so the crisis path can reach the school's own helplines. Passing a
+            # principal here is the fix -- never dropping the org context.
+            from src.core.keycloak_auth import KeycloakUserPrincipal
+
+            principal = KeycloakUserPrincipal(sub="std_1", org_id=7)
+            res = await api_live_class_qa(
+                session_id="live_100",
+                payload=payload,
+                db_session=mock_session,
+                principal=principal,
+            )
             assert res.answer == "The wave equation is Psi(x,t)."
+            assert mock_ans.await_args.kwargs["org_id"] == 7
 
 
 # ---------------------------------------------------------------------------

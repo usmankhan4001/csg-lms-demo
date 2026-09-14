@@ -21,6 +21,7 @@ from src.core.keycloak_auth import (
     get_current_user_principal,
 )
 from src.security.features_utils.dependencies import require_sms_gradebook_feature
+from src.security.school_ownership import require_org_id
 
 router = APIRouter(dependencies=[Depends(require_sms_gradebook_feature)])
 
@@ -154,7 +155,7 @@ async def log_cognia_evidence(
     now_str = datetime.now(timezone.utc).isoformat()
     record = {
         "id": item_id,
-        "org_id": principal.org_id or 1,
+        "org_id": require_org_id(principal),
         "standard_code": payload.standard_code,
         "domain": domain,
         "title": payload.title,
@@ -184,7 +185,7 @@ async def list_cognia_evidence(
     principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[EvidenceItemResponse]:
     """List all evidence artifacts for the organization."""
-    org_id = principal.org_id or 1
+    org_id = require_org_id(principal)
     results = [
         EvidenceItemResponse(**ev)
         for ev in _EVIDENCE_STORE
@@ -205,7 +206,7 @@ async def get_cognia_summary(
     principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> CogniaSummaryResponse:
     """Calculates domain compliance scores and overall accreditation readiness level."""
-    org_id = principal.org_id or 1
+    org_id = require_org_id(principal)
     ev_list = [
         ev for ev in _EVIDENCE_STORE
         if ev["org_id"] == org_id and (academic_year is None or ev["academic_year"] == academic_year)
@@ -271,7 +272,7 @@ async def export_cognia_binder(
     evidence = await list_cognia_evidence(academic_year=academic_year, principal=principal)
 
     return {
-        "institution_id": f"org_{principal.org_id or 1}",
+        "institution_id": f"org_{require_org_id(principal)}",
         "academic_year": academic_year,
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "exported_by": principal.sub,

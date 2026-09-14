@@ -50,7 +50,7 @@
       "discord": "Discord",
       "report_feedback": "Laporkan Masalah atau Umpan Balik",
       "feedback_title": "Kirim Umpan Balik",
-      "feedback_description": "Bantu kami meningkatkan LearnHouse dengan berbagi pemikiran Anda, melaporkan bug, atau menyarankan fitur baru.",
+      "feedback_description": "Bantu kami meningkatkan CSG LMS dengan berbagi pemikiran Anda, melaporkan bug, atau menyarankan fitur baru.",
       "feedback_placeholder": "Beritahu kami apa yang Anda pikirkan...",
       "feedback_success": "Terima kasih atas umpan balik Anda!",
       "send_feedback": "Kirim Umpan Balik",
@@ -381,11 +381,11 @@
     "privacy_policy": "Kebijakan Privasi",
     "image_title_forgot": "Atur ulang kata sandi Anda.",
     "image_subtitle_forgot": "Kami akan membantu Anda kembali ke akun Anda dalam sekejap.",
-    "image_title_login": "Selamat datang kembali di LearnHouse.",
+    "image_title_login": "Selamat datang kembali di CSG LMS.",
     "image_subtitle_login": "Lanjutkan dari tempat Anda berhenti — kursus, siswa, dan alat Anda sudah menanti.",
     "image_title_reset": "Hampir selesai.",
     "image_subtitle_reset": "Buat kata sandi yang kuat untuk menjaga keamanan akun Anda.",
-    "image_title_signup": "Mulai mengajar dengan LearnHouse.",
+    "image_title_signup": "Mulai mengajar dengan CSG LMS.",
     "image_subtitle_signup": "Buat akun Anda dan luncurkan kursus pertama Anda dalam hitungan menit.",
     "image_title_verify": "Verifikasi email Anda.",
     "image_subtitle_verify": "Satu langkah cepat untuk mengamankan akun Anda dan memulai.",
@@ -2362,9 +2362,9 @@
         "footer_text_desc": "Teks kustom yang ditampilkan di bagian bawah halaman organisasi Anda",
         "default_language": "Bahasa default",
         "default_language_desc": "Bahasa yang dilihat pengunjung baru secara default dan bahasa yang digunakan untuk email yang dikirim atas nama organisasi ini. Anggota tetap dapat mengganti bahasa antarmuka mereka.",
-        "watermark_desc": "Tampilkan watermark branding LearnHouse di halaman organisasi Anda",
+        "watermark_desc": "Tampilkan watermark branding CSG LMS di halaman organisasi Anda",
         "watermark_free_plan": "Watermark selalu ditampilkan pada paket gratis",
-        "watermark_label": "Watermark \"Made with LearnHouse\"",
+        "watermark_label": "Watermark \"Made with CSG LMS\"",
         "watermark_ee": "Disembunyikan oleh lisensi Enterprise Edition Anda"
       },
       "images": {
@@ -5109,7 +5109,7 @@
       }
     },
     "welcome": {
-      "title": "Selamat datang di LearnHouse",
+      "title": "Selamat datang di CSG LMS",
       "subtitle": "Buat kursus, undang pembelajar, dan bagikan pengetahuan dengan dunia.",
       "get_started": "Mulai",
       "features_title": "Semua yang Anda butuhkan",
@@ -5153,7 +5153,7 @@
   "embed": {
     "not_supported_description": "Tipe aktivitas ini memerlukan autentikasi dan tidak dapat disematkan.",
     "not_supported_title": "Aktivitas ini tidak didukung",
-    "powered_by": "Didukung oleh LearnHouse",
+    "powered_by": "Didukung oleh CSG LMS",
     "visit_activity": "Kunjungi Halaman Aktivitas"
   },
   "migration": {

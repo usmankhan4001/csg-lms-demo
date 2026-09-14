@@ -189,6 +189,21 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
         if request.url.path.endswith("/live/webhooks"):
             return True
 
+        # School fee payment-provider callbacks, for the same reason as
+        # LiveKit above: server-to-server, no browser and no cookies, with
+        # authenticity established downstream by a signature over the raw body
+        # (see routers/sms_fee_webhooks.py).
+        #
+        # Stripe specifically is already covered by the stripe-signature check
+        # above. This path rule exists so a SECOND rail -- JazzCash or
+        # Easypaisa, which the payment provider interface is built to accept
+        # without a rewrite -- is not silently CSRF-blocked the day it is
+        # added. Matched on the full path shape rather than a suffix so no
+        # other endpoint's protection is weakened.
+        path = request.url.path
+        if "/sms/fee-payments/" in path and path.endswith("/webhook"):
+            return True
+
         return False
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:

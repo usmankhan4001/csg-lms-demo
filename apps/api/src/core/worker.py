@@ -32,6 +32,7 @@ from arq.connections import RedisSettings
 from config.config import get_learnhouse_config
 from src.services.ai.parent_digest import send_weekly_digests
 from src.services.ai.revops_nurture_runner import advance_nurture_sequences
+from src.services.notifications.deferred_runner import deliver_deferred_notifications
 from src.services.sms.fee_reminders import send_fee_reminders
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,7 @@ class WorkerSettings:
         send_weekly_digests,
         advance_nurture_sequences,
         send_fee_reminders,
+        deliver_deferred_notifications,
     ]
 
     # Scheduled jobs.
@@ -144,4 +146,14 @@ class WorkerSettings:
         # FeeReminderLog records what was actually delivered, not what was
         # intended, so a school can tell the difference.
         cron(send_fee_reminders, hour=9, minute=0),
+        # Quiet-hours queue (M35). Every 15 minutes, because a quiet-hours
+        # window ends at a time the RECIPIENT chose and any coarser schedule
+        # would hold a 07:00 message until 08:00.
+        #
+        # This job is the ONLY thing that delivers a deferred notification.
+        # Without it, `notify_event()` records a message as "queued" and it is
+        # never sent -- which looks identical to "on its way" in the delivery
+        # log. It cannot be an in-process timer: the API runs WORKERS=4, so a
+        # timer would live in one worker of four and die on the next deploy.
+        cron(deliver_deferred_notifications, minute={0, 15, 30, 45}),
     ]

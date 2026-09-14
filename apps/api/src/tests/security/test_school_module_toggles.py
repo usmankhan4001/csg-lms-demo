@@ -15,7 +15,11 @@ import pytest
 from fastapi import HTTPException
 
 from src.db.organization_config import AdminToggles
-from src.security.features_utils.resolve import ALL_FEATURES, resolve_feature
+from src.security.features_utils.resolve import (
+    ALL_FEATURES,
+    DEFAULT_DISABLED_FEATURES,
+    resolve_feature,
+)
 from src.services.orgs.orgs import SCHOOL_MODULE_FEATURES
 
 # The modules an org admin may switch. sms_campus is deliberately excluded --
@@ -58,9 +62,31 @@ def test_disabling_a_module_makes_it_resolve_disabled(module):
 
 @pytest.mark.parametrize("module", SCHOOL_MODULES)
 def test_a_module_is_on_by_default(module):
-    """A school that has never opened this page has every module on."""
+    """A school that has never opened this page has every module on -- EXCEPT
+    the physical-school ones.
+
+    This deployment is an online school. A book stockroom with due dates, a
+    procurement ledger and dormitory bed allocation are not merely unused
+    there, they are three nav entries and three settings surfaces that can
+    never mean anything, so they default off. The code stays, because a
+    campus-based school on this platform later switches them on and they work.
+    """
     resolved = resolve_feature(module, {"config_version": "2.0"}, 1)
-    assert resolved["enabled"] is True
+    expected = module not in DEFAULT_DISABLED_FEATURES
+    assert resolved["enabled"] is expected
+
+
+@pytest.mark.parametrize("module", sorted(DEFAULT_DISABLED_FEATURES))
+def test_a_physical_school_module_can_still_be_switched_on(module):
+    """Default-off must not mean unavailable.
+
+    The distinction matters: an org that explicitly records `disabled: false`
+    is asking for the module, and a default must never outrank an explicit
+    choice. If this fails, the three modules are effectively deleted rather
+    than defaulted, and a campus-based school could never adopt the platform.
+    """
+    config = {"config_version": "2.0", "admin_toggles": {module: {"disabled": False}}}
+    assert resolve_feature(module, config, 1)["enabled"] is True
 
 
 def test_disabling_one_module_does_not_disable_its_neighbours():
@@ -69,8 +95,11 @@ def test_disabling_one_module_does_not_disable_its_neighbours():
     for other in SCHOOL_MODULES:
         if other == "sms_fees":
             continue
-        assert resolve_feature(other, config, 1)["enabled"] is True, (
-            f"Disabling sms_fees also switched off {other}"
+        # Physical-school modules are off before anyone touches the page, so
+        # they are not evidence of leakage from the sms_fees toggle.
+        expected = other not in DEFAULT_DISABLED_FEATURES
+        assert resolve_feature(other, config, 1)["enabled"] is expected, (
+            f"Disabling sms_fees also changed {other}"
         )
 
 

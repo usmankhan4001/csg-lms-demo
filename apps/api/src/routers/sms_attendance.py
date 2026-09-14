@@ -58,11 +58,18 @@ from src.security.school_ownership import (
     get_own_teacher_section_ids,
     require_own_student_or_privileged,
 )
-from src.core.event_bus import bus
+from src.services.notifications import resolve_guardians_of
 from src.services.sms.attendance import (
     ABSENCE_STREAK_THRESHOLD,
     collapse_to_daily_status,
     get_consecutive_absence_streak,
+)
+from src.services.sms.school_events import (
+    ABSENCE_RECORDED,
+    ABSENCE_STREAK,
+    EXCUSE_REVIEWED,
+    raise_school_event,
+    student_display_name,
 )
 from src.services.sms.attendance_pastoral import (
     apply_approved_excuse,
@@ -110,6 +117,37 @@ _PASTORAL_VIEWERS = [TEACHER, SCHOOL_ADMIN, SUPER_ADMIN, PSYCHOLOGIST]
 # trip, a closure). A teacher may do it for their own section; ownership is
 # enforced per-section as with roll-call.
 _BULK_MARKERS = [TEACHER, SCHOOL_ADMIN, SUPER_ADMIN]
+
+
+async def _guardians_for_notification(
+    session: AsyncSession, student_id: int, section_id: int
+) -> list:
+    """The student's guardians, or an empty list if we cannot establish them.
+
+    Separated out so that a lookup failure is logged once, here, rather than
+    being conflated with a delivery failure at the call site. An absent child
+    with no guardian link is a real data gap a school needs to close -- it is
+    logged at warning rather than passed over, because the silent version of
+    this is a family who is never told anything and nobody noticing.
+    """
+    try:
+        guardians = await resolve_guardians_of(session, student_id)
+    except Exception:
+        logger.warning(
+            "Could not resolve guardians for student %s in section %s; "
+            "no absence notification will be sent.",
+            student_id,
+            section_id,
+            exc_info=True,
+        )
+        return []
+    if not guardians:
+        logger.warning(
+            "Student %s was marked absent but has no linked guardian, so "
+            "nobody can be told.",
+            student_id,
+        )
+    return guardians
 
 
 async def _pastoral_section_scope(
@@ -322,22 +360,51 @@ async def submit_batch_roll_call(
                 exc_info=True,
             )
 
-        # Best-effort notification. A failure here (no mail provider, no
-        # guardian row) must not fail the teacher's roll-call, and must not
-        # vanish silently either, or a permanently broken alert path would
-        # look healthy.
-        if streak >= ABSENCE_STREAK_THRESHOLD:
-            try:
-                await bus.emit(
-                    "student.absence_streak",
-                    {"student_id": s_id, "streak": streak},
+        # Tell the family. Every raise below goes through `raise_school_event`,
+        # which cannot propagate: the register above is already committed and
+        # is the record of truth, so a mail outage must never turn into a 500
+        # on a teacher's roll-call.
+        #
+        # WHY THIS REPLACED `bus.emit("student.absence_streak", ...)`:
+        # the in-process bus delivered mail correctly -- its subscriber is
+        # registered at import, so every worker has it, and emit and handler
+        # share a process. What it could not do is anything the fabric exists
+        # for. It bypassed preferences (a parent could not switch it off),
+        # duplicate suppression (re-saving a register re-sent it), and the
+        # delivery log (nobody could answer "was the family actually told?").
+        # It also wrote no in-app copy, so the only record of the message was
+        # in the parent's inbox.
+        guardians = await _guardians_for_notification(session, s_id, payload.section_id)
+        if guardians:
+            student_name = await student_display_name(session, s_id)
+            # A student absent for several days running gets the streak
+            # message INSTEAD of the daily one, not as well as it. Two emails
+            # in one minute saying the same thing in different words is how a
+            # school teaches a family to stop reading.
+            if streak >= ABSENCE_STREAK_THRESHOLD:
+                await raise_school_event(
+                    session,
+                    event_key=ABSENCE_STREAK.key,
+                    org_id=principal.org_id,
+                    recipients=guardians,
+                    context={"student_name": student_name, "streak": streak},
+                    campus_id=principal.campus_id,
+                    related_kind="student",
+                    related_id=s_id,
                 )
-            except Exception:
-                logger.warning(
-                    "Absence-streak notification failed for student %s in section %s",
-                    s_id,
-                    payload.section_id,
-                    exc_info=True,
+            else:
+                await raise_school_event(
+                    session,
+                    event_key=ABSENCE_RECORDED.key,
+                    org_id=principal.org_id,
+                    recipients=guardians,
+                    context={
+                        "student_name": student_name,
+                        "date": payload.date.isoformat(),
+                    },
+                    campus_id=principal.campus_id,
+                    related_kind="student",
+                    related_id=s_id,
                 )
 
     return BatchRollCallResponse(
@@ -700,6 +767,33 @@ async def review_absence_excuse(
 
     await session.commit()
     await session.refresh(excuse)
+
+    # Tell the family the outcome of the note THEY submitted. Best-effort: the
+    # review is committed above and stands regardless.
+    guardians = await _guardians_for_notification(
+        session, excuse.student_id, excuse.section_id
+    )
+    if guardians:
+        await raise_school_event(
+            session,
+            event_key=EXCUSE_REVIEWED.key,
+            org_id=principal.org_id,
+            recipients=guardians,
+            context={
+                "student_name": await student_display_name(session, excuse.student_id),
+                "date": excuse.date.isoformat() if excuse.date else None,
+                # The reviewer's free-text `review_note` is deliberately NOT
+                # sent. It is written for colleagues, not for the family, and
+                # may reference other pupils or staff judgements.
+                "outcome": "approved"
+                if payload.status == ExcuseStatus.APPROVED
+                else "rejected",
+            },
+            campus_id=principal.campus_id,
+            related_kind="absence_excuse",
+            related_id=excuse.id,
+        )
+
     return AbsenceExcuseReviewResponse(
         excuse=AbsenceExcuseRead.model_validate(excuse),
         records_converted=converted,

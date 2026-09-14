@@ -97,7 +97,7 @@ function HomeClient() {
               { }
               <img
                 src="/lrn.svg"
-                alt="LearnHouse"
+                alt="CSG LMS"
                 width={44}
                 height={44}
                 className="opacity-90"

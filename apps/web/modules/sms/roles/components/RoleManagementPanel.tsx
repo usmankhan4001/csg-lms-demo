@@ -41,7 +41,12 @@ const ALL_ROLES: { key: SchoolRoleType; label: string; desc: string }[] = [
   { key: 'SCHOOL_ADMIN', label: 'School Admin', desc: 'Manages school settings, timetables, and enrollments' },
   { key: 'STAFF', label: 'Staff Member', desc: 'Operational and administrative school staff' },
   { key: 'PSYCHOLOGIST', label: 'Counselor / Psychologist', desc: 'Access to student pastoral and counseling notes' },
-  { key: 'SUPER_ADMIN', label: 'Super Admin', desc: 'Full cross-organization platform control' },
+  // SUPER_ADMIN was listed here and was grantable: the backend took `role`
+  // straight from the body and admitted SCHOOL_ADMIN callers, so a school
+  // admin could grant themselves cross-organization platform control from
+  // this dropdown. The backend now refuses it (`_assert_may_grant` in
+  // routers/sms_identity.py); offering it here would only produce a 403
+  // nobody using this screen can act on.
 ]
 
 export function RoleManagementPanel({ orgId }: { orgId: number }) {
