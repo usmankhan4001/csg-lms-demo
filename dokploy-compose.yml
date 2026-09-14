@@ -251,6 +251,11 @@ services:
       HOSTNAME: 0.0.0.0
       NEXT_PUBLIC_APP_URL: ${APP_URL:-${LEARNHOUSE_URL:-https://${APP_DOMAIN:-lms-demo.csginfotech.co}}}
       NEXT_PUBLIC_LEARNHOUSE_API_URL: ${LEARNHOUSE_API_URL:-https://${API_DOMAIN:-api-demo.csginfotech.co}}
+      NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL: ${LEARNHOUSE_BACKEND_URL:-http://api:9000}
+      LEARNHOUSE_INTERNAL_API_URL: http://api:9000
+      NEXT_PUBLIC_LEARNHOUSE_DOMAIN: ${APP_DOMAIN:-lms-demo.csginfotech.co}
+      NEXT_PUBLIC_LEARNHOUSE_TOP_DOMAIN: ${TOP_DOMAIN:-csginfotech.co}
+      NEXT_PUBLIC_LEARNHOUSE_HTTPS: "true"
       NEXT_PUBLIC_LEARNHOUSE_COLLAB_URL: ${LEARNHOUSE_COLLAB_URL:-wss://${COLLAB_DOMAIN:-collab-demo.csginfotech.co}}
       NEXT_PUBLIC_KEYCLOAK_URL: ${KEYCLOAK_URL:-https://${KEYCLOAK_DOMAIN:-auth-demo.csginfotech.co}}
       NEXT_PUBLIC_KEYCLOAK_REALM: csg-lms
