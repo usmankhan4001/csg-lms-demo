@@ -6,7 +6,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import and_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from src.db.sms_hr import StaffProfile
+from src.db.sms_hr import LeaveStatus, LeaveType, StaffLeave, StaffProfile
 from src.db.sms_payroll import SalaryPaymentStatus, SalarySlip, SalaryStructure
 from src.schemas.sms_payroll import (
     BatchSalarySlipGenerateRequest,
@@ -14,6 +14,77 @@ from src.schemas.sms_payroll import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Payroll convention: a month is treated as 30 days for daily-rate purposes,
+# so an unpaid day costs basic/30 regardless of whether the month has 28 or 31
+# days. Using the real day count instead would pay staff differently for the
+# same absence depending on the month, which is the kind of thing that ends up
+# in a grievance.
+PAYROLL_DAYS_PER_MONTH = 30
+
+
+def _mask_amount(value: Optional[float]) -> str:
+    """Redact a salary figure for logs/audit trails.
+
+    Payroll rows are among the most sensitive data a school holds — an exact
+    salary leaking into a log aggregator is a real privacy incident, and logs
+    are far more widely readable than the payroll screen itself. Order of
+    magnitude is kept because it is what makes a log line useful for debugging
+    ("did we compute 5k or 500k?") without disclosing the actual figure.
+    """
+    if value is None:
+        return "***"
+    try:
+        magnitude = len(str(int(abs(float(value)))))
+    except (TypeError, ValueError):
+        return "***"
+    return f"***(~1e{max(0, magnitude - 1)})"
+
+
+async def _count_unpaid_leave_days(
+    session: AsyncSession,
+    staff_id: int,
+    month: int,
+    year: int,
+) -> int:
+    """Approved UNPAID leave days for this staff member falling inside the
+    pay month.
+
+    Only APPROVED counts: a PENDING request has not been granted, and
+    docking pay for a request that may yet be rejected would be wrong.
+    Only UNPAID counts: ANNUAL/SICK/CASUAL/MATERNITY are paid leave by
+    definition, so deducting for them would silently convert the school's
+    paid-leave policy into an unpaid one.
+
+    Leave spanning a month boundary is clipped to the part inside this pay
+    period, so a 10-day leave straddling month-end is not charged twice.
+    """
+    period_start = datetime.date(year, month, 1)
+    if month == 12:
+        period_end = datetime.date(year, 12, 31)
+    else:
+        period_end = datetime.date(year, month + 1, 1) - datetime.timedelta(days=1)
+
+    stmt = select(StaffLeave).where(
+        and_(
+            StaffLeave.staff_id == staff_id,
+            StaffLeave.leave_type == LeaveType.UNPAID,
+            StaffLeave.status == LeaveStatus.APPROVED,
+            StaffLeave.start_date <= period_end,
+            StaffLeave.end_date >= period_start,
+        )
+    )
+    leaves = (await session.execute(stmt)).scalars().all()
+
+    total_days = 0
+    for leave in leaves:
+        overlap_start = max(leave.start_date, period_start)
+        overlap_end = min(leave.end_date, period_end)
+        if overlap_end >= overlap_start:
+            total_days += (overlap_end - overlap_start).days + 1
+
+    # Cannot dock more than the whole month.
+    return min(total_days, PAYROLL_DAYS_PER_MONTH)
 
 
 async def generate_batch_salary_slips(
@@ -72,8 +143,28 @@ async def generate_batch_salary_slips(
             other_ded = 0.0
 
         gross = round(basic + housing + medical + other_allow, 2)
-        deductions = round(tax + pf + other_ded, 2)
+
+        # Unpaid leave is a deduction against the BASIC daily rate, not
+        # against gross: allowances (housing, medical) are generally not
+        # pro-rated for absence, and docking them would over-penalise.
+        unpaid_days = await _count_unpaid_leave_days(
+            session, staff_id=staff.id, month=payload.month, year=payload.year
+        )
+        unpaid_leave_deduction = 0.0
+        if unpaid_days > 0 and basic > 0:
+            daily_rate = basic / PAYROLL_DAYS_PER_MONTH
+            unpaid_leave_deduction = round(daily_rate * unpaid_days, 2)
+
+        deductions = round(tax + pf + other_ded + unpaid_leave_deduction, 2)
         net = round(max(0.0, gross - deductions), 2)
+
+        if unpaid_days > 0:
+            # Masked: see _mask_amount — an exact salary must not reach logs.
+            logger.info(
+                "Payroll %s/%s staff_id=%s: %d unpaid leave day(s), deduction=%s, net=%s",
+                payload.month, payload.year, staff.id, unpaid_days,
+                _mask_amount(unpaid_leave_deduction), _mask_amount(net),
+            )
 
         rand_suffix = uuid.uuid4().hex[:6].upper()
         slip_no = f"SLIP-{payload.year}{payload.month:02d}-{staff.id}-{rand_suffix}"
@@ -90,6 +181,8 @@ async def generate_batch_salary_slips(
             tax_deduction=tax,
             provident_fund=pf,
             other_deductions=other_ded,
+            unpaid_leave_days=unpaid_days,
+            unpaid_leave_deduction=unpaid_leave_deduction,
             gross_salary=gross,
             total_deductions=deductions,
             net_salary=net,

@@ -139,19 +139,18 @@ _jwks_client: Optional[jwt.PyJWKClient] = None
 # localhost and `KEYCLOAK_SECRET_KEY`/`AUTH_JWT_SECRET_KEY` are unset, so
 # `decode_and_verify_token` always ends up verifying HS256 tokens against
 # `settings.shared_secret` -- it never actually reaches a JWKS server. This
-# helper answers "is that the situation right now?" so a dev-only token-minting
-# utility (see src/core/dev_tokens.py and src/routers/dev.py) can gate itself
-# to be inert the instant a real Keycloak deployment is configured.
+# helper answers "is that the situation right now?" -- dormant infrastructure
+# kept for a possible future real-Keycloak cutover, not currently referenced
+# by any dev-only utility.
 def is_hmac_dev_verification_active() -> bool:
     """
     True only when this deployment is realistically running HMAC/shared-secret
     (dev) Keycloak verification rather than talking to a real, deployed
     Keycloak server.
 
-    Used exclusively to gate the dev-only token-minting utility so it is
-    inert the moment a real Keycloak deployment is pointed to. Refuses
-    (returns False) when ANY of the following indicate a real Keycloak
-    deployment:
+    Kept as dormant infrastructure for a possible future real-Keycloak
+    cutover. Refuses (returns False) when ANY of the following indicate a
+    real Keycloak deployment:
 
       - `KEYCLOAK_PUBLIC_KEY` is set (a real RSA public key has been pinned
         for signature verification).
@@ -468,6 +467,7 @@ async def get_bearer_token(
 
 
 async def get_current_user_principal(
+    request: Request,
     current_user=Depends(get_authenticated_user),
     db_session: AsyncSession = Depends(get_db_session),
 ) -> KeycloakUserPrincipal:
@@ -479,6 +479,11 @@ async def get_current_user_principal(
     services/sms/*.py that depend on this function is unchanged; only how
     the principal is CONSTRUCTED changed, not its shape.
 
+    `request` is threaded through to `resolve_school_principal` so it can
+    honor a superadmin's `sms_impersonation` cookie (see
+    src/routers/sms_identity.py's POST /identity/impersonate*) -- otherwise
+    unused here.
+
     The token-decoding path (`decode_and_verify_token`, `get_bearer_token`)
     is left in place below but unreferenced by this dependency -- dormant
     insurance for a possible future real-Keycloak cutover, not dead code to
@@ -486,10 +491,11 @@ async def get_current_user_principal(
     """
     from src.security.school_principal import resolve_school_principal  # local import: avoids a circular import (school_principal.py imports KeycloakUserPrincipal/SUPER_ADMIN from this module at its own top level)
 
-    return await resolve_school_principal(current_user, db_session)
+    return await resolve_school_principal(current_user, db_session, request)
 
 
 async def get_optional_user_principal(
+    request: Request,
     current_user=Depends(get_current_user),
     db_session: AsyncSession = Depends(get_db_session),
 ) -> Optional[KeycloakUserPrincipal]:
@@ -503,7 +509,7 @@ async def get_optional_user_principal(
     if isinstance(current_user, AnonymousUser):
         return None
     try:
-        return await resolve_school_principal(current_user, db_session)
+        return await resolve_school_principal(current_user, db_session, request)
     except HTTPException:
         return None
 

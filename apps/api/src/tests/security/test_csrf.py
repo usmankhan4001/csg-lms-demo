@@ -32,11 +32,18 @@ def _make_mock_config(
     return config
 
 
-def _make_request(method="POST", headers=None):
-    """Create a mock Starlette Request."""
+def _make_request(method="POST", headers=None, path="/api/v1/some-endpoint"):
+    """Create a mock Starlette Request.
+
+    `url.path` is set to a real string (not left as an auto-generated
+    MagicMock attribute) because `_is_csrf_exempt` calls `.endswith(...)` on
+    it -- on an unconfigured MagicMock that call returns another (truthy)
+    MagicMock, which would make every request look exempt.
+    """
     req = MagicMock()
     req.method = method
     req.headers = headers or {}
+    req.url.path = path
     return req
 
 
@@ -199,6 +206,22 @@ class TestCSRFExemptions:
         mw = self._make_middleware()
         req = _make_request(headers={"x-internal-key": "some_secret_key"})
         assert mw._is_csrf_exempt(req) is True
+
+    def test_livekit_webhook_path_exempt(self):
+        """LiveKit's own webhook POST: server-to-server, no browser/cookies
+        involved -- exempted by path since it carries a plain Bearer JWT
+        indistinguishable at this layer from a regular (non-exempt) user
+        token. See routers/live_class_webhooks.py."""
+        mw = self._make_middleware()
+        req = _make_request(headers={"authorization": "Bearer eyJhbGciOiJIUzI1NiJ9..."}, path="/api/v1/live/webhooks")
+        assert mw._is_csrf_exempt(req) is True
+
+    def test_unrelated_path_with_bearer_jwt_not_exempt_by_livekit_rule(self):
+        """The path-based exemption must not accidentally widen to other
+        routes just because they end similarly or carry a Bearer JWT."""
+        mw = self._make_middleware()
+        req = _make_request(headers={"authorization": "Bearer eyJhbGciOiJIUzI1NiJ9..."}, path="/api/v1/sms/me")
+        assert mw._is_csrf_exempt(req) is False
 
     def test_platform_key_exempt(self):
         """Platform service-to-service calls use a shared key, not cookies."""

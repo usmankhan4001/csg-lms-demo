@@ -5,6 +5,7 @@ Provides headless API operations using API token authentication.
 All functions require an APITokenUser and operate within the token's org scope.
 """
 
+import logging
 from datetime import datetime, timedelta
 from typing import List, Optional
 from uuid import uuid4
@@ -60,6 +61,9 @@ from src.security.features_utils.usage import (
 from src.security.security import security_hash_password
 from src.security.rbac.constants import ADMIN_ROLE_ID, MAINTAINER_ROLE_ID
 from src.services.security.password_validation import validate_password_complexity
+
+logger = logging.getLogger(__name__)
+
 
 
 def _require_api_token(current_user) -> APITokenUser:
@@ -2364,7 +2368,19 @@ async def export_user_data(
     user_id: int,
     db_session: AsyncSession,
 ) -> dict:
-    """Full GDPR data export scoped to the token's org.
+    """GDPR data export scoped to the token's org.
+
+    Covers the Learnhouse LMS record AND the school (SMS) record. It used to
+    return only the former while being labelled a "full" export, so a family
+    asking what the school held about their child received course trails and
+    none of their enrolment, attendance, grades, fees or admissions history --
+    an export that looked like compliance and was not.
+
+    Confidential records (counselling, AI safety incidents) are NOT included
+    here. An API token carries no clinical authority, and naming them even as
+    "withheld" would defeat the existence-masking rule they live under. A
+    caller who is entitled to them uses GET /sms/data-subject/{id}/export,
+    which resolves authority from a real principal.
 
     Only returns data that belongs to the token's organization — other-org
     memberships and certificates are intentionally excluded so a token for
@@ -2411,6 +2427,24 @@ async def export_user_data(
     )).all()
     cert_users = [cu for cu, _cert, _course in cert_rows]
 
+    # The school record. Imported locally: services/sms/data_subject pulls in
+    # most of the sms_ db modules, and a module-level import here would add
+    # that weight to every admin import path.
+    from src.services.sms.data_subject import collect_school_record
+
+    try:
+        school_record = await collect_school_record(
+            db_session, user, include_clinical=False, include_safeguarding=False
+        )
+    except Exception:
+        # A subject-access request must not fail wholesale because one school
+        # module is mid-migration. Surface the gap rather than a 500 or, worse,
+        # a silently short export that looks complete.
+        logger.exception("School-record collection failed during GDPR export")
+        school_record = {
+            "_error": "School record could not be collected; contact the administrator."
+        }
+
     group_rows = (await db_session.execute(
         select(UserGroup, UserGroupUser)
         .join(UserGroupUser, UserGroupUser.usergroup_id == UserGroup.id)  # type: ignore
@@ -2432,6 +2466,7 @@ async def export_user_data(
         "user_groups": [
             UserGroupRead.model_validate(g).model_dump() for g, _ in group_rows
         ],
+        "school_record": school_record,
         "exported_at": datetime.now().isoformat(),
     }
 

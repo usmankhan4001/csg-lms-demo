@@ -36,6 +36,12 @@ FeatureName = Literal[
     "sms_financials",
     "sms_hr_payroll",
     "sms_library",
+    # M04 School examinations (scheduled, invigilated, marked into the
+    # gradebook). Distinct from Learnhouse's own inline LMS quizzes.
+    "sms_exam",
+    # M19 cross-module reports. Its own toggle rather than reusing a source
+    # module's: it reads four of them, so no single one owns it.
+    "sms_reports",
     "revops",
     # Phase 4, Part B: Counseling / Wellbeing / Career Guidance module.
     # Part A (teacher module additions: lesson plans, coursework-hour
@@ -45,6 +51,10 @@ FeatureName = Literal[
     # src/routers/sms_teacher_tools.py and the report-card lifecycle
     # additions in src/routers/sms_gradebook.py.
     "tutor_counseling",
+    # M34 Inventory & Procurement
+    "sms_inventory",
+    # M36 Hostel & Dormitory
+    "sms_hostel",
 ]
 
 
@@ -458,6 +468,22 @@ async def require_sms_attendance_feature(
     return await _check_sms_feature_enabled("sms_attendance", principal, db_session)
 
 
+async def require_sms_exam_feature(
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+    db_session: AsyncSession = Depends(get_db_session),
+) -> bool:
+    """Router-level dependency gating the SMS Exam module behind its admin toggle."""
+    return await _check_sms_feature_enabled("sms_exam", principal, db_session)
+
+
+async def require_sms_reports_feature(
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+    db_session: AsyncSession = Depends(get_db_session),
+) -> bool:
+    """Router-level dependency gating the M19 cross-module reports behind its admin toggle."""
+    return await _check_sms_feature_enabled("sms_reports", principal, db_session)
+
+
 async def require_sms_timetable_feature(
     principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
     db_session: AsyncSession = Depends(get_db_session),
@@ -525,3 +551,20 @@ async def require_tutor_counseling_feature(
     """Router-level dependency gating the Counseling/Wellbeing/Career Guidance
     module (src/routers/sms_counseling.py) behind its admin toggle."""
     return await _check_sms_feature_enabled("tutor_counseling", principal, db_session)
+
+
+async def require_sms_inventory_feature(
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+    db_session: AsyncSession = Depends(get_db_session),
+) -> bool:
+    """Router-level dependency gating the SMS Inventory & Procurement module behind its admin toggle."""
+    return await _check_sms_feature_enabled("sms_inventory", principal, db_session)
+
+
+async def require_sms_hostel_feature(
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+    db_session: AsyncSession = Depends(get_db_session),
+) -> bool:
+    """Router-level dependency gating the SMS Hostel & Dormitory module behind its admin toggle."""
+    return await _check_sms_feature_enabled("sms_hostel", principal, db_session)
+

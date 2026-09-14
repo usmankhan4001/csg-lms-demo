@@ -12,6 +12,19 @@ import type {
   LeaveRequestStatus,
   LeaveRequestUpdateStatus,
   MonthlyStudentAttendanceSheet,
+  AbsenceExcuseCreate,
+  AbsenceExcuseRead,
+  AbsenceExcuseReview,
+  AbsenceExcuseReviewResponse,
+  AttendanceChangeEventRead,
+  BulkMarkRangeRequest,
+  BulkMarkRangeResponse,
+  ExcuseStatus,
+  PastoralConcernRead,
+  PastoralConcernStatus,
+  PastoralConcernUpdate,
+  PastoralInterventionCreate,
+  PastoralInterventionRead,
 } from './types'
 
 export function submitRollCall(payload: BatchRollCallRequest): Promise<BatchRollCallResponse> {
@@ -39,4 +52,86 @@ export function listLeaveRequests(params: { studentId?: number; status?: LeaveRe
 
 export function updateLeaveRequestStatus(requestId: number, payload: LeaveRequestUpdateStatus): Promise<LeaveRequestRead> {
   return apiPatch<LeaveRequestRead>(`/sms/attendance/leave-requests/${requestId}/status`, payload)
+}
+
+// ── Attendance trail ──
+
+export function getStudentAttendanceHistory(
+  studentId: number,
+  params: { sectionId?: number; dateFrom?: string; dateTo?: string } = {}
+): Promise<AttendanceChangeEventRead[]> {
+  const qs = toQueryString({
+    section_id: params.sectionId,
+    date_from: params.dateFrom,
+    date_to: params.dateTo,
+  })
+  return apiGet<AttendanceChangeEventRead[]>(`/sms/attendance/history/student/${studentId}${qs}`)
+}
+
+// ── Absence excuses ──
+
+export function submitAbsenceExcuse(payload: AbsenceExcuseCreate): Promise<AbsenceExcuseRead> {
+  return apiPost<AbsenceExcuseRead>('/sms/attendance/excuses', payload)
+}
+
+export function listAbsenceExcuses(
+  params: { sectionId?: number; studentId?: number; status?: ExcuseStatus; limit?: number; offset?: number } = {}
+): Promise<AbsenceExcuseRead[]> {
+  const qs = toQueryString({
+    section_id: params.sectionId,
+    student_id: params.studentId,
+    status: params.status,
+    limit: params.limit,
+    offset: params.offset,
+  })
+  return apiGet<AbsenceExcuseRead[]>(`/sms/attendance/excuses${qs}`)
+}
+
+/**
+ * PATCH, not POST -- verified against sms_attendance.py:653.
+ * Returns `records_converted`, which the caller MUST surface: 0 is a
+ * legitimate outcome (no ABSENT record that day), and a reviewer who sees
+ * nothing happen will press the button again.
+ */
+export function reviewAbsenceExcuse(
+  excuseId: number,
+  payload: AbsenceExcuseReview
+): Promise<AbsenceExcuseReviewResponse> {
+  return apiPatch<AbsenceExcuseReviewResponse>(`/sms/attendance/excuses/${excuseId}/review`, payload)
+}
+
+// ── Pastoral queue ──
+
+export function listPastoralConcerns(
+  params: { status?: PastoralConcernStatus; limit?: number; offset?: number } = {}
+): Promise<PastoralConcernRead[]> {
+  const qs = toQueryString({ status: params.status, limit: params.limit, offset: params.offset })
+  return apiGet<PastoralConcernRead[]>(`/sms/attendance/pastoral/concerns${qs}`)
+}
+
+export function updatePastoralConcern(
+  concernId: number,
+  payload: PastoralConcernUpdate
+): Promise<PastoralConcernRead> {
+  return apiPatch<PastoralConcernRead>(`/sms/attendance/pastoral/concerns/${concernId}`, payload)
+}
+
+export function listConcernInterventions(concernId: number): Promise<PastoralInterventionRead[]> {
+  return apiGet<PastoralInterventionRead[]>(`/sms/attendance/pastoral/concerns/${concernId}/interventions`)
+}
+
+export function recordConcernIntervention(
+  concernId: number,
+  payload: PastoralInterventionCreate
+): Promise<PastoralInterventionRead> {
+  return apiPost<PastoralInterventionRead>(
+    `/sms/attendance/pastoral/concerns/${concernId}/interventions`,
+    payload
+  )
+}
+
+// ── Bulk marking ──
+
+export function bulkMarkRange(payload: BulkMarkRangeRequest): Promise<BulkMarkRangeResponse> {
+  return apiPost<BulkMarkRangeResponse>('/sms/attendance/bulk-mark', payload)
 }

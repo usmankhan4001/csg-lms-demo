@@ -8,6 +8,15 @@
 import { apiGet, apiPatch, apiPost, toQueryString } from '@/lib/api/api-client'
 import type {
   BatchSalarySlipGenerateRequest,
+  OffboardingOutcome,
+  PayrollActionRead,
+  PayrollApprovalRequest,
+  PayrollApprovalResponse,
+  StaffAppraisalCreate,
+  StaffAppraisalRead,
+  StaffAppraisalUpdate,
+  StaffOffboardingRead,
+  StaffOffboardingRequest,
   ContractType,
   LeaveStatus,
   LeaveType,
@@ -90,4 +99,67 @@ export function getSalarySlip(slipId: number): Promise<SalarySlipRead> {
 
 export function recordSalaryPayment(slipId: number, payload: ProcessSalaryPaymentRequest): Promise<SalarySlipRead> {
   return apiPost<SalarySlipRead>(`/sms/payroll/slips/${slipId}/pay`, payload)
+}
+
+
+// ── HR: Offboarding ──
+
+export function offboardStaff(
+  staffId: number,
+  payload: StaffOffboardingRequest
+): Promise<OffboardingOutcome> {
+  return apiPost(`/sms/hr/staff/${staffId}/offboard`, payload)
+}
+
+export function listOffboardings(
+  params: { campusId?: number; staffId?: number } = {}
+): Promise<StaffOffboardingRead[]> {
+  const qs = toQueryString({ campus_id: params.campusId, staff_id: params.staffId })
+  return apiGet(`/sms/hr/offboardings${qs}`)
+}
+
+// ── HR: Appraisals ──
+
+export function createAppraisal(payload: StaffAppraisalCreate): Promise<StaffAppraisalRead> {
+  return apiPost('/sms/hr/appraisals', payload)
+}
+
+export function listAppraisals(
+  params: { staffId?: number; campusId?: number } = {}
+): Promise<StaffAppraisalRead[]> {
+  const qs = toQueryString({ staff_id: params.staffId, campus_id: params.campusId })
+  return apiGet(`/sms/hr/appraisals${qs}`)
+}
+
+export function updateAppraisal(
+  appraisalId: number,
+  payload: StaffAppraisalUpdate
+): Promise<StaffAppraisalRead> {
+  return apiPatch(`/sms/hr/appraisals/${appraisalId}`, payload)
+}
+
+export function shareAppraisal(appraisalId: number): Promise<StaffAppraisalRead> {
+  return apiPost(`/sms/hr/appraisals/${appraisalId}/share`, {})
+}
+
+// ── Payroll: approval ──
+//
+// Approve and reject return OUTCOMES per slip rather than raising, so one
+// refused slip does not abort a payroll run and leave the reviewer unsure
+// which of thirty slips were actioned.
+
+export function approveSalarySlips(
+  payload: PayrollApprovalRequest
+): Promise<PayrollApprovalResponse> {
+  return apiPost('/sms/payroll/slips/approve', payload)
+}
+
+export function rejectSalarySlips(
+  payload: PayrollApprovalRequest
+): Promise<PayrollApprovalResponse> {
+  return apiPost('/sms/payroll/slips/reject', payload)
+}
+
+export function listSlipActions(slipId: number): Promise<PayrollActionRead[]> {
+  return apiGet(`/sms/payroll/slips/${slipId}/actions`)
 }

@@ -1,0 +1,83 @@
+# Example school config for scripts/seed_school.py
+#
+# Every value here is an obvious placeholder. Copy this file, replace the
+# values with the real school's details, and keep your copy out of git.
+#
+# NOTE ON THE PASSWORD: there is deliberately no password in this file.
+# Supply it at run time instead, so it is never committed:
+#
+#     export CSG_SEED_ADMIN_PASSWORD='...'
+#     python scripts/seed_school.py --config my_school.yml
+#
+# Anything you leave out is left UNSET in the database. It is not filled in
+# with a plausible-looking default -- an invented address or a made-up term
+# is the same class of bug as an invented grade.
+
+organization:
+  name: "Example School Trust"
+  slug: "example-school"
+
+campus:
+  name: "Example Main Campus"
+  code: "EXAMPLE-01"
+  address: "000 Placeholder Road, Example City"
+  timezone: "Asia/Karachi"          # IANA name; attendance and timetables are recorded against it
+
+academic_year:
+  name: "2026-2027"
+  start_date: "2026-08-01"
+  end_date: "2027-06-30"
+  is_active: true
+
+# Report cards and timetables are keyed on a term, so a year without terms
+# leaves the gradebook unusable. weight_percentage is how much the term
+# contributes to the year's final grade.
+terms:
+  - name: "Term 1"
+    term_code: "T1"
+    weight_percentage: 40
+    start_date: "2026-08-01"
+    end_date: "2026-12-15"
+  - name: "Term 2"
+    term_code: "T2"
+    weight_percentage: 60
+    start_date: "2027-01-05"
+    end_date: "2027-06-30"
+
+# A section is the unit attendance, timetable and gradebook all work against.
+sections:
+  - grade_level: "Grade 9"
+    section_name: "A"
+    room_number: "101"
+    max_capacity: 30
+  - grade_level: "Grade 9"
+    section_name: "B"
+    room_number: "102"
+    max_capacity: 30
+  - grade_level: "Grade 10"
+    section_name: "A"
+    room_number: "201"
+    max_capacity: 28
+
+# The grading scale is genuinely school-specific -- do not assume the
+# defaults below match the school you are onboarding. Percentages are
+# inclusive lower bound to inclusive upper bound.
+grading_scale:
+  name: "Example School Standard Scale"
+  is_default: true
+  intervals:
+    - { grade: "A+", min_percentage: 90.0, max_percentage: 100.0,  gpa_point: 4.0 }
+    - { grade: "A",  min_percentage: 80.0, max_percentage: 89.99, gpa_point: 3.7 }
+    - { grade: "B+", min_percentage: 75.0, max_percentage: 79.99, gpa_point: 3.3 }
+    - { grade: "B",  min_percentage: 70.0, max_percentage: 74.99, gpa_point: 3.0 }
+    - { grade: "C+", min_percentage: 65.0, max_percentage: 69.99, gpa_point: 2.7 }
+    - { grade: "C",  min_percentage: 60.0, max_percentage: 64.99, gpa_point: 2.0 }
+    - { grade: "D",  min_percentage: 50.0, max_percentage: 59.99, gpa_point: 1.0 }
+    - { grade: "F",  min_percentage: 0.0,  max_percentage: 49.99, gpa_point: 0.0 }
+
+admin_user:
+  email: "admin@example-school.invalid"   # .invalid is reserved and can never be a real domain
+  username: "example_admin"
+  first_name: "Example"
+  last_name: "Administrator"
+  # password: intentionally absent -- use $CSG_SEED_ADMIN_PASSWORD

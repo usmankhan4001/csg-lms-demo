@@ -1,6 +1,7 @@
 'use client'
 import { useOrg } from '@components/Contexts/OrgContext'
 import { signOut } from '@components/Contexts/AuthContext'
+import { useSchoolSession } from '@/lib/api/useSchoolSession'
 import {
   House,
   BookOpen,
@@ -21,6 +22,7 @@ import {
   ChatCircleDots,
   Headphones,
   ChartBar,
+  Heartbeat,
   DotsThree,
   UsersThree,
   Shield,
@@ -35,13 +37,31 @@ import {
   Wrench,
   ChartLine,
   MagnifyingGlass,
+  Bank,
+  Books,
+  CalendarBlank,
+  ChartLineUp,
+  ChatCircle,
+  Exam,
+  CalendarCheck,
   ChalkboardSimple,
   Cube,
+  GraduationCap,
+  IdentificationBadge,
+  Receipt,
   ShoppingBag,
   FolderSimple,
   Plus,
   Code,
   Lightning,
+  ShieldCheck,
+  Scales,
+  Student,
+  SealCheck,
+  Trophy,
+  Warehouse,
+  Compass,
+  VideoCamera,
 } from '@phosphor-icons/react'
 import { motion } from 'motion/react'
 import { DiscordIcon } from '@components/Objects/Icons/DiscordIcon'
@@ -232,6 +252,78 @@ function DashLeftMenu() {
   const showPodcasts = isEnabled('podcasts')
   const showBoards = isEnabled('boards')
   const showPlaygrounds = isEnabled('playgrounds')
+  // School (SMS) modules attach here exactly like Learnhouse's own: one
+  // resolved_features flag per module, already served by the backend's
+  // resolve_all_features(). Disabling a module in org settings removes it
+  // from the nav entirely rather than showing it disabled, matching how
+  // boards/podcasts/playgrounds behave above.
+  // School modules are gated on TWO things: the org's feature toggle (does
+  // this deployment run the module at all) AND the viewer's school role (is
+  // this their job). A teacher with sms_hr_payroll enabled org-wide still has
+  // no business seeing salaries, so the feature flag alone is not enough.
+  // Roles come from GET /sms/me, the same server-side resolution the backend
+  // authorizes requests with -- this hides the nav entry, it does not replace
+  // that check.
+  const { session: schoolSession } = useSchoolSession()
+  const schoolRoles = schoolSession?.roles ?? []
+  const isSuper = schoolRoles.includes('SUPER_ADMIN')
+  const isSchoolAdmin = isSuper || schoolRoles.includes('SCHOOL_ADMIN')
+  const isTeacher = schoolRoles.includes('TEACHER')
+  const isSchoolStaff = schoolRoles.includes('STAFF')
+  // Learnhouse org admins who hold no school role keep full visibility --
+  // otherwise setting up the school would be impossible, since granting the
+  // first SMS role requires reaching these screens.
+  const noSchoolRole = schoolRoles.length === 0
+  const canAdminister = isSchoolAdmin || noSchoolRole
+  const canTeach = canAdminister || isTeacher
+  const canBackOffice = canAdminister || isSchoolStaff
+
+  const showAttendance = isEnabled('sms_attendance') && canTeach
+  const showGradebook = isEnabled('sms_gradebook') && canTeach
+  const showExams = isEnabled('sms_exam') && canTeach
+  const showTimetable = isEnabled('sms_timetable') && canTeach
+  const showFees = isEnabled('sms_fees') && canBackOffice
+  const showFinancials = isEnabled('sms_financials') && canBackOffice
+  const showHr = isEnabled('sms_hr_payroll') && canAdminister
+  // Named school-library, not library: Learnhouse already owns /dash/library
+  // (its own content/folder library). Two different things, two routes.
+  const showSchoolLibrary = isEnabled('sms_library') && canBackOffice
+  // Gated on tutor_counseling, the flag that actually exists -- there is no
+  // `tutor_socratic` in resolve.py despite the name appearing in planning
+  // docs. Oversight is a teacher's job, hence canTeach rather than admin-only.
+  const showAiTutor = isEnabled('tutor_counseling') && canTeach
+  const showRevOpsInsights = isEnabled('revops') && canAdminister
+  // Messaging/notifications have no feature flag, deliberately: they reach
+  // every role including parents and students, so they are structural like
+  // Campus rather than admin-only like Payroll. Visible to anyone holding a
+  // school role (and to org admins, who need it to set the school up).
+  const showMessages = schoolRoles.length > 0 || noSchoolRole
+  const SCHOOL_GROUP_HEADING =
+    'px-3 pb-1 pt-4 text-[10px] font-semibold uppercase tracking-wider text-white/40'
+  const showAdmissions = isEnabled('revops') && canAdminister
+  // Campus is the school's structural root (campuses -> years -> terms ->
+  // sections). Nothing else in the school system works until one exists, so
+  // it is deliberately always on rather than behind a toggle, mirroring how
+  // Learnhouse hardcodes courses/usergroups as always-on features.
+  // Cross-module reporting: office data (fees and admissions sit next to
+  // academics), so administer-gated like the rest of this group.
+  const showReports = isEnabled('sms_reports') && canAdminister
+  // School settings carries NO feature flag on purpose: it is where module
+  // toggles are administered, so gating it behind one would let a school
+  // switch off the page that switches things back on.
+  const showSchoolSettings = canAdminister
+  const showRoles = canAdminister
+  const showFacilities = canAdminister
+  const showAlumni = canAdminister
+  const showLiveClasses = canTeach
+  const showPathways = canTeach
+  const showGamification = canTeach
+  const showCertificates = canTeach
+  const showDiscipline = canTeach
+  // Counselling is PSYCHOLOGIST-or-leadership, deliberately NOT `teach`:
+  // a teacher must not learn that a child is seeing a counsellor.
+  const showCounseling = isEnabled('tutor_counseling') && (canAdminister || schoolRoles.includes('PSYCHOLOGIST'))
+  const showCampus = canAdminister && (isEnabled('sms_attendance') || isEnabled('sms_gradebook') || isEnabled('sms_timetable'))
   const showPayments = isEnabled('payments')
 
   return (
@@ -320,7 +412,13 @@ function DashLeftMenu() {
       </div>
 
       {/* Main Navigation - Vertically Centered */}
-      <div className="flex-1 flex flex-col justify-center py-4 px-3">
+      {/* Scrolls internally rather than centering. `justify-center` overflows
+          in BOTH directions once the list is taller than the viewport, which
+          put the top items out of reach and read as the sidebar vanishing on
+          scroll -- the school modules made the menu long enough to hit it.
+          `min-h-0` is required: a flex child defaults to min-height:auto and
+          would otherwise refuse to shrink, so overflow-y-auto never engages. */}
+      <div className="flex-1 min-h-0 overflow-y-auto py-4 px-3 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         <AdminAuthorization authorizationMode="component">
           <div className="space-y-1">
             <MenuLink
@@ -519,6 +617,259 @@ function DashLeftMenu() {
                 label={t('common.playgrounds')}
                 isCollapsed={isCollapsed}
                 active={isActivePath('/dash/playgrounds')}
+              />
+            )}
+            {/* School (SMS) modules, grouped under a heading so they read as
+                one system rather than nine loose entries beside Learnhouse's
+                own. Each is gated on its resolved_features flag AND the
+                viewer's school role. Ordered to follow the school day: set up
+                the campus, admit students, run the timetable, take
+                attendance, mark work, then the back office. The heading is
+                suppressed when collapsed (icons only) and when the viewer can
+                see none of them. */}
+            {/* Grouped into the four jobs a school actually has, rather than
+                one flat list of thirteen: set the school up, teach, handle
+                money, and the rest. Each heading hides when the viewer can
+                see nothing under it (role-gated) and when collapsed to icons. */}
+            {(showSchoolSettings || showRoles || showReports || showCampus || showFacilities || showAdmissions || showAlumni || showRevOpsInsights) && !isCollapsed && (
+              <div className={SCHOOL_GROUP_HEADING}>School setup</div>
+            )}
+            {showSchoolSettings && (
+              <MenuLink
+                href="/dash/school-settings"
+                icon={<Gear size={20} weight="fill" />}
+                label="School settings"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/school-settings')}
+              />
+            )}
+            {showRoles && (
+              <MenuLink
+                href="/dash/school-settings/roles"
+                icon={<ShieldCheck size={20} weight="fill" />}
+                label="Roles &amp; Permissions"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/school-settings/roles')}
+              />
+            )}
+            {showCampus && (
+              <MenuLink
+                href="/dash/campus"
+                icon={<Buildings size={20} weight="fill" />}
+                label="Campus"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/campus')}
+              />
+            )}
+            {showFacilities && (
+              <MenuLink
+                href="/dash/facilities"
+                icon={<Warehouse size={20} weight="fill" />}
+                label="Facilities"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/facilities')}
+              />
+            )}
+            {showAdmissions && (
+              <MenuLink
+                href="/dash/admissions"
+                icon={<UserPlus size={20} weight="fill" />}
+                label="Admissions"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/admissions')}
+              />
+            )}
+            {showAlumni && (
+              <MenuLink
+                href="/dash/alumni"
+                icon={<Student size={20} weight="fill" />}
+                label="Alumni"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/alumni')}
+              />
+            )}
+            {showRevOpsInsights && (
+              <MenuLink
+                href="/dash/revops"
+                icon={<ChartLineUp size={20} weight="fill" />}
+                label="Admissions Insights"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/revops')}
+              />
+            )}
+            {showReports && (
+              <MenuLink
+                href="/dash/reports"
+                icon={<ChartBar size={20} weight="fill" />}
+                label="Reports"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/reports')}
+              />
+            )}
+            {/* showCounseling belongs here: its entries render inside this
+                group, but it was missing from the condition -- so a
+                PSYCHOLOGIST holding no teaching role saw Counselling floating
+                under no heading at all. */}
+            {(showTimetable ||
+              showAttendance ||
+              showGradebook ||
+              showExams ||
+              showLiveClasses ||
+              showPathways ||
+              showGamification ||
+              showCertificates ||
+              showAiTutor ||
+              showCounseling ||
+              showDiscipline) &&
+              !isCollapsed && <div className={SCHOOL_GROUP_HEADING}>Teaching</div>}
+            {showTimetable && (
+              <MenuLink
+                href="/dash/timetable"
+                icon={<CalendarBlank size={20} weight="fill" />}
+                label="Timetable"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/timetable')}
+              />
+            )}
+            {showAttendance && (
+              <MenuLink
+                href="/dash/attendance"
+                icon={<CalendarCheck size={20} weight="fill" />}
+                label="Attendance"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/attendance')}
+              />
+            )}
+            {showGradebook && (
+              <MenuLink
+                href="/dash/gradebook"
+                icon={<GraduationCap size={20} weight="fill" />}
+                label="Gradebook"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/gradebook')}
+              />
+            )}
+            {showExams && (
+              <MenuLink
+                href="/dash/exams"
+                icon={<Exam size={20} weight="fill" />}
+                label="Exams"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/exams')}
+              />
+            )}
+            {showLiveClasses && (
+              <MenuLink
+                href="/dash/live-classes"
+                icon={<VideoCamera size={20} weight="fill" />}
+                label="Live Classes"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/live-classes')}
+              />
+            )}
+            {showPathways && (
+              <MenuLink
+                href="/dash/pathways"
+                icon={<Compass size={20} weight="fill" />}
+                label="Pathways"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/pathways')}
+              />
+            )}
+            {showGamification && (
+              <MenuLink
+                href="/dash/gamification"
+                icon={<Trophy size={20} weight="fill" />}
+                label="Gamification"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/gamification')}
+              />
+            )}
+            {showCertificates && (
+              <MenuLink
+                href="/dash/certificates-manager"
+                icon={<SealCheck size={20} weight="fill" />}
+                label="Certificates"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/certificates-manager')}
+              />
+            )}
+            {showAiTutor && (
+              <MenuLink
+                href="/dash/ai-tutor"
+                icon={<Robot size={20} weight="fill" />}
+                label="AI Tutor"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/ai-tutor')}
+              />
+            )}
+            {showCounseling && (
+              <MenuLink
+                href="/dash/counseling"
+                icon={<Heartbeat size={20} weight="fill" />}
+                label="Counselling"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/counseling')}
+              />
+            )}
+            {showDiscipline && (
+              <MenuLink
+                href="/dash/discipline"
+                icon={<Scales size={20} weight="fill" />}
+                label="Discipline"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/discipline')}
+              />
+            )}
+            {(showFees || showFinancials || showHr) && !isCollapsed && (
+              <div className={SCHOOL_GROUP_HEADING}>Finance &amp; staff</div>
+            )}
+            {showFees && (
+              <MenuLink
+                href="/dash/fees"
+                icon={<Receipt size={20} weight="fill" />}
+                label="Fees"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/fees')}
+              />
+            )}
+            {showFinancials && (
+              <MenuLink
+                href="/dash/financials"
+                icon={<Bank size={20} weight="fill" />}
+                label="Financials"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/financials')}
+              />
+            )}
+            {showHr && (
+              <MenuLink
+                href="/dash/hr"
+                icon={<IdentificationBadge size={20} weight="fill" />}
+                label="Staff & Payroll"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/hr')}
+              />
+            )}
+            {(showSchoolLibrary || showMessages) && !isCollapsed && (
+              <div className={SCHOOL_GROUP_HEADING}>Resources</div>
+            )}
+            {showSchoolLibrary && (
+              <MenuLink
+                href="/dash/school-library"
+                icon={<Books size={20} weight="fill" />}
+                label="School Library"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/school-library')}
+              />
+            )}
+            {showMessages && (
+              <MenuLink
+                href="/dash/messages"
+                icon={<ChatCircle size={20} weight="fill" />}
+                label="Messages"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/messages')}
               />
             )}
             {/* Users with hover menu */}

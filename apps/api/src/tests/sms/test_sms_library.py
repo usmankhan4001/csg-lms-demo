@@ -22,6 +22,7 @@ from src.routers.sms_library import (
     return_book,
     update_book,
 )
+from src.tests.sms._principals import SUPERADMIN
 
 
 @pytest.mark.asyncio
@@ -38,6 +39,7 @@ async def test_library_catalog_crud_and_search(db: AsyncSession):
             total_copies=3,
         ),
         session=db,
+            principal=SUPERADMIN,
     )
     assert b1.id is not None
     assert b1.available_copies == 3
@@ -53,6 +55,7 @@ async def test_library_catalog_crud_and_search(db: AsyncSession):
             digital_file_url="https://library.csg.edu/books/clean-code.pdf",
         ),
         session=db,
+            principal=SUPERADMIN,
     )
     assert b2.id is not None
 
@@ -61,10 +64,12 @@ async def test_library_catalog_crud_and_search(db: AsyncSession):
     assert fetched.title == "Effective Java"
 
     # 3. Search and filter
-    cs_books = await list_books(category="Computer Science", session=db)
+    cs_books = await list_books(category="Computer Science", session=db,
+        principal=SUPERADMIN)
     assert len(cs_books) == 2
 
-    searched = await list_books(search="Joshua", session=db)
+    searched = await list_books(search="Joshua", session=db,
+        principal=SUPERADMIN)
     assert len(searched) == 1
     assert searched[0].id == b1.id
 
@@ -73,12 +78,14 @@ async def test_library_catalog_crud_and_search(db: AsyncSession):
         book_id=b1.id,
         payload=LibraryBookUpdate(total_copies=5),
         session=db,
+            principal=SUPERADMIN,
     )
     assert updated.total_copies == 5
     assert updated.available_copies == 5
 
     # 5. Delete Book
-    await delete_book(book_id=b2.id, session=db)
+    await delete_book(book_id=b2.id, session=db,
+        principal=SUPERADMIN)
     with pytest.raises(HTTPException) as exc_info:
         await get_book(book_id=b2.id, session=db)
     assert exc_info.value.status_code == 404
@@ -98,6 +105,7 @@ async def test_library_borrow_return_and_fines(db: AsyncSession):
             total_copies=1,
         ),
         session=db,
+            principal=SUPERADMIN,
     )
 
     # 2. User 301 borrows the book
@@ -134,6 +142,7 @@ async def test_library_borrow_return_and_fines(db: AsyncSession):
             as_of_date=datetime.date(2026, 8, 20),
         ),
         session=db,
+            principal=SUPERADMIN,
     )
     assert calc_res.updated_loans_count == 1
     assert calc_res.total_fines_accumulated == 10.0

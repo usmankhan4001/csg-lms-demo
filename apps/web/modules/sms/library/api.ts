@@ -3,9 +3,19 @@
  * (mounted at `/api/v1/sms/library`).
  */
 
-import { apiDelete, apiGet, apiPost, apiPut, toQueryString } from '@/lib/api/api-client'
+import {
+  apiDelete,
+  apiGet,
+  apiPatch,
+  apiPost,
+  apiPut,
+  toQueryString,
+} from '@/lib/api/api-client'
 import type {
   BookLoanRead,
+  ReservationRead,
+  ReservationStatus,
+  ReservationWithPosition,
   BookLoanStatus,
   BorrowBookRequest,
   CalculateFinesRequest,
@@ -57,4 +67,69 @@ export function listLoans(params: { userId?: number; bookId?: number; status?: B
 
 export function calculateOverdueFines(payload?: CalculateFinesRequest): Promise<CalculateFinesResponse> {
   return apiPost<CalculateFinesResponse>('/sms/library/loans/calculate-fines', payload)
+}
+
+// ── Reservations (holds) ───────────────────────────────────────────────────
+
+/**
+ * Place a hold. `userId` is only honoured for a librarian reserving on a
+ * reader's behalf — a reader's own hold takes its identity from the session,
+ * never from this field, so nobody can queue as someone else.
+ */
+export function reserveBook(
+  bookId: number,
+  userId?: number
+): Promise<ReservationWithPosition> {
+  return apiPost<ReservationWithPosition>('/sms/library/reservations', {
+    book_id: bookId,
+    user_id: userId ?? null,
+  })
+}
+
+export function listReservations(
+  params: {
+    bookId?: number
+    userId?: number
+    reservationStatus?: ReservationStatus
+    campusId?: number
+  } = {}
+): Promise<ReservationWithPosition[]> {
+  const qs = toQueryString({
+    book_id: params.bookId,
+    user_id: params.userId,
+    reservation_status: params.reservationStatus,
+    campus_id: params.campusId,
+  })
+  return apiGet<ReservationWithPosition[]>(`/sms/library/reservations${qs}`)
+}
+
+/** A copy has come back and is being held at the desk for this reader. */
+export function markReservationReady(
+  reservationId: number,
+  holdDays = 3
+): Promise<ReservationRead> {
+  return apiPatch<ReservationRead>(
+    `/sms/library/reservations/${reservationId}/ready`,
+    { hold_days: holdDays }
+  )
+}
+
+/** Close a hold as FULFILLED, CANCELLED or EXPIRED. Live statuses are refused. */
+export function closeReservation(
+  reservationId: number,
+  status: ReservationStatus
+): Promise<ReservationRead> {
+  return apiPatch<ReservationRead>(
+    `/sms/library/reservations/${reservationId}/close`,
+    { status }
+  )
+}
+
+/**
+ * Release holds nobody collected, so they stop blocking the queue. Returns
+ * exactly what it expired — an empty list means nothing was stale, which is a
+ * real answer and not a failure.
+ */
+export function expireStaleHolds(): Promise<ReservationRead[]> {
+  return apiPost<ReservationRead[]>('/sms/library/reservations/expire-stale')
 }

@@ -57,6 +57,9 @@ class JournalEntryRead(BaseModel):
     entry_date: datetime.date
     reference_no: str
     description: Optional[str] = None
+    # Non-null on a reversal entry, naming the entry it negates. Exposed so a
+    # ledger reader can tell a correction apart from a genuine transaction.
+    reverses_entry_id: Optional[int] = None
     total_debit: float
     total_credit: float
     created_at: datetime.datetime

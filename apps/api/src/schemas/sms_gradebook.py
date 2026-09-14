@@ -57,6 +57,10 @@ class BatchGradebookEntryRequest(BaseModel):
     assessment_plan_id: int
     entries: List[GradebookEntryInput]
     graded_by: Optional[int] = None
+    # Recorded on the audit trail, not on the grade itself. A correction
+    # without a stated reason is still recorded -- the reason is optional
+    # because requiring it would tempt staff into typing "." to get past it.
+    reason: Optional[str] = None
 
 
 class GradebookEntryRead(BaseModel):
@@ -75,6 +79,20 @@ class GradebookEntryRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class SectionGradebookEntriesResponse(BaseModel):
+    """Saved marks for a section, so the grade-entry matrix can pre-load.
+
+    `entries` contains ONLY marks that were actually recorded. A student with
+    no entry for an assessment simply has no row here -- there is deliberately
+    no zero-filled placeholder, because on a report card "no mark yet" and
+    "scored 0" mean opposite things and must stay distinguishable.
+    """
+
+    section_id: int
+    assessment_plan_ids: List[int]
+    entries: List["GradebookEntryRead"] = Field(default_factory=list)
+
+
 class CourseGradeSummary(BaseModel):
     course_id: int
     course_name: Optional[str] = None
@@ -83,7 +101,17 @@ class CourseGradeSummary(BaseModel):
     total_weighted_percentage: float
     letter_grade: str
     gpa_point: float
+    # False when nothing has been marked for this course yet. Such a course
+    # must be EXCLUDED from the cumulative GPA rather than counted as 0.0
+    # quality points over its credits, which silently dragged every average
+    # down and made unmarked coursework look like failed coursework.
+    has_grades: bool = True
     assessment_breakdown: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class ReportCardStatus(str, Enum):
+    DRAFT = "draft"
+    SENT = "sent"
 
 
 class StudentTermReportCardResponse(BaseModel):
@@ -91,21 +119,27 @@ class StudentTermReportCardResponse(BaseModel):
     section_id: int
     academic_term_id: int
     total_credits: float
-    cumulative_gpa: float
-    overall_letter_grade: str
+    # None when the student has no graded credits. NOT 0.0 and NOT "F": a
+    # student with nothing marked yet has no grade, and reporting one as a
+    # measured value put a fabricated F in front of parents.
+    cumulative_gpa: Optional[float] = None
+    overall_letter_grade: Optional[str] = None
     remarks: Optional[str] = None
     courses: List[CourseGradeSummary]
     generated_at: datetime.datetime
+    # The persisted record this computation was upserted into. Callers need it
+    # to reach the send/PDF endpoints, which key on a report-card id: without
+    # it the only source of an id was the draft POST response, so a card sent
+    # in an earlier session was unreachable and displayed as "not generated
+    # yet". TermReportCard is unique on (student_id, academic_term_id), so one
+    # lookup resolves it -- no list endpoint required.
+    report_card_id: Optional[int] = None
+    report_card_status: Optional["ReportCardStatus"] = None
 
 
 # ---------------------------------------------------------------------------
 # Report-card draft -> sent distribution lifecycle (Phase 4, Part A.4)
 # ---------------------------------------------------------------------------
-
-class ReportCardStatus(str, Enum):
-    DRAFT = "draft"
-    SENT = "sent"
-
 
 class GenerateReportCardDraftRequest(BaseModel):
     section_id: int
@@ -134,7 +168,10 @@ class TermReportCardRecordRead(BaseModel):
     academic_term_id: int
     status: ReportCardStatus
     total_credits: float
-    cumulative_gpa: float
+    # None when total_credits is 0. The stored TermReportCard.gpa column is
+    # NOT NULL so it holds 0.0 for an ungraded student; that is a storage
+    # artefact, not a measured grade, and must not surface as one.
+    cumulative_gpa: Optional[float] = None
     overall_letter_grade: Optional[str] = None
     remarks: Optional[str] = None
     ai_narrative: Optional[str] = None
@@ -144,3 +181,87 @@ class TermReportCardRecordRead(BaseModel):
     sent_by: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ---------------------------------------------------------------------------
+# Whole-section term-end operations
+# ---------------------------------------------------------------------------
+
+
+class BatchReportCardDraftRequest(BaseModel):
+    section_id: int
+    academic_term_id: int
+    generate_narrative: bool = True
+
+
+class BatchReportCardSendRequest(BaseModel):
+    """Explicit ids, never a section -- see the endpoint docstring for why a
+    section-wide blind send is the one thing that cannot be recalled."""
+
+    report_card_ids: List[int] = Field(..., min_length=1)
+
+
+class RecalculateReportCardsRequest(BaseModel):
+    section_id: int
+    academic_term_id: int
+
+
+class BatchReportCardOutcome(BaseModel):
+    """What actually happened to one student's card in a batch run.
+
+    An outcome string rather than a success count: at term end a teacher needs
+    to know WHICH students were skipped and why, not that "27 of 30 succeeded".
+    `drafted_ungraded` is deliberately distinct from `drafted` -- a student
+    with nothing marked has no grade, and that must be visible before anybody
+    presses send.
+    """
+
+    student_id: Optional[int] = None
+    report_card_id: Optional[int] = None
+    outcome: str
+    detail: Optional[str] = None
+    # Present only on a recalculation, so a teacher can see what moved.
+    previous_cumulative_gpa: Optional[float] = None
+    cumulative_gpa: Optional[float] = None
+
+
+class BatchReportCardResponse(BaseModel):
+    results: List[BatchReportCardOutcome] = Field(default_factory=list)
+
+
+class GradeChangeEventRead(BaseModel):
+    """One append-only entry in a mark's audit trail.
+
+    `previous_raw_score` is None on a "created" row -- there was no previous
+    mark. That is deliberately distinct from 0.0, which is a real score.
+    """
+
+    id: int
+    gradebook_entry_id: int
+    student_id: int
+    assessment_plan_id: int
+    section_id: Optional[int] = None
+    action: str
+    previous_raw_score: Optional[float] = None
+    new_raw_score: float
+    previous_letter_grade: Optional[str] = None
+    new_letter_grade: Optional[str] = None
+    max_score: float
+    changed_by_user_id: Optional[int] = None
+    reason: Optional[str] = None
+    created_at: datetime.datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class GradeHistoryResponse(BaseModel):
+    """Full change history for one gradebook entry, oldest first.
+
+    Oldest-first because an audit trail is read as a narrative: what it was
+    first, then what happened to it.
+    """
+
+    gradebook_entry_id: int
+    student_id: int
+    assessment_plan_id: int
+    events: List[GradeChangeEventRead] = Field(default_factory=list)

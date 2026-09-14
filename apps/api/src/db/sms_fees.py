@@ -68,6 +68,31 @@ class StudentFeeVoucher(SQLModel, table=True):
         default=None,
         sa_column=Column(Integer, ForeignKey("sms_fee_structure.id", ondelete="SET NULL"), nullable=True),
     )
+    # Instalment membership. NULL for an ordinary one-off voucher, which is
+    # every voucher that existed before instalment plans -- so nothing about
+    # the existing billing path changes.
+    #
+    # Each instalment IS a voucher rather than a schedule row on one big
+    # voucher, because late-fee accrual reads `due_date` per voucher: a family
+    # that misses instalment 2 must be charged on instalment 2, not on the
+    # whole year's fee. See db/sms_fees_extended.py:FeeInstallmentPlan.
+    #
+    # A plain Integer, NOT a ForeignKey, and that is deliberate. This column is
+    # delivered to existing databases by an Alembic migration, but
+    # `sms_fee_installment_plan` is created by SQLModel's create_all when the
+    # app boots -- which happens AFTER migrations run. A real FK would
+    # therefore exist on a freshly-created database and be absent on a migrated
+    # one, so the two deployment paths would diverge. Declaring it as an
+    # integer keeps model and migration honest about the same thing.
+    # Deleting a plan consequently leaves its vouchers standing, which is the
+    # behaviour wanted anyway: removing a schedule must never delete the money
+    # a family owes.
+    installment_plan_id: Optional[int] = Field(
+        default=None, sa_column=Column(Integer, nullable=True, index=True)
+    )
+    # 1-based position in the plan, so a parent sees "2 of 3" rather than a
+    # date they have to interpret. NULL iff installment_plan_id is NULL.
+    installment_number: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
     voucher_no: str = Field(sa_column=Column(String(50), nullable=False, unique=True, index=True))
     issue_date: datetime.date = Field(sa_column=Column(Date, nullable=False))
     due_date: datetime.date = Field(sa_column=Column(Date, nullable=False, index=True))
@@ -77,6 +102,18 @@ class StudentFeeVoucher(SQLModel, table=True):
     other_fee: float = Field(default=0.0, sa_column=Column(Float, nullable=False))
     discount: float = Field(default=0.0, sa_column=Column(Float, nullable=False))
     fine: float = Field(default=0.0, sa_column=Column(Float, nullable=False))
+    # Portion of `fine` that the late-fee accrual engine charged, as opposed to
+    # a fine an administrator set by hand at voucher-generation time. Tracked
+    # separately so accrual is IDEMPOTENT: re-running it recomputes the target
+    # late fee and charges only the difference, instead of stacking a fresh
+    # charge onto the voucher every time the job runs. It is also the base
+    # exclusion that stops late fees from compounding on late fees.
+    late_fee_applied: float = Field(default=0.0, sa_column=Column(Float, nullable=False, default=0.0))
+    # Audit trail: when accrual last changed this voucher. Nullable because a
+    # voucher that was never overdue has never accrued.
+    late_fee_last_accrued_on: Optional[datetime.date] = Field(
+        default=None, sa_column=Column(Date, nullable=True)
+    )
     total_amount: float = Field(default=0.0, sa_column=Column(Float, nullable=False))
     paid_amount: float = Field(default=0.0, sa_column=Column(Float, nullable=False))
     balance_amount: float = Field(default=0.0, sa_column=Column(Float, nullable=False))

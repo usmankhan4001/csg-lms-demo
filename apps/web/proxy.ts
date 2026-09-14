@@ -244,6 +244,48 @@ export default async function proxy(req: NextRequest) {
   }
 
   // -------------------------------------------------------------------------
+  // 0b. Single-tenancy role-portal redirect.
+  //
+  //    An authenticated user hitting the apex `/`, `/home` (the SaaS-shaped
+  //    "choose an organization" picker -- meaningless when there's only ever
+  //    one org), or `/login` in single tenancy has no reason to land on
+  //    Learnhouse's own org homepage or the picker; send them straight to
+  //    their SMS role portal instead. Placed early (before every other
+  //    branch) so it wins over both the `/home` passthrough (§2 below) and
+  //    the `/login`+hasSession redirect (§3 below) whenever it can act, and
+  //    falls through to their existing behavior otherwise.
+  //
+  //    Relies on the `LH_role` cookie (apps/web/lib/api/school-role-cookie.ts,
+  //    set from a real `GET /sms/me` at login) -- a UX hint only, NOT a
+  //    security boundary: every SMS route independently authorizes via
+  //    `get_current_user_principal`/`require_roles` regardless of this
+  //    cookie's value. If the cookie is absent (new session, unprovisioned
+  //    user, a race before it's set) this block does nothing and execution
+  //    falls through to today's unchanged behavior -- it never hard-fails.
+  //    Multi-tenancy (future SaaS) is completely untouched.
+  // -------------------------------------------------------------------------
+  //    Destinations follow Learnhouse's own two-shell split now that the
+  //    parallel `app/(dashboard)/` portals are retired: staff land in the
+  //    `dash/` admin shell, learners and guardians in the `(withmenu)/`
+  //    learner shell. Both are bare paths that §11's tenant catch-all
+  //    rewrites to `/orgs/{slug}/...`. These previously pointed at /student,
+  //    /teacher, /parent and /campus-admin, which no longer exist -- left
+  //    unchanged they would have 404'd every user at login.
+  const ROLE_PORTAL_PATHS: Record<string, string> = {
+    STUDENT: '/my-school',
+    TEACHER: '/dash',
+    PARENT: '/my-school',
+    ADMIN: '/dash',
+  }
+  if (instance.tenancy === 'single' && (pathname === '/' || pathname === '/home' || pathname === '/login')) {
+    const hasSession = !!req.cookies.get('LH_session')?.value
+    const portalPath = ROLE_PORTAL_PATHS[req.cookies.get('LH_role')?.value || '']
+    if (hasSession && portalPath) {
+      return NextResponse.redirect(new URL(portalPath, req.url))
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // 1. Admin subdomain (multi only) → rewrite to /admin route group.
   //    Idempotent: if the path already starts with /admin (e.g. internal nav
   //    uses /admin/organizations so it works in both subdomain and path mode),
@@ -420,16 +462,20 @@ export default async function proxy(req: NextRequest) {
   }
 
   // -------------------------------------------------------------------------
-  // 5b. CSG LMS Unified Role Portals & Admissions CRM — direct route pass-through
+  // 5b. Direct route pass-through for the few non-org-scoped CSG routes.
+  //
+  //     Trimmed when `app/(dashboard)/` was retired. `/teacher`, `/parent`,
+  //     `/campus-admin` and `/admissions` were that shell's routes and no
+  //     longer exist -- matching them here would have rewritten a live URL to
+  //     a 404 instead of letting §11 resolve it. What remains:
+  //       /student/* — the course lesson player (AI tutor chat), which lives
+  //                    at app/student/... and is NOT org-scoped, so the §11
+  //                    catch-all would wrongly send it to /orgs/{slug}/student.
+  //       /live/*    — the standalone live-class room.
   // -------------------------------------------------------------------------
   if (
     pathname === '/student' || pathname.startsWith('/student/') ||
-    pathname === '/teacher' || pathname.startsWith('/teacher/') ||
-    pathname === '/parent' || pathname.startsWith('/parent/') ||
-    pathname === '/campus-admin' || pathname.startsWith('/campus-admin/') ||
-    pathname === '/admissions' || pathname.startsWith('/admissions/') ||
-    pathname === '/live' || pathname.startsWith('/live/') ||
-    pathname === '/dev-login'
+    pathname === '/live' || pathname.startsWith('/live/')
   ) {
     const resolved = await resolveTenant(req, instance)
     const requestHeaders = tenantRequestHeaders(req, resolved, instance)

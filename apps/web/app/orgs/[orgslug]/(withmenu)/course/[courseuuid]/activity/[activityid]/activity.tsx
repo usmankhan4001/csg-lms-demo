@@ -64,6 +64,7 @@ const ScormActivity = lazy(() => import('../../../../../../../../ee/components/A
 const MarkdownActivity = lazy(() => import('@components/Objects/Activities/Markdown/MarkdownActivity'))
 const EmbedActivity = lazy(() => import('@components/Objects/Activities/Embed/EmbedActivity'))
 const ResourceActivity = lazy(() => import('@components/Objects/Activities/Resource/ResourceActivity'))
+const LiveClassActivity = lazy(() => import('@components/Objects/Activities/LiveClass/LiveClassActivity'))
 
 // Loading fallback component
 const LoadingFallback = () => (
@@ -367,6 +368,12 @@ function ActivityClient(props: ActivityClientProps) {
         return (
           <Suspense fallback={<LoadingFallback />}>
             <ScormActivity course={course} activity={activity} />
+          </Suspense>
+        );
+      case 'TYPE_LIVECLASS':
+        return (
+          <Suspense fallback={<LoadingFallback />}>
+            <LiveClassActivity activity={activity} />
           </Suspense>
         );
       default:

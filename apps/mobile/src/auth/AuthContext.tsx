@@ -1,5 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { clearStoredSession, loadStoredSession, sessionFromToken, storeSessionToken } from './token';
+import { clearStoredSession, loadStoredSession, pickMobileRole, storeSession } from './token';
+import { login as performLogin } from './login';
+import { setUnauthenticatedHandler } from '@/api/client';
 import type { Session } from './types';
 
 export type AuthStatus = 'hydrating' | 'signedOut' | 'signedIn';
@@ -12,9 +14,18 @@ export interface LoginResult {
 interface AuthContextValue {
   status: AuthStatus;
   session: Session | null;
-  /** Paste a dev Keycloak token (see src/auth/token.ts doc comment) and sign in. */
-  loginWithToken: (rawToken: string) => Promise<LoginResult>;
+  /**
+   * Sign in with real credentials against Learnhouse's `/auth/login`.
+   * Replaces the retired paste-a-dev-token flow.
+   */
+  login: (email: string, password: string) => Promise<LoginResult>;
   logout: () => Promise<void>;
+  /**
+   * Set when a restored session had already expired, so the sign-in screen can
+   * explain why the user is back there instead of silently appearing to have
+   * been signed out. Cleared on the next successful sign-in.
+   */
+  expiredNotice: string | null;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -22,11 +33,25 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('hydrating');
   const [session, setSession] = useState<Session | null>(null);
+  const [expiredNotice, setExpiredNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    loadStoredSession().then((restored) => {
+    // `loadStoredSession` drops an expired record and reports it, so a user
+    // returning to a run-out session is told why rather than just finding
+    // themselves signed out.
+    //
+    // There is deliberately NO refresh attempt here. The login response does
+    // carry a refresh_token, but `GET /auth/refresh` reads it from an httpOnly
+    // COOKIE (apps/api/src/routers/auth.py:278), which this client has no way
+    // to present. Building a header-based refresh would mean changing the
+    // server, so expiry sends the user back to sign-in instead of inventing a
+    // scheme that only half works.
+    loadStoredSession().then(({ session: restored, expired }) => {
       if (cancelled) return;
+      if (expired) {
+        setExpiredNotice('Your session expired. Please sign in again.');
+      }
       setSession(restored);
       setStatus(restored ? 'signedIn' : 'signedOut');
     });
@@ -35,24 +60,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const loginWithToken = useCallback(async (rawToken: string): Promise<LoginResult> => {
-    const trimmed = rawToken.trim();
-    if (!trimmed) {
-      return { ok: false, error: 'Paste a token first.' };
+  const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
+    if (!email.trim() || !password) {
+      return { ok: false, error: 'Enter your email and password.' };
     }
-    const next = sessionFromToken(trimmed);
-    if (!next) {
+
+    const outcome = await performLogin(email, password);
+    if (!outcome.ok) {
+      return { ok: false, error: outcome.message };
+    }
+
+    const role = pickMobileRole(outcome.identity.roles);
+    if (!role) {
+      // They authenticated, but hold no role this app has screens for
+      // (SCHOOL_ADMIN is web-only by product decision). Say so rather than
+      // dropping them into an empty shell.
       return {
         ok: false,
         error:
-          "That doesn't look like a usable token. Make sure you copied the full value printed by " +
-          'mint_dev_keycloak_token.py, and that it has not expired.',
+          'Your account signs in, but this app has no screens for your role yet. Please use the web dashboard.',
       };
     }
-    await storeSessionToken(trimmed);
+
+    const next: Session = {
+      token: outcome.token,
+      expiresAt: outcome.expiresAt,
+      identity: outcome.identity,
+      role,
+    };
+    await storeSession(next);
+    setExpiredNotice(null);
     setSession(next);
     setStatus('signedIn');
     return { ok: true };
+  }, []);
+
+  // A 401 from any endpoint means the token is no longer accepted -- almost
+  // always because it expired mid-session. Sign out and say why, instead of
+  // leaving the user on a shell where every screen shows an error.
+  useEffect(() => {
+    setUnauthenticatedHandler(() => {
+      setExpiredNotice('Your session expired. Please sign in again.');
+      setSession(null);
+      setStatus('signedOut');
+      void clearStoredSession();
+    });
+    return () => setUnauthenticatedHandler(null);
   }, []);
 
   const logout = useCallback(async () => {
@@ -62,8 +115,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ status, session, loginWithToken, logout }),
-    [status, session, loginWithToken, logout]
+    () => ({ status, session, login, logout, expiredNotice }),
+    [status, session, login, logout, expiredNotice]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

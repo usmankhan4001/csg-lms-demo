@@ -2,7 +2,6 @@
 
 import * as React from 'react'
 import { type LucideIcon } from 'lucide-react'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState, type EmptyStateAction } from './EmptyState'
 import { ApiError } from '@/lib/api/api-client'
@@ -72,31 +71,31 @@ export function DataTable<T>({
 
   return (
     <div className={cn('overflow-x-auto', className)}>
-      <Table>
-        <TableHeader>
-          <TableRow className="hover:bg-transparent">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-gray-400 text-xs uppercase tracking-wider border-b border-gray-100">
             {columns.map((col) => (
-              <TableHead key={col.key} className={cn(ALIGN_CLASS[col.align ?? 'left'], col.className)}>
+              <th key={col.key} className={cn('pb-2 font-medium', ALIGN_CLASS[col.align ?? 'left'], col.className)}>
                 {col.header}
-              </TableHead>
+              </th>
             ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
+          </tr>
+        </thead>
+        <tbody>
           {state === 'loading' &&
             Array.from({ length: skeletonRows }).map((_, i) => (
-              <TableRow key={`skeleton-${i}`}>
+              <tr key={`skeleton-${i}`} className="border-b border-gray-50">
                 {columns.map((col) => (
-                  <TableCell key={col.key}>
+                  <td key={col.key} className="py-2.5">
                     <Skeleton className="h-4 w-full max-w-[160px]" />
-                  </TableCell>
+                  </td>
                 ))}
-              </TableRow>
+              </tr>
             ))}
 
           {state === 'error' && (
-            <TableRow className="hover:bg-transparent">
-              <TableCell colSpan={colCount} className="p-0">
+            <tr>
+              <td colSpan={colCount} className="p-0">
                 <EmptyState
                   tone="critical"
                   title="Couldn't load this table"
@@ -104,36 +103,39 @@ export function DataTable<T>({
                   code={error?.code}
                   action={onRetry ? { label: 'Retry', onClick: onRetry } : undefined}
                 />
-              </TableCell>
-            </TableRow>
+              </td>
+            </tr>
           )}
 
           {state === 'empty' && (
-            <TableRow className="hover:bg-transparent">
-              <TableCell colSpan={colCount} className="p-0">
+            <tr>
+              <td colSpan={colCount} className="p-0">
                 <EmptyState title={emptyTitle} description={emptyDescription} action={emptyAction} icon={emptyIcon} />
-              </TableCell>
-            </TableRow>
+              </td>
+            </tr>
           )}
 
           {state === 'success' &&
             rows.map((row, index) => (
-              <TableRow
+              <tr
                 key={rowKey(row, index)}
-                className={cn(onRowClick && 'cursor-pointer')}
+                className={cn(
+                  'border-b border-gray-50 text-gray-700',
+                  onRowClick && 'cursor-pointer hover:bg-gray-50 transition-colors'
+                )}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
               >
                 {columns.map((col) => (
-                  <TableCell key={col.key} className={cn(ALIGN_CLASS[col.align ?? 'left'], col.className)}>
+                  <td key={col.key} className={cn('py-2.5', ALIGN_CLASS[col.align ?? 'left'], col.className)}>
                     {col.render(row)}
-                  </TableCell>
+                  </td>
                 ))}
-              </TableRow>
+              </tr>
             ))}
-        </TableBody>
-      </Table>
+        </tbody>
+      </table>
       {state === 'success' && totalLabel && (
-        <div className="border-t border-border px-2 py-2.5 text-xs text-muted-foreground">{totalLabel}</div>
+        <div className="pt-3 text-xs text-gray-400">{totalLabel}</div>
       )}
     </div>
   )

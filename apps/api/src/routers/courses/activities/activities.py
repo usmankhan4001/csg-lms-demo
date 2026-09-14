@@ -36,6 +36,12 @@ from src.services.courses.activities.video import (
     update_video_activity,
     update_external_video_activity,
 )
+from src.services.courses.activities.live_class import (
+    LiveClassActivityCreate,
+    LiveClassJoinResponse,
+    create_liveclass_activity,
+    resolve_join_grant,
+)
 from src.services.courses.lock_usergroups import (
     add_usergroup_to_activity,
     get_activity_usergroups,
@@ -457,6 +463,65 @@ async def api_create_external_video_activity(
     """
     return await create_external_video_activity(
         request, current_user, external_video, db_session
+    )
+
+
+@router.post(
+    "/liveclass",
+    response_model=ActivityRead,
+    summary="Create live class activity",
+    description=(
+        "Create a live (WebRTC) class as an activity inside a chapter. "
+        "Provisions a LiveKit room and links it to the activity, so the class "
+        "is held inside the course rather than on a detached /live page."
+    ),
+    responses={
+        200: {"description": "Live class activity created.", "model": ActivityRead},
+        401: {"description": "Authentication required"},
+        403: {"description": "User lacks permission to create activities in this chapter"},
+        404: {"description": "Chapter not found"},
+    },
+)
+async def api_create_liveclass_activity(
+    request: Request,
+    live_class: LiveClassActivityCreate,
+    current_user: PublicUser = Depends(get_current_user),
+    db_session=Depends(get_db_session),
+) -> ActivityRead:
+    """Create a new live class activity."""
+    return await create_liveclass_activity(
+        request, current_user, live_class, db_session
+    )
+
+
+@router.post(
+    "/liveclass/{activity_uuid}/join",
+    response_model=LiveClassJoinResponse,
+    summary="Join a live class activity",
+    description=(
+        "Mint a LiveKit access token for this activity's room. Host vs "
+        "participant is decided SERVER-SIDE from whether the caller can edit "
+        "the course -- it is never taken from the request, so a student "
+        "cannot ask for host rights."
+    ),
+    responses={
+        200: {"description": "Join token issued.", "model": LiveClassJoinResponse},
+        400: {"description": "Activity is not a live class"},
+        401: {"description": "Authentication required"},
+        403: {"description": "User cannot access this course"},
+        404: {"description": "Activity or course not found"},
+        409: {"description": "Live class has no room attached"},
+    },
+)
+async def api_join_liveclass_activity(
+    request: Request,
+    activity_uuid: str,
+    current_user: PublicUser = Depends(get_current_user),
+    db_session=Depends(get_db_session),
+) -> LiveClassJoinResponse:
+    """Issue a LiveKit join token for a live class activity."""
+    return await resolve_join_grant(
+        request, activity_uuid, current_user, db_session
     )
 
 

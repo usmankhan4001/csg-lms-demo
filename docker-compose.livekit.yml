@@ -1,0 +1,89 @@
+# Adds a real, self-hosted LiveKit media server to the local dev stack --
+# an OVERRIDE file rather than an edit to docker-compose.local.yml, so it
+# combines with that file via multiple -f flags instead of touching it
+# directly (that file has separate in-progress edits happening alongside
+# this work). Always run both together:
+#
+#   docker compose -f docker-compose.local.yml -f docker-compose.livekit.yml up --build
+#
+# `--dev` mode: livekit-server's own built-in local-development preset --
+# hardcodes the `devkey`/`secret` API key pair (matching this project's own
+# LIVEKIT_API_KEY/LIVEKIT_API_SECRET defaults in
+# apps/api/src/services/sms/live_class.py), disables TLS requirements, and
+# binds all interfaces. Not suitable for any real deployment -- production
+# needs its own generated key pair and TLS, tracked as a separate concern
+# for docker-compose.prod.yml.
+services:
+  livekit:
+    image: livekit/livekit-server:v1.9.1
+    container_name: csg-lms-local-livekit
+    restart: unless-stopped
+    command: ["--dev", "--bind", "0.0.0.0"]
+    environment:
+      # Explicit config (rather than relying on --dev's implicit
+      # devkey/secret placeholder fallback) so the webhook target can be
+      # set too: LiveKit calls this URL itself on room/participant
+      # lifecycle events, over the Docker-internal network (the "api"
+      # service name, not localhost) -- see
+      # src/routers/live_class_webhooks.py, the real, server-verified
+      # attendance path this powers.
+      LIVEKIT_CONFIG: |
+        port: 7880
+        rtc:
+          tcp_port: 7881
+          port_range_start: 7882
+          port_range_end: 7882
+          # Without this, LiveKit advertises its own Docker-bridge-internal
+          # IP (e.g. 172.20.0.x) as an ICE host candidate -- unreachable from
+          # a browser running on the host, so every join stalls in ICE
+          # negotiation and gets torn down as "participant_connection_aborted"
+          # (confirmed: real signaling connects, room-manager registers the
+          # participant, but WebRTC media never establishes). node_ip pins
+          # the advertised address to loopback instead, which the
+          # host-mapped 7881/7882 ports above make reachable from the
+          # browser, since both server and browser run on the same machine
+          # for local dev.
+          node_ip: 127.0.0.1
+        keys:
+          devkey: secret
+        webhook:
+          api_key: devkey
+          urls:
+            - http://api:9000/api/v1/live/webhooks
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7880/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 4
+      start_period: 10s
+    networks:
+      - csg-local-network
+
+  api:
+    environment:
+      # Browser-facing (returned to the frontend as `livekit_url` / used to
+      # open the WebRTC signaling connection) -- localhost, since the
+      # browser runs on the host, not inside the Docker network.
+      LIVEKIT_URL: ws://localhost:7880
+      # Container-internal (used by create_room_on_server/end_room_on_server's
+      # server-to-server RoomServiceClient calls) -- the Docker service DNS
+      # name, not "localhost" (which inside the api container means the api
+      # container itself, not the livekit container). Same split as
+      # LEARNHOUSE_INTERNAL_API_URL vs NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL
+      # above in docker-compose.local.yml, for the same reason.
+      LIVEKIT_INTERNAL_URL: ws://livekit:7880
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: secret
+    depends_on:
+      livekit:
+        condition: service_healthy
+
+  # No web-side LiveKit env var needed: every token response from
+  # POST /live/rooms/{room}/token already carries the correct browser-facing
+  # `livekit_url` alongside the token itself (see
+  # LiveClassTokenResponse/LiveClassSessionWithTokenResponse) -- one source
+  # of truth instead of a second copy of the same URL on the frontend.

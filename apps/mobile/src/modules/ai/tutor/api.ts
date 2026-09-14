@@ -87,7 +87,7 @@ export function streamTutorChat(payload: SocraticChatRequest, handlers: StreamTu
   }
 
   void (async () => {
-    const session = await loadStoredSession()
+    const { session } = await loadStoredSession()
     if (state.aborted) return
 
     const xhr = new XMLHttpRequest()

@@ -36,6 +36,7 @@ _DEFAULT_EMBEDDING_MODEL = {
     "google": "gemini-embedding-001",
     "openai": "text-embedding-3-small",
     "ollama": "nomic-embed-text",
+    "openrouter": "openai/text-embedding-3-small",
 }
 
 
@@ -89,6 +90,20 @@ def build_embedding_model() -> EmbeddingModel:
             settings=settings,
         )
 
+    if prov == "openrouter":
+        from pydantic_ai.embeddings.openai import OpenAIEmbeddingModel
+        from pydantic_ai.providers.openai import OpenAIProvider
+
+        if not api_key:
+            raise AINotConfiguredError(
+                "OpenRouter embeddings require an API key (set LEARNHOUSE_AI_API_KEY)."
+            )
+        return OpenAIEmbeddingModel(
+            model_name or _DEFAULT_EMBEDDING_MODEL["openrouter"],
+            provider=OpenAIProvider(api_key=api_key, base_url=base_url or "https://openrouter.ai/api/v1"),
+            settings=settings,
+        )
+
     if prov in _OPENAI_ALIASES:
         from pydantic_ai.embeddings.openai import OpenAIEmbeddingModel
         from pydantic_ai.providers.openai import OpenAIProvider
@@ -103,7 +118,7 @@ def build_embedding_model() -> EmbeddingModel:
             settings=settings,
         )
 
-    # Providers without an embeddings API (anthropic, deepseek, moonshot, mistral, openrouter, bedrock):
+    # Providers without an embeddings API (anthropic, deepseek, moonshot, mistral, bedrock):
     # fall back to Google embeddings when a Gemini key is available.
     gemini_key = getattr(cfg, "gemini_api_key", None)
     if gemini_key:
@@ -121,7 +136,7 @@ def build_embedding_model() -> EmbeddingModel:
 
     raise AINotConfiguredError(
         f"Provider '{prov}' has no embeddings API. Set LEARNHOUSE_AI_EMBEDDING_PROVIDER to "
-        "'google', 'openai', or 'ollama' (with its credentials), or set LEARNHOUSE_GEMINI_API_KEY "
+        "'google', 'openai', 'ollama', or 'openrouter' (with its credentials), or set LEARNHOUSE_GEMINI_API_KEY "
         "to use Google embeddings for RAG."
     )
 

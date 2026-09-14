@@ -18,6 +18,23 @@ from src.routers.live_classes import (
     record_attendance_log,
 )
 from src.services.sms.live_class import get_livekit_config
+from types import SimpleNamespace
+
+
+def _principal(user_id: int, roles=(), superadmin: bool = False):
+    """A resolved principal.
+
+    These tests call the handlers directly, so FastAPI's DI never runs and the
+    `principal` default would arrive as an unresolved `Depends`. Host status is
+    now derived from the caller (it grants room_admin and room_record, so it
+    can never come from the request body), which means the caller has to be
+    real here.
+    """
+    return SimpleNamespace(
+        is_superadmin=superadmin,
+        has_any_role=lambda wanted: any(r in roles for r in wanted),
+        raw_claims={"lh_user_id": user_id},
+    )
 
 
 @pytest.mark.asyncio
@@ -31,7 +48,9 @@ async def test_live_class_session_lifecycle(db: AsyncSession):
         course_id=12,
         room_name="math-101-live",
     )
-    result = await create_live_class_session(payload=req, session=db)
+    result = await create_live_class_session(
+        payload=req, session=db, principal=_principal(101, roles=("TEACHER",))
+    )
     assert result.session.id is not None
     assert result.session.room_name == "math-101-live"
     assert result.session.is_active is True
@@ -56,6 +75,7 @@ async def test_live_class_session_lifecycle(db: AsyncSession):
         room_name="math-101-live",
         payload=student_token_req,
         session=db,
+        principal=_principal(501, roles=("STUDENT",)),
     )
     assert student_token_res.token is not None
     student_decoded = jwt.decode(student_token_res.token, config["api_secret"], algorithms=["HS256"])
@@ -75,11 +95,15 @@ async def test_live_class_session_lifecycle(db: AsyncSession):
     # 4. End the session
     ended = await end_live_class_session(
         room_name="math-101-live",
-        recording_url="https://s3.amazonaws.com/recordings/math-101.mp4",
         session=db,
+        principal=_principal(101, roles=("TEACHER",)),
     )
     assert ended.is_active is False
-    assert ended.recording_url == "https://s3.amazonaws.com/recordings/math-101.mp4"
+    # No recording was requested for this class, so there is no URL. The
+    # endpoint no longer accepts one from the caller -- it previously did,
+    # which let anybody attach an arbitrary link to a class and have it
+    # presented as that class's recording.
+    assert ended.recording_url is None
     assert ended.end_time is not None
 
     # Verify no active rooms now
@@ -105,7 +129,9 @@ async def test_live_class_attendance_tracking(db: AsyncSession):
         teacher_id=102,
         room_name="physics-lab-live",
     )
-    await create_live_class_session(payload=req, session=db)
+    await create_live_class_session(
+        payload=req, session=db, principal=_principal(202, roles=("TEACHER",))
+    )
 
     # 2. Student 701 joins at t0
     join_time = datetime.datetime(2026, 9, 11, 10, 0, 0, tzinfo=datetime.timezone.utc)
@@ -117,6 +143,7 @@ async def test_live_class_attendance_tracking(db: AsyncSession):
             timestamp=join_time,
         ),
         session=db,
+        principal=_principal(701, roles=("STUDENT",)),
     )
     assert join_log.id is not None
     assert join_log.student_id == 701
@@ -132,6 +159,7 @@ async def test_live_class_attendance_tracking(db: AsyncSession):
             timestamp=leave_time,
         ),
         session=db,
+        principal=_principal(701, roles=("STUDENT",)),
     )
     assert leave_log.id == join_log.id
     assert leave_log.duration_minutes == 45.0

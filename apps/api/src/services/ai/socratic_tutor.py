@@ -32,6 +32,7 @@ from src.services.ai.content_guardrails import (
     check_content_relevance,
 )
 from src.services.ai.crisis_classifier import (
+    compose_crisis_message,
     classify_prompt_safety,
     log_safety_incident,
     AISafetyCategory,
@@ -43,6 +44,13 @@ from src.services.ai.knowledge_graph import (
 )
 from src.services.ai.llm import generate_stream, model_for_tier
 from src.services.ai.rag.query_service import query_course_rag
+from src.services.ai.tutor_oversight import (
+    AI_DISABLED_MESSAGE,
+    check_tutor_access,
+    check_tutor_session_limit,
+    log_tutor_exchange,
+    session_limit_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -344,6 +352,7 @@ async def stream_socratic_guidance(
     db_session: Optional[AsyncSession] = None,
     hint_level: Optional[int] = None,
     model_name: Optional[str] = None,
+    assignment_ref: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """
     Stream Socratic guidance tokens with real-time safety screening,
@@ -362,7 +371,26 @@ async def stream_socratic_guidance(
                 "Socratic Tutor intercepted prompt for student '%s' due to safety trigger: %s",
                 student_id, safety_result.category.value
             )
-            # Log incident to AISafetyIncident table
+            # Log incident to AISafetyIncident table.
+            #
+            # With no db_session this whole block was skipped: no incident row
+            # AND no alert dispatch, while the student still received the
+            # crisis message -- so a disclosure looked handled and nobody was
+            # ever told. A silent failure on the one path that must never fail
+            # silently. It is now logged at CRITICAL so an unescalated
+            # disclosure is visible in the logs even when it cannot be
+            # persisted.
+            if db_session is None:
+                logger.critical(
+                    "CRISIS NOT ESCALATED: no db_session available for student %s "
+                    "(category=%s severity=%s). The student was shown crisis "
+                    "resources, but NO incident was recorded and NO counsellor "
+                    "was notified. This is a wiring fault -- the tutor must be "
+                    "called with a database session.",
+                    student_id,
+                    safety_result.category.value,
+                    safety_result.severity.value,
+                )
             if db_session:
                 await log_safety_incident(
                     student_id=student_id,
@@ -376,20 +404,118 @@ async def stream_socratic_guidance(
                     details=safety_result.reason,
                 )
 
-            # Immediately yield canned crisis / safety escalation message
-            yield safety_result.canned_response or "Your message triggered safety protocols. A counselor has been notified."
+            await log_tutor_exchange(
+                db_session, student_id, query, "blocked_safety",
+                org_id=org_id, course_id=course_id, detail=safety_result.category.value,
+            )
+            # Immediately yield the crisis / safety escalation message.
+            #
+            # classify_prompt_safety() is sync and has no database, so the
+            # message it carries is the UNCONFIGURED fallback. Where we have
+            # school context, upgrade it to the school's own helplines: the
+            # previous hardcoded list was US-only (988, Crisis Text Line) in a
+            # deployment serving a school in Pakistan, so a child in crisis was
+            # given numbers that do not connect.
+            #
+            # Wrapped and never allowed to raise. A settings lookup failing
+            # must not stop a student in distress receiving support.
+            crisis_message = safety_result.canned_response or (
+                "Your message triggered safety protocols. A counselor has been notified."
+            )
+            if (
+                db_session is not None
+                and org_id is not None
+                and safety_result.category == AISafetyCategory.SELF_HARM
+            ):
+                try:
+                    from src.services.sms.settings import get_crisis_resources
+
+                    resources = await get_crisis_resources(db_session, org_id)
+                    crisis_message = compose_crisis_message(resources)
+                except Exception:
+                    logger.exception(
+                        "Could not load school crisis resources for org %s; "
+                        "using the unconfigured message.",
+                        org_id,
+                    )
+
+            yield crisis_message
             return
 
         elif safety_result.category == AISafetyCategory.CHEATING:
+            await log_tutor_exchange(
+                db_session, student_id, query, "blocked_safety",
+                org_id=org_id, course_id=course_id, detail="CHEATING",
+            )
             # Pedagogical redirect for direct cheating attempts
             yield safety_result.canned_response or "Let's explore this step-by-step rather than jumping directly to the answer."
             return
+
+    # M40: a hint the student actually receives is a hint that costs marks.
+    # Recorded only past the safety and cheating gates above -- a blocked or
+    # redirected turn gave no help, so charging for it would penalise a
+    # student for asking something the tutor refused to answer.
+    #
+    # Wrapped and never raised: failing to record a hint must not deny a
+    # student the help they asked for. The deduction itself is applied once
+    # at grading time (see services/sms/exam.py), not here -- there is no
+    # score to reduce while the student is still working.
+    if hint_level and assignment_ref and db_session and user_id:
+        try:
+            from src.services.sms.exam import record_hint_usage
+
+            await record_hint_usage(
+                db_session,
+                student_id=int(user_id),
+                assignment_ref=assignment_ref,
+                hint_level=hint_level,
+            )
+        except Exception:
+            logger.warning(
+                "Could not record hint usage for student=%s assignment=%s",
+                user_id, assignment_ref, exc_info=True,
+            )
 
     # 2. Resolve enrollment scope: enrolled course IDs, grade level, subjects
     enrollment_scope = await get_student_enrollment_scope(student_id, db_session)
     enrolled_course_ids: List[int] = enrollment_scope.get("course_ids") or []
     enrolled_subjects: List[str] = enrollment_scope.get("subjects") or []
     grade_level: Optional[str] = enrollment_scope.get("grade_level")
+    section_ids: List[int] = enrollment_scope.get("section_ids") or []
+
+    # 2a. Teacher kill switch (M46). Deliberately AFTER the crisis check
+    # above: a student whose AI access a teacher switched off must still
+    # receive hotline resources if they type something alarming. Blocking
+    # takes precedence over everything pedagogical, but never over safety.
+    access = await check_tutor_access(student_id, db_session, section_ids=section_ids)
+    if not access.is_allowed:
+        logger.warning(
+            "Socratic Tutor refused student '%s': %s", student_id, access.reason
+        )
+        await log_tutor_exchange(
+            db_session, student_id, query, "blocked_disabled",
+            org_id=org_id, section_id=section_ids[0] if section_ids else None,
+            course_id=course_id, detail=access.reason,
+        )
+        yield AI_DISABLED_MESSAGE
+        return
+
+    # 2b. Daily session-minute budget (M39), separate from the request-count
+    # ceiling below it in this module. See tutor_oversight for why this one
+    # fails open while the kill switch above fails closed.
+    session_limit = check_tutor_session_limit(student_id, org_id=org_id)
+    if not session_limit.is_allowed:
+        logger.info(
+            "Socratic Tutor session limit reached for student '%s' (%ss used)",
+            student_id, session_limit.seconds_used,
+        )
+        await log_tutor_exchange(
+            db_session, student_id, query, "blocked_session_limit",
+            org_id=org_id, section_id=section_ids[0] if section_ids else None,
+            course_id=course_id,
+        )
+        yield session_limit_message(session_limit)
+        return
 
     # 3. Content-relevance guardrail: redirect confidently off-topic prompts
     relevance = check_content_relevance(query, enrolled_subjects=enrolled_subjects or None)
@@ -397,6 +523,11 @@ async def stream_socratic_guidance(
         logger.info(
             "Socratic Tutor redirected off-topic prompt for student '%s': %s",
             student_id, relevance.reason,
+        )
+        await log_tutor_exchange(
+            db_session, student_id, query, "blocked_offtopic",
+            org_id=org_id, section_id=section_ids[0] if section_ids else None,
+            course_id=course_id, detail=relevance.reason,
         )
         yield relevance.redirect_message or "Let's keep our focus on your coursework — what are you working on?"
         return
@@ -459,6 +590,15 @@ async def stream_socratic_guidance(
     )
 
     # 8. Stream LLM Response
+    # Logged before streaming rather than after: the generator may be
+    # abandoned mid-stream if the client disconnects, and a question the
+    # student actually asked should appear in the teacher's audit log either
+    # way.
+    await log_tutor_exchange(
+        db_session, student_id, query, "answered",
+        org_id=org_id, section_id=section_ids[0] if section_ids else None,
+        course_id=course_id,
+    )
     selected_model = model_name or model_for_tier("standard")
     try:
         async for chunk in generate_stream(

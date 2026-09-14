@@ -103,6 +103,12 @@ class SalarySlip(SQLModel, table=True):
     tax_deduction: float = Field(default=0.0, sa_column=Column(Float, nullable=False, default=0.0))
     provident_fund: float = Field(default=0.0, sa_column=Column(Float, nullable=False, default=0.0))
     other_deductions: float = Field(default=0.0, sa_column=Column(Float, nullable=False, default=0.0))
+    # Broken out rather than folded into `other_deductions` so the payslip can
+    # show WHY pay was docked. "Money is missing and the slip does not say
+    # why" is the most common payroll dispute, and the day count is what makes
+    # the figure checkable by the employee.
+    unpaid_leave_days: int = Field(default=0, sa_column=Column(Integer, nullable=False, default=0))
+    unpaid_leave_deduction: float = Field(default=0.0, sa_column=Column(Float, nullable=False, default=0.0))
     gross_salary: float = Field(default=0.0, sa_column=Column(Float, nullable=False, default=0.0))
     total_deductions: float = Field(default=0.0, sa_column=Column(Float, nullable=False, default=0.0))
     net_salary: float = Field(default=0.0, sa_column=Column(Float, nullable=False, default=0.0))

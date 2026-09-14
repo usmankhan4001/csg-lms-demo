@@ -20,12 +20,14 @@ export interface StatusChipProps {
   className?: string
 }
 
+// Flat light-ground fills, no border -- Learnhouse's dash surface is light
+// only, and its own chips/badges sit borderless on white cards.
 const TONE_CLASSES: Record<StatusTone, string> = {
-  positive: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20',
-  caution: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20',
-  critical: 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20',
-  info: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20',
-  neutral: 'bg-muted text-muted-foreground border-border',
+  positive: 'bg-emerald-50 text-emerald-700',
+  caution: 'bg-amber-50 text-amber-700',
+  critical: 'bg-rose-50 text-rose-700',
+  info: 'bg-blue-50 text-blue-700',
+  neutral: 'bg-gray-100 text-gray-600',
 }
 
 const DEFAULT_ICON: Record<StatusTone, LucideIcon> = {
@@ -41,7 +43,7 @@ export function StatusChip({ label, tone = 'neutral', icon, className }: StatusC
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium',
+        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
         TONE_CLASSES[tone],
         className
       )}

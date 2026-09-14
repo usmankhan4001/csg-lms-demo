@@ -177,6 +177,18 @@ class CSRFProtectionMiddleware(BaseHTTPMiddleware):
         if request.headers.get("x-platform-key"):
             return True
 
+        # LiveKit's own webhook POST: server-to-server, no browser or cookies
+        # involved at all, so CSRF's threat model doesn't apply here. The
+        # request's authenticity is verified downstream by the route handler
+        # itself (a LiveKit-signed JWT checked against LIVEKIT_API_SECRET,
+        # not anything CSRF-relevant) -- see routers/live_class_webhooks.py.
+        # Exempted by path rather than the Authorization scheme (LiveKit
+        # sends a plain Bearer JWT, indistinguishable at this layer from a
+        # regular user token that DOES fall back to cookies) so no other
+        # endpoint's protection is weakened.
+        if request.url.path.endswith("/live/webhooks"):
+            return True
+
         return False
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:

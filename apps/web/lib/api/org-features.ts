@@ -12,8 +12,9 @@
  * (`src/security/features_utils/resolve.py::resolve_feature`).
  *
  * LIMITATION (documented, not papered over): that endpoint is looked up by
- * org **slug**, but the Keycloak dev token (see `./dev-token.ts`) only
- * carries a numeric `org_id` claim -- there is no endpoint in this codebase
+ * org **slug**, but the real school session (`GET /sms/me`, see
+ * `./useSchoolSession.ts`) only carries a numeric `org_id` -- there is no
+ * endpoint in this codebase
  * that resolves an org by bare numeric id without already having a session
  * tied to it. So this reads the slug from `NEXT_PUBLIC_ORG_SLUG` (falling
  * back to `"default"`, matching the hardcoded default in

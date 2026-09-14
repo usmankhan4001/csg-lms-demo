@@ -193,11 +193,25 @@ class ClassSectionBase(SQLModel):
 
 
 class ClassSection(ClassSectionBase, table=True):
-    """Database model for Class Section in a Campus."""
+    """Database model for Class Section in a Campus.
+
+    A section belongs to ONE academic year. Without that, "Grade 9 A" is the
+    same row forever: a school cannot promote a cohort, cannot say who taught
+    9A last year, and cannot archive a year -- so every August it would have
+    to hand-rebuild every enrolment. `academic_year_id` is what makes rollover
+    possible (see `services/sms/academic_rollover.py`).
+
+    NOTE on the index names: `campus_id` carries `index=True`, which SQLAlchemy
+    auto-names `ix_class_section_campus_id`. The custom composite indexes below
+    are deliberately named differently. Declaring a custom Index whose name
+    collides with an auto-generated one makes `create_all` emit CREATE INDEX
+    twice, which has already taken this API down once.
+    """
     __tablename__ = "class_section"
     __table_args__ = (
         Index("ix_class_section_campus_grade", "campus_id", "grade_level", "section_name"),
         Index("ix_class_section_teacher", "class_teacher_id"),
+        Index("ix_class_section_campus_year", "campus_id", "academic_year_id"),
         {"extend_existing": True},
     )
 
@@ -208,6 +222,31 @@ class ClassSection(ClassSectionBase, table=True):
             ForeignKey("campus.id", ondelete="CASCADE"),
             index=True,
             nullable=False
+        )
+    )
+    # NULLABLE, deliberately. Three reasons:
+    #   1. Sections created before this column existed have no year, and a
+    #      NOT NULL column would make them unreadable rather than merely
+    #      un-scoped. NULL means "not year-scoped yet", not "corrupt".
+    #   2. Year-scoping already lives on StudentEnrollment.academic_year_id,
+    #      which is NOT NULL -- so the academic record was never ambiguous.
+    #      This column scopes the SECTION so it can be rolled forward.
+    #   3. `create_all` never ALTERs an existing table, so this column will not
+    #      appear in any environment that already has `class_section`. A
+    #      NOT NULL column would additionally require a backfill in the same
+    #      migration to avoid breaking those rows.
+    #
+    # campus_id is deliberately RETAINED even though AcademicYear also carries
+    # campus_id and therefore implies it. Removing it would break every
+    # existing campus-scoped query and every row where academic_year_id is
+    # NULL, and would make campus unresolvable for exactly those rows.
+    academic_year_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(
+            Integer,
+            ForeignKey("academic_year.id", ondelete="SET NULL"),
+            index=True,
+            nullable=True
         )
     )
     class_teacher_id: Optional[int] = Field(
@@ -225,6 +264,7 @@ class ClassSectionCreate(ClassSectionBase):
     """Schema for creating a Class Section."""
     campus_id: int
     class_teacher_id: Optional[int] = None
+    academic_year_id: Optional[int] = None
 
 
 class ClassSectionUpdate(SQLModel):
@@ -242,6 +282,7 @@ class ClassSectionRead(ClassSectionBase):
     id: int
     campus_id: int
     class_teacher_id: Optional[int] = None
+    academic_year_id: Optional[int] = None
 
 
 # ---------------------------------------------------------

@@ -530,3 +530,90 @@ async def batch_score_leads(
         processed_count=len(results),
         results=results,
     )
+
+
+async def enroll_lead(
+    session: AsyncSession,
+    lead_id: int,
+    section_id: int,
+    academic_year_id: int,
+    student_email: str,
+    roll_number: Optional[str] = None,
+):
+    """Close the admissions loop: provision the learner and mark the lead ENROLLED.
+
+    Everything -- the user account, the STUDENT role grant, the enrollment row,
+    the lead's own stage change and its audit entry -- is staged on one session
+    and committed exactly once at the end. If any step raises, nothing is
+    written, so a failure can never leave a lead holding an account with no
+    enrollment (which would be invisible to every school module while
+    occupying an email address).
+
+    Idempotent: calling this twice converges on a single student rather than
+    minting a second account. See `revops_enrollment.provision_learner_from_lead`.
+    """
+    from src.services.sms.revops_enrollment import provision_learner_from_lead
+
+    stmt = select(AdmissionsLead).where(AdmissionsLead.id == lead_id)
+    lead = (await session.execute(stmt)).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Admissions lead {lead_id} not found.",
+        )
+
+    if lead.stage == LeadStage.LOST:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This lead is marked Lost. Move it back into the funnel before "
+                "enrolling."
+            ),
+        )
+
+    result = await provision_learner_from_lead(
+        session,
+        lead,
+        section_id=section_id,
+        academic_year_id=academic_year_id,
+        student_email=student_email,
+        roll_number=roll_number,
+    )
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    previous_stage = lead.stage
+
+    # Only log a stage transition when one actually happened -- a repeat call
+    # on an already-ENROLLED lead should not litter the audit trail with
+    # ENROLLED -> ENROLLED entries.
+    if previous_stage != LeadStage.ENROLLED:
+        lead.stage = LeadStage.ENROLLED
+        lead.updated_at = now
+        session.add(lead)
+        session.add(
+            LeadActivityLog(
+                lead_id=lead.id,
+                activity_type=ActivityType.STAGE_CHANGE,
+                summary=(
+                    f"Stage transitioned from {previous_stage.value} to "
+                    f"{LeadStage.ENROLLED.value}. Learner provisioned as "
+                    f"user #{result.user.id} and enrolled in section {section_id}."
+                ),
+                metadata_json={
+                    "from_stage": previous_stage.value,
+                    "to_stage": LeadStage.ENROLLED.value,
+                    "is_loopback": False,
+                    "student_id": result.user.id,
+                    "section_id": section_id,
+                    "academic_year_id": academic_year_id,
+                },
+                created_at=now,
+            )
+        )
+
+    await session.commit()
+    await session.refresh(lead)
+    await session.refresh(result.user)
+    await session.refresh(result.enrollment)
+
+    return lead, result

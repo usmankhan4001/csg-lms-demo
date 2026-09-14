@@ -82,18 +82,18 @@ export function SectionCard({
   const errorInfo = errorPresentation(error)
 
   return (
-    <section id={id} className={cn('scroll-mt-20 rounded-xl border border-border bg-card', className)}>
-      <header className="flex items-start justify-between gap-3 border-b border-border px-4 py-3.5">
+    <section id={id} className={cn('scroll-mt-20 rounded-xl bg-white nice-shadow', className)}>
+      <header className="flex items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
         <div className="flex min-w-0 items-center gap-2.5">
           {icon}
           <div className="min-w-0">
-            <h3 className="truncate text-sm font-semibold text-foreground">{title}</h3>
-            {description && <p className="truncate text-xs text-muted-foreground">{description}</p>}
+            <h3 className="truncate text-sm font-semibold text-gray-700">{title}</h3>
+            {description && <p className="truncate text-xs text-gray-400">{description}</p>}
           </div>
         </div>
         {state === 'success' && action}
       </header>
-      <div className={cn('p-4', bodyClassName)} aria-busy={state === 'loading'}>
+      <div className={cn('p-5', bodyClassName)} aria-busy={state === 'loading'}>
         {state === 'loading' && (
           <div className="space-y-2.5">
             {Array.from({ length: loadingRows }).map((_, i) => (

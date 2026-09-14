@@ -5,6 +5,7 @@ from src.routers import audit as audit_router_module
 from src.routers import code_execution
 from src.routers import code_submissions
 from src.routers import health
+from src.routers import metrics
 from src.routers import demo as demo_router_module
 from src.routers import instance
 from src.routers import plans
@@ -16,18 +17,37 @@ from src.routers import (
     sms_counseling,
     sms_fees,
     sms_financials,
+    sms_exam,
     sms_gradebook,
+    sms_data_subject,
+    sms_reports,
+    sms_admissions,
+    sms_settings,
+    sms_ai_consent,
     sms_hr,
     sms_identity,
     sms_library,
     sms_payroll,
     sms_revops,
+    sms_revops_config,
+    revops_agents,
     sms_teacher_tools,
     sms_timetable,
+    sms_cognia,
+    sms_discipline,
+    sms_alumni,
+    sms_certificates,
+    sms_gamification,
+    sms_events_facilities,
+    sms_pathways,
+    sms_hostel,
+    sms_inventory,
     live_classes,
+    live_class_webhooks,
 )
 from src.routers import mfa as mfa_router_module
 from src.routers import monitoring
+from src.routers import notifications as notifications_router_module
 from src.routers import nudges as nudges_router_module
 from src.routers import stream
 from src.routers import api_tokens
@@ -36,6 +56,9 @@ from src.routers.integrations import zapier as zapier_integration
 from src.routers.ai import ai, magicblocks, courseplanning, rag, images, quiz, assignment_gen, scenario, audio
 from src.routers import ai_tutor as ai_tutor_router_module
 from src.routers import ai_student_profile as ai_student_profile_router_module
+from src.routers import ai_knowledge_graph as ai_knowledge_graph_router_module
+from src.routers import ai_parent_digest as ai_parent_digest_router_module
+from src.routers import ai_oversight as ai_oversight_router_module
 from src.routers.boards import boards_playground
 from src.routers.orgs import ai_credits
 from src.routers.orgs import custom_domains
@@ -83,6 +106,8 @@ async def get_non_api_token_user(user = Depends(get_current_user)):
 require_authenticated_user = get_authenticated_non_api_token_user
 
 # API Routes
+v1_router.include_router(health.router, prefix="/health", tags=["health"])
+v1_router.include_router(metrics.router, tags=["metrics"])
 v1_router.include_router(
     users.router,
     prefix="/users",
@@ -352,6 +377,21 @@ v1_router.include_router(
     tags=["ai", "student-profile"],
 )
 v1_router.include_router(
+    ai_knowledge_graph_router_module.router,
+    prefix="/ai/knowledge-graph",
+    tags=["ai", "knowledge-graph"],
+)
+v1_router.include_router(
+    ai_parent_digest_router_module.router,
+    prefix="/ai/parent",
+    tags=["ai", "parent-digest"],
+)
+v1_router.include_router(
+    ai_oversight_router_module.router,
+    prefix="/ai/oversight",
+    tags=["ai", "tutor-oversight"],
+)
+v1_router.include_router(
     boards_playground.router,
     prefix="/boards",
     tags=["boards", "boards-playground"],
@@ -495,10 +535,91 @@ v1_router.include_router(
     tags=["sms-identity"],
 )
 
+# Notifications (M35) + Communication Hub (M13). Mounted at /sms because every
+# route is per-person school context, resolved from the same principal the
+# other sms_* routers use -- see routers/notifications.py.
+v1_router.include_router(
+    notifications_router_module.router,
+    prefix="/sms",
+    tags=["notifications"],
+)
+
 v1_router.include_router(
     sms_gradebook.router,
     prefix="/sms/gradebook",
     tags=["sms-gradebook"],
+)
+
+# M19 cross-module reports. Mounted after the gradebook because it READS that
+# module (and attendance/fees/admissions) rather than owning anything: it is
+# the principal's single view, not a fifth source of truth.
+v1_router.include_router(
+    sms_reports.router,
+    prefix="/sms/reports",
+    tags=["sms-reports"],
+)
+
+# Data-subject access and erasure for the SCHOOL record. The platform's own
+# export (services/admin/admin.py) covers the Learnhouse LMS record only and
+# touches no sms_ table, so a family asking what the school holds about their
+# child previously received course trails and nothing else. Deliberately NOT
+# behind a feature toggle: a subject-access right cannot be switched off.
+v1_router.include_router(
+    sms_data_subject.router,
+    prefix="/sms/data-subject",
+    tags=["sms-data-subject"],
+)
+
+# CSG School Settings -- the operator layer. Grading scales and fee policy
+# were hardcoded Python constants, so a school on a different scale needed a
+# developer. Deliberately NOT behind a feature toggle: this is where toggles
+# are administered, and gating it behind one creates a state a school cannot
+# get out of without a database client.
+v1_router.include_router(
+    sms_settings.router,
+    prefix="/sms/settings",
+    tags=["sms-settings"],
+)
+
+# M01 Admissions -- the application lifecycle (applications, supporting
+# documents, assessments, decisions). Distinct from RevOps, which is the LEAD
+# funnel: this is what happens once a family actually applies. Holds children's
+# identity and medical documents, so its router admits no TEACHER at all.
+v1_router.include_router(
+    sms_admissions.router,
+    prefix="/sms/admissions",
+    tags=["sms-admissions"],
+)
+
+# M47 Parental consent for a minor's AI use. Deliberately NOT behind a feature
+# toggle: this is the control that governs whether children's words may be sent
+# to a third-party LLM at all, and a school must never be able to switch off
+# the surface that records it.
+v1_router.include_router(
+    sms_ai_consent.router,
+    prefix="/sms/ai-consent",
+    tags=["sms-ai-consent"],
+)
+
+# M30 RevOps Admin Config + M34 Knowledge Base -- the operator layer for the
+# admissions funnel. Lead scoring weights, nurture cadence and consent policy
+# were hardcoded Python constants, so a school could not change what
+# "qualified" means for its own intake without a developer. Deliberately NOT
+# behind a feature toggle, matching sms_settings: gating the controls behind
+# the thing they control creates a state a school cannot escape.
+v1_router.include_router(
+    sms_revops_config.router,
+    prefix="/sms/revops-admin",
+    tags=["sms-revops-admin"],
+)
+
+# M04 School examinations. Mounted next to the gradebook because that is where
+# exam marks end up: posting results writes ordinary GradebookEntry rows rather
+# than grading independently, so there is still exactly one grading engine.
+v1_router.include_router(
+    sms_exam.router,
+    prefix="/sms/exams",
+    tags=["sms-exams"],
 )
 
 v1_router.include_router(
@@ -516,6 +637,18 @@ v1_router.include_router(
     # a redundant second one. Do not remove it under the same "double-gate"
     # fix applied to sms_revops.router above; that would leave it unauthenticated.
     dependencies=[Depends(require_authenticated_user_or_api_token)],
+)
+
+v1_router.include_router(
+    live_class_webhooks.router,
+    prefix="/live",
+    tags=["live-classes"],
+    # Deliberately NOT gated by require_authenticated_user_or_api_token like
+    # live_classes.router above -- this is called by the LiveKit media
+    # server itself (no Learnhouse session, no API token). Its own handler
+    # verifies the LiveKit-signed request instead; see
+    # routers/live_class_webhooks.py and security/csrf.py's matching
+    # path-based CSRF exemption for this same route.
 )
 
 v1_router.include_router(
@@ -548,6 +681,17 @@ v1_router.include_router(
     tags=["sms-revops"],
 )
 
+# AI RevOps agents (M23 research, M25 marketing, M26 copywriting). Same
+# `/revops` prefix as the CRM above, with every route under `/agents/...` so
+# there is no path collision with the 16 CRM endpoints. Feature gating lives
+# inside the router (require_revops_feature), not here, matching sms_revops
+# and avoiding the double-auth-gate bug documented above.
+v1_router.include_router(
+    revops_agents.router,
+    prefix="/revops",
+    tags=["revops-agents"],
+)
+
 # Phase 4: Counseling / Wellbeing / Career Guidance (new module) and the
 # Teacher Module additions (lesson plans + coursework-hour allocation,
 # gated behind the existing sms_gradebook toggle). Mounted the same way as
@@ -565,6 +709,64 @@ v1_router.include_router(
     sms_teacher_tools.router,
     prefix="/sms/teacher-tools",
     tags=["sms-teacher-tools"],
+)
+
+v1_router.include_router(
+    sms_cognia.router,
+    prefix="/sms/cognia",
+    tags=["sms-cognia"],
+)
+
+# M32 Disciplinary Incident Tracking
+v1_router.include_router(
+    sms_discipline.router,
+    tags=["sms-discipline"],
+)
+
+# M33 Alumni Tracking
+v1_router.include_router(
+    sms_alumni.router,
+    tags=["sms-alumni"],
+)
+
+# M16 Certificate PDF Generator & Verification
+v1_router.include_router(
+    sms_certificates.router,
+    tags=["sms-certificates"],
+)
+
+# M20 Gamification, Badges & Leaderboards
+v1_router.include_router(
+    sms_gamification.router,
+    tags=["sms-gamification"],
+)
+
+# M38 Campus Events & Facility Booking
+v1_router.include_router(
+    sms_events_facilities.router,
+    tags=["sms-events-facilities"],
+)
+
+# M13 Curricular Pathways & Bundles
+v1_router.include_router(
+    sms_pathways.router,
+    tags=["sms-pathways"],
+)
+
+# M36 Hostel & Dormitory. The router was written, tested and campus-scoped but
+# never mounted, so all 19 endpoints were unreachable over HTTP. Its own
+# APIRouter already carries require_sms_hostel_feature.
+v1_router.include_router(
+    sms_hostel.router,
+    prefix="/sms/hostel",
+    tags=["sms-hostel"],
+)
+
+# M34 Inventory & Procurement. Same: 20 endpoints, never mounted.
+v1_router.include_router(
+    sms_inventory.router,
+    prefix="/sms/inventory",
+    tags=["sms-inventory"],
 )
 
 

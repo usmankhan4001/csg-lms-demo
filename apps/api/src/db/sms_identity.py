@@ -94,6 +94,21 @@ class StudentGuardian(SQLModel, table=True):
     created_at: datetime = Field(default_factory=get_utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
 
 
+class SMSImpersonationEvent(SQLModel, table=True):
+    """Durable audit trail for superadmin impersonation (start/stop). Separate
+    from UserAuditEvent (apps/api/src/db/user_audit_events.py), which is
+    deliberately scoped to learner activity only, not admin actions."""
+
+    __tablename__ = "sms_impersonation_event"
+    __table_args__ = ({"extend_existing": True},)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    actor_user_id: int = Field(sa_column=Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True))
+    target_user_id: int = Field(sa_column=Column(Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True))
+    action: str = Field(sa_column=Column(String(16), nullable=False))  # "start" | "stop"
+    created_at: datetime = Field(default_factory=get_utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
 # ---------------------------------------------------------
 # API schemas
 # ---------------------------------------------------------

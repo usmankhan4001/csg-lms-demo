@@ -26,6 +26,27 @@ import {
   CaretDown,
   MagnifyingGlass,
   Code,
+  UserPlus,
+  ChartLineUp,
+  CalendarBlank,
+  CalendarCheck,
+  GraduationCap,
+  Exam,
+  Robot,
+  Receipt,
+  Bank,
+  IdentificationBadge,
+  Books,
+  ChatCircle,
+  Heartbeat,
+  ShieldCheck,
+  Scales,
+  Student,
+  SealCheck,
+  Trophy,
+  Warehouse,
+  Compass,
+  VideoCamera,
 } from '@phosphor-icons/react'
 import { DiscordIcon } from '@components/Objects/Icons/DiscordIcon'
 import Link from 'next/link'
@@ -44,6 +65,7 @@ import { usePlan } from '@components/Hooks/usePlan'
 import { planMeetsRequirement } from '@services/plans/plans'
 import { FeedbackModal } from '@components/Objects/Modals/FeedbackModal'
 import { useCommandPalette } from '@components/Dashboard/CommandPalette/CommandPaletteContext'
+import { useSchoolSession } from '@/lib/api/useSchoolSession'
 
 function DashMobileMenu() {
   const org = useOrg() as any
@@ -52,6 +74,9 @@ function DashMobileMenu() {
   const pathname = usePathname() || ''
   const plan = usePlan()
   const { toggle: openSearch } = useCommandPalette()
+  // Must sit above the `if (!org || !session || !mounted) return null` below:
+  // hooks cannot run conditionally.
+  const { session: schoolSession } = useSchoolSession()
   const [menuOpen, setMenuOpen] = useState(false)
   const [feedbackModalOpen, setFeedbackModalOpen] = useState(false)
   const [langExpanded, setLangExpanded] = useState(false)
@@ -69,6 +94,76 @@ function DashMobileMenu() {
 
   const rf = org?.config?.config?.resolved_features
   const isEnabled = (f: string) => rf?.[f]?.enabled === true
+
+  // School (SMS) modules, mirrored from DashLeftMenu.tsx. Gated on BOTH the
+  // org's feature toggle AND the viewer's school role from GET /sms/me — a
+  // teacher with sms_hr_payroll enabled org-wide still has no business seeing
+  // salaries, so the feature flag alone is not enough. This hides the nav
+  // entry; it does not replace the backend's own authorization.
+  const schoolRoles = schoolSession?.roles ?? []
+  const isSuper = schoolRoles.includes('SUPER_ADMIN')
+  const isSchoolAdmin = isSuper || schoolRoles.includes('SCHOOL_ADMIN')
+  const isTeacher = schoolRoles.includes('TEACHER')
+  const isSchoolStaff = schoolRoles.includes('STAFF')
+  // Org admins holding no school role keep full visibility — otherwise
+  // setting the school up would be impossible, since granting the first SMS
+  // role requires reaching these screens.
+  const noSchoolRole = schoolRoles.length === 0
+  const canAdminister = isSchoolAdmin || noSchoolRole
+  const canTeach = canAdminister || isTeacher
+  const canBackOffice = canAdminister || isSchoolStaff
+
+  const showAttendance = isEnabled('sms_attendance') && canTeach
+  const showGradebook = isEnabled('sms_gradebook') && canTeach
+  const showExams = isEnabled('sms_exam') && canTeach
+  const showTimetable = isEnabled('sms_timetable') && canTeach
+  const showFees = isEnabled('sms_fees') && canBackOffice
+  const showFinancials = isEnabled('sms_financials') && canBackOffice
+  const showHr = isEnabled('sms_hr_payroll') && canAdminister
+  // school-library, not library: Learnhouse already owns /dash/library for
+  // its own content/folder library. Two different things, two routes.
+  const showSchoolLibrary = isEnabled('sms_library') && canBackOffice
+  // tutor_counseling is the flag that actually exists; there is no
+  // `tutor_socratic` in resolve.py despite the name appearing in planning docs.
+  const showAiTutor = isEnabled('tutor_counseling') && canTeach
+  const showAdmissions = isEnabled('revops') && canAdminister
+  const showRevOpsInsights = isEnabled('revops') && canAdminister
+  // Messaging has no feature flag, deliberately: it reaches every role
+  // including parents and students, so it is structural like Campus rather
+  // than admin-only like Payroll.
+  const showMessages = schoolRoles.length > 0 || noSchoolRole
+  const showReports = isEnabled('sms_reports') && canAdminister
+  // No feature flag on purpose -- see DashLeftMenu.
+  const showSchoolSettings = canAdminister
+  const showRoles = canAdminister
+  const showFacilities = canAdminister
+  const showAlumni = canAdminister
+  const showLiveClasses = canTeach
+  const showPathways = canTeach
+  const showGamification = canTeach
+  const showCertificates = canTeach
+  const showCounseling = isEnabled('tutor_counseling') && (canAdminister || schoolRoles.includes('PSYCHOLOGIST'))
+  const showDiscipline = canTeach
+  const showCampus =
+    canAdminister &&
+    (isEnabled('sms_attendance') || isEnabled('sms_gradebook') || isEnabled('sms_timetable'))
+
+  const showSchoolSetupGroup =
+    showSchoolSettings || showRoles || showReports || showCampus || showFacilities || showAdmissions || showAlumni || showRevOpsInsights
+  const showTeachingGroup =
+    showTimetable ||
+    showAttendance ||
+    showGradebook ||
+    showExams ||
+    showLiveClasses ||
+    showPathways ||
+    showGamification ||
+    showCertificates ||
+    showAiTutor ||
+    showCounseling ||
+    showDiscipline
+  const showFinanceGroup = showFees || showFinancials || showHr
+  const showResourcesGroup = showSchoolLibrary || showMessages
 
   const isActive = (path: string) => {
     if (path === '/dash') return pathname === '/dash' || pathname === '/dash/'
@@ -230,6 +325,41 @@ function DashMobileMenu() {
                 <PanelItem href="/dash/org/settings/general" icon={<Buildings size={15} weight="fill" />} label={t('common.organization')} active={isActive('/dash/org')} onClick={close} />
                 <PanelItem href="/dash/developers/api" icon={<Code size={15} weight="fill" />} label={t('dashboard.developers.breadcrumb', { defaultValue: 'Developers' })} active={isActive('/dash/developers')} onClick={close} />
 
+                {/* School (SMS) modules, grouped as on desktop: set the school
+                    up, teach, handle money, then the rest. Each heading hides
+                    when role-gating leaves nothing beneath it. */}
+                {showSchoolSetupGroup && <PanelHeading label="School setup" />}
+                {showSchoolSettings && <PanelItem href="/dash/school-settings" icon={<Gear size={15} weight="fill" />} label="School settings" active={isActive('/dash/school-settings')} onClick={close} />}
+                {showRoles && <PanelItem href="/dash/school-settings/roles" icon={<ShieldCheck size={15} weight="fill" />} label="Roles & Permissions" active={isActive('/dash/school-settings/roles')} onClick={close} />}
+                {showReports && <PanelItem href="/dash/reports" icon={<ChartBar size={15} weight="fill" />} label="Reports" active={isActive('/dash/reports')} onClick={close} />}
+                {showCampus && <PanelItem href="/dash/campus" icon={<Buildings size={15} weight="fill" />} label="Campus" active={isActive('/dash/campus')} onClick={close} />}
+                {showFacilities && <PanelItem href="/dash/facilities" icon={<Warehouse size={15} weight="fill" />} label="Facilities" active={isActive('/dash/facilities')} onClick={close} />}
+                {showAdmissions && <PanelItem href="/dash/admissions" icon={<UserPlus size={15} weight="fill" />} label="Admissions" active={isActive('/dash/admissions')} onClick={close} />}
+                {showAlumni && <PanelItem href="/dash/alumni" icon={<Student size={15} weight="fill" />} label="Alumni" active={isActive('/dash/alumni')} onClick={close} />}
+                {showRevOpsInsights && <PanelItem href="/dash/revops" icon={<ChartLineUp size={15} weight="fill" />} label="Admissions Insights" active={isActive('/dash/revops')} onClick={close} />}
+
+                {showTeachingGroup && <PanelHeading label="Teaching" />}
+                {showTimetable && <PanelItem href="/dash/timetable" icon={<CalendarBlank size={15} weight="fill" />} label="Timetable" active={isActive('/dash/timetable')} onClick={close} />}
+                {showAttendance && <PanelItem href="/dash/attendance" icon={<CalendarCheck size={15} weight="fill" />} label="Attendance" active={isActive('/dash/attendance')} onClick={close} />}
+                {showGradebook && <PanelItem href="/dash/gradebook" icon={<GraduationCap size={15} weight="fill" />} label="Gradebook" active={isActive('/dash/gradebook')} onClick={close} />}
+                {showExams && <PanelItem href="/dash/exams" icon={<Exam size={15} weight="fill" />} label="Exams" active={isActive('/dash/exams')} onClick={close} />}
+                {showLiveClasses && <PanelItem href="/dash/live-classes" icon={<VideoCamera size={15} weight="fill" />} label="Live Classes" active={isActive('/dash/live-classes')} onClick={close} />}
+                {showPathways && <PanelItem href="/dash/pathways" icon={<Compass size={15} weight="fill" />} label="Pathways" active={isActive('/dash/pathways')} onClick={close} />}
+                {showGamification && <PanelItem href="/dash/gamification" icon={<Trophy size={15} weight="fill" />} label="Gamification" active={isActive('/dash/gamification')} onClick={close} />}
+                {showCertificates && <PanelItem href="/dash/certificates-manager" icon={<SealCheck size={15} weight="fill" />} label="Certificates" active={isActive('/dash/certificates-manager')} onClick={close} />}
+                {showAiTutor && <PanelItem href="/dash/ai-tutor" icon={<Robot size={15} weight="fill" />} label="AI Tutor" active={isActive('/dash/ai-tutor')} onClick={close} />}
+                {showCounseling && <PanelItem href="/dash/counseling" icon={<Heartbeat size={15} weight="fill" />} label="Counselling" active={isActive('/dash/counseling')} onClick={close} />}
+                {showDiscipline && <PanelItem href="/dash/discipline" icon={<Scales size={15} weight="fill" />} label="Discipline" active={isActive('/dash/discipline')} onClick={close} />}
+
+                {showFinanceGroup && <PanelHeading label="Finance & staff" />}
+                {showFees && <PanelItem href="/dash/fees" icon={<Receipt size={15} weight="fill" />} label="Fees" active={isActive('/dash/fees')} onClick={close} />}
+                {showFinancials && <PanelItem href="/dash/financials" icon={<Bank size={15} weight="fill" />} label="Financials" active={isActive('/dash/financials')} onClick={close} />}
+                {showHr && <PanelItem href="/dash/hr" icon={<IdentificationBadge size={15} weight="fill" />} label="Staff & Payroll" active={isActive('/dash/hr')} onClick={close} />}
+
+                {showResourcesGroup && <PanelHeading label="Resources" />}
+                {showSchoolLibrary && <PanelItem href="/dash/school-library" icon={<Books size={15} weight="fill" />} label="School Library" active={isActive('/dash/school-library')} onClick={close} />}
+                {showMessages && <PanelItem href="/dash/messages" icon={<ChatCircle size={15} weight="fill" />} label="Messages" active={isActive('/dash/messages')} onClick={close} />}
+
                 <div className="h-px bg-white/[0.05] mx-2 my-1.5" />
 
                 <PanelItem href="/account/general" icon={<Gear size={15} weight="fill" />} label={t('common.settings')} active={isActive('/account')} onClick={close} />
@@ -335,6 +465,14 @@ const PillLink = ({
   >
     {icon}
   </Link>
+)
+
+/** Group label inside the panel. Tuned to this panel's dark ground rather
+ *  than reusing the desktop sidebar's class string verbatim. */
+const PanelHeading = ({ label }: { label: string }) => (
+  <div className="px-2.5 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-white/25">
+    {label}
+  </div>
 )
 
 const PanelItem = ({

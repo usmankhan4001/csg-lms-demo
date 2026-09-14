@@ -2,8 +2,20 @@
  * Types mirroring `apps/api/src/schemas/sms_fees.py`.
  */
 
-export type VoucherStatus = 'UNPAID' | 'PARTIALLY_PAID' | 'PAID' | 'OVERDUE' | 'CANCELLED'
-export type PaymentMethod = 'CASH' | 'BANK_TRANSFER' | 'CARD' | 'ONLINE' | 'CHEQUE'
+/**
+ * Mirrors `VoucherStatus` in `apps/api/src/db/sms_fees.py` exactly.
+ *
+ * This previously declared `PARTIALLY_PAID` and `OVERDUE` -- neither exists
+ * in the backend enum, so nothing could ever match them -- while omitting the
+ * real `PARTIAL`. Any UI branching on the phantom values was dead code, and a
+ * `PARTIAL` filter could not even be typed. "Overdue" is not a status here;
+ * it is derived from `due_date` against today.
+ */
+export type VoucherStatus = 'UNPAID' | 'PARTIAL' | 'PAID' | 'CANCELLED'
+
+/** Mirrors `PaymentMethod` in `apps/api/src/db/sms_fees.py`. `CARD` was listed
+ * here but is not a value the backend accepts. */
+export type PaymentMethod = 'CASH' | 'BANK_TRANSFER' | 'ONLINE' | 'CHEQUE'
 
 export interface FeeStructureRead {
   id: number
@@ -52,6 +64,11 @@ export interface StudentFeeVoucherRead {
   other_fee: number
   discount: number
   fine: number
+  /** How much of `fine` was charged automatically by late-fee accrual, as
+   * opposed to a fine the school set by hand. Real field on
+   * `StudentFeeVoucherRead` in `apps/api/src/schemas/sms_fees.py`. */
+  late_fee_applied: number
+  late_fee_last_accrued_on?: string | null
   total_amount: number
   paid_amount: number
   balance_amount: number

@@ -10,17 +10,12 @@
  * that real session via `src/security/school_principal.py`. See
  * PROJECT_DOCS/ARCHITECTURE.md.
  *
- * The dev Keycloak token (`./dev-token`) is kept as a fallback ONLY so this
- * change is independently revertible; it is removed once the dev-token
- * bridge itself is retired (see `./dev-token.ts`'s module doc).
- *
  * Every module `api.ts` file should call `apiGet`/`apiPost`/etc. from here
  * rather than calling `fetch` directly, so auth attachment, base URL, and
  * error normalization stay in one place.
  */
 
-import { getDevToken } from './dev-token'
-import { getActiveAccessToken } from './session-token-bridge'
+import { authReadyPromise, getActiveAccessToken } from './session-token-bridge'
 import { getConfig } from '@services/config/config'
 
 // NOT a frozen module-level constant: this file runs in the browser, and
@@ -67,9 +62,7 @@ function classifyStatus(status: number): ApiErrorKind {
 }
 
 function getBearerToken(): string | null {
-  // Real Learnhouse session token first; dev Keycloak token only as a
-  // fallback (see module doc comment above).
-  return getActiveAccessToken() ?? getDevToken()
+  return getActiveAccessToken()
 }
 
 export interface ApiFetchOptions extends RequestInit {
@@ -90,6 +83,12 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   }
   headers.set('Accept', 'application/json')
 
+  // On a fresh full page load (e.g. the post-login redirect straight into a
+  // portal), AuthContext's session restore is still in flight the instant a
+  // dashboard page's useApiResource fires this call -- wait for that one
+  // settle (resolves once, instantly on every later call) instead of racing
+  // it with a still-null token. See session-token-bridge.ts.
+  await authReadyPromise
   const token = getBearerToken()
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)

@@ -72,6 +72,13 @@ _SET_NULL_ALLOWED = {
     # The demo state row deliberately outlives its organization so the next
     # provision can read last_error and bundle_version off it.
     ("demo_state", "org_id"),
+    # A class section must survive its class teacher's account being deleted.
+    # CASCADE here would mean removing one teacher's user row silently
+    # destroys the whole section -- and with it every enrolment, roll-call
+    # and grade hanging off that section_id. SET NULL leaves the section
+    # standing as "Unassigned" for an admin to re-staff, which is what a
+    # school actually needs.
+    ("class_section", "class_teacher_id"),
 }
 
 

@@ -5,6 +5,7 @@ import ToolTip from '@components/Objects/StyledElements/Tooltip/Tooltip'
 import {
   createActivity,
   createExternalVideoActivity,
+  createLiveClassActivity,
   createFileActivity,
   createVideoActivityWithProgress,
   updateVideoCaptions,
@@ -163,6 +164,31 @@ function NewActivityButton(props: NewActivityButtonProps) {
     router.refresh()
   }
 
+  // Live class creates a LiveKit room server-side, so it uses its own
+  // endpoint rather than the generic createActivity path. Errors are
+  // rethrown so the modal can show the real reason instead of silently
+  // closing on a room that was never provisioned.
+  const submitLiveClassActivity = async (
+    live_class_data: { name: string; description?: string },
+    _chapterId: string
+  ) => {
+    const toast_loading = toast.loading(t('dashboard.courses.structure.activity.toasts.creating'))
+    try {
+      await createLiveClassActivity(live_class_data, props.chapterId, access_token)
+    } catch (error: any) {
+      toast.dismiss(toast_loading)
+      toast.error(error?.message || t('dashboard.courses.structure.activity.toasts.create_error', { defaultValue: 'Could not create activity' }))
+      throw error
+    }
+    track(AnalyticsEvent.ActivityCreated, { activity_type: 'TYPE_LIVECLASS' })
+    queryClient.invalidateQueries({ queryKey: queryKeys.courses.meta(cleanCourseUuid(course.courseStructure.course_uuid)) })
+    setNewActivityModal(false)
+    toast.dismiss(toast_loading)
+    toast.success(t('dashboard.courses.structure.activity.toasts.create_success'))
+    await revalidateTags(['courses'], props.orgslug)
+    router.refresh()
+  }
+
   useEffect(() => { }, [course])
 
   // Auto-open the modal once when requested (e.g. straight after course creation).
@@ -205,6 +231,7 @@ function NewActivityButton(props: NewActivityButtonProps) {
             closeModal={closeNewActivityModal}
             submitFileActivity={submitFileActivity}
             submitExternalVideo={submitExternalVideo}
+            submitLiveClassActivity={submitLiveClassActivity}
             submitActivity={submitActivity}
             chapterId={props.chapterId}
             course={course}

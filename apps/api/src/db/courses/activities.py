@@ -12,6 +12,10 @@ class ActivityTypeEnum(str, Enum):
     TYPE_ASSIGNMENT = "TYPE_ASSIGNMENT"
     TYPE_CUSTOM = "TYPE_CUSTOM"
     TYPE_SCORM = "TYPE_SCORM"
+    # A scheduled/live WebRTC class, held inside the course rather than on a
+    # detached /live/{roomId} page. The matching Postgres enum labels were
+    # added by migration f0627c0d1171; these are the application-side mirror.
+    TYPE_LIVECLASS = "TYPE_LIVECLASS"
 
 
 class ActivitySubTypeEnum(str, Enum):
@@ -33,6 +37,8 @@ class ActivitySubTypeEnum(str, Enum):
     # SCORM
     SUBTYPE_SCORM_12 = "SUBTYPE_SCORM_12"
     SUBTYPE_SCORM_2004 = "SUBTYPE_SCORM_2004"
+    # Live class
+    SUBTYPE_LIVECLASS_LIVEKIT = "SUBTYPE_LIVECLASS_LIVEKIT"
 
 
 class ActivityLockType(str, Enum):

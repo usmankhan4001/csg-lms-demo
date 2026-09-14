@@ -77,6 +77,21 @@ class JournalEntry(SQLModel, table=True):
     entry_date: datetime.date = Field(sa_column=Column(Date, nullable=False, index=True))
     reference_no: str = Field(sa_column=Column(String(50), nullable=False, unique=True, index=True))
     description: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    # Set only on a reversal entry, pointing at the entry it negates. This is
+    # what makes the ledger correctable without being mutable: a mistake is
+    # fixed by posting an offsetting entry that is explicitly LINKED to the
+    # original, rather than by editing history (which would destroy the audit
+    # trail) or by posting an untraceable ad-hoc correction (which leaves
+    # nobody able to tell a fix from a genuine second transaction).
+    reverses_entry_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(
+            Integer,
+            ForeignKey("sms_journal_entry.id", ondelete="RESTRICT"),
+            nullable=True,
+            index=True,
+        ),
+    )
     total_debit: float = Field(default=0.0, sa_column=Column(Float, nullable=False, default=0.0))
     total_credit: float = Field(default=0.0, sa_column=Column(Float, nullable=False, default=0.0))
     created_at: datetime.datetime = Field(

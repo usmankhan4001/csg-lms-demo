@@ -170,6 +170,55 @@ export async function createExternalVideoActivity(
   return res
 }
 
+/**
+ * Create a live class as a course activity. The backend provisions the
+ * LiveKit room and links it, so the class lives inside the course instead
+ * of on a detached /live/{roomId} page.
+ */
+export async function createLiveClassActivity(
+  data: { name: string; description?: string },
+  chapter_id: any,
+  access_token: string
+) {
+  const result = await fetch(
+    `${getAPIUrl()}activities/liveclass`,
+    RequestBodyWithAuthHeader(
+      'POST',
+      {
+        name: data.name,
+        chapter_id: Number(chapter_id),
+        description: data.description ?? '',
+      },
+      null,
+      access_token
+    )
+  )
+  const res = await result.json()
+  return res
+}
+
+/**
+ * Mint a LiveKit join token for a live class activity.
+ *
+ * Host vs participant is decided SERVER-SIDE from the caller's course
+ * permissions -- deliberately not a parameter here, so a student cannot ask
+ * for host rights by editing the request.
+ */
+export async function joinLiveClassActivity(
+  activity_uuid: string,
+  access_token: string
+) {
+  const result = await fetch(
+    `${getAPIUrl()}activities/liveclass/${activity_uuid}/join`,
+    RequestBodyWithAuthHeader('POST', {}, null, access_token)
+  )
+  if (!result.ok) {
+    const detail = await result.json().catch(() => null)
+    throw new Error(detail?.detail || 'Could not join this live class.')
+  }
+  return await result.json()
+}
+
 export async function getActivity(
   activity_uuid: any,
   next: any,

@@ -23,6 +23,8 @@ import {
   ChatCircleDots,
   ChatCircle,
   SquaresFour,
+  Backpack,
+  GraduationCap,
   ChalkboardSimple,
   Signpost,
 } from '@phosphor-icons/react'
@@ -201,6 +203,64 @@ export const OrgMenu = (props: any) => {
                 </TooltipProvider>
               </div>
             </AuthenticatedClientElement>
+            {/* My School -- the learner-side school surface (timetable,
+                attendance, grades for a student; children and fees for a
+                parent). Gated on the same resolved_features flag the staff
+                nav uses, so switching the school modules off removes it here
+                too. The page itself resolves the viewer's school role from
+                GET /sms/me and renders nothing school-specific to org members
+                who have no school record. */}
+            {rf?.sms_attendance?.enabled && (
+              <AuthenticatedClientElement checkMethod="authentication">
+                <div className="hidden md:flex">
+                  <TooltipProvider delayDuration={0}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Link
+                          href={getUriWithOrg(orgslug, '/my-school')}
+                          className={`p-2 rounded-lg transition-colors ${colors.iconBtn}`}
+                          aria-label="My School"
+                        >
+                          <Backpack size={20} weight="fill" />
+                        </Link>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="text-xs">
+                        My School
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              </AuthenticatedClientElement>
+            )}
+            {/* AI Tutor -- the STUDENT study coach, not the staff oversight
+                screen at /dash/ai-tutor. Gated on the `ai` feature flag,
+                which is the real flag for this capability: there is no
+                `tutor_socratic` entry in resolved_features (verified against
+                ALL_FEATURES), so gating on one would have hidden this from
+                every school permanently. The page itself renders nothing
+                tutor-specific to a viewer with no STUDENT record. */}
+            {rf?.ai?.enabled && (
+              <AuthenticatedClientElement checkMethod="authentication">
+                <div className="hidden md:flex">
+                  <TooltipProvider delayDuration={0}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Link
+                          href={getUriWithOrg(orgslug, '/ai-tutor')}
+                          className={`p-2 rounded-lg transition-colors ${colors.iconBtn}`}
+                          aria-label="AI Tutor"
+                        >
+                          <GraduationCap size={20} weight="fill" />
+                        </Link>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="text-xs">
+                        AI Tutor
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              </AuthenticatedClientElement>
+            )}
             {/* Boards */}
             {rf?.boards?.enabled && (
               <AuthenticatedClientElement checkMethod="authentication">

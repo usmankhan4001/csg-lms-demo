@@ -140,6 +140,107 @@ async def process_fee_payment(
     return receipt
 
 
+# ── Late fee accrual (M08) ──
+#
+# Defaults, deliberately module constants rather than a new config table:
+# there is no org-level fee-policy config in this codebase today (confirmed by
+# grep), and inventing a settings surface for three numbers would be a bigger
+# change than the feature. Every value is overridable per call, so a school
+# with a different policy passes its own rate without a code change.
+DEFAULT_LATE_FEE_PERCENT_PER_PERIOD = 2.0   # % of overdue principal, per period
+DEFAULT_LATE_FEE_GRACE_DAYS = 7             # days after due_date before any charge
+DEFAULT_LATE_FEE_PERIOD_DAYS = 30           # one "period" = a month
+DEFAULT_LATE_FEE_MAX_PERCENT = 20.0         # hard ceiling, % of overdue principal
+
+
+async def accrue_late_fees(
+    session: AsyncSession,
+    as_of: Optional[datetime.date] = None,
+    rate_percent: float = DEFAULT_LATE_FEE_PERCENT_PER_PERIOD,
+    grace_days: int = DEFAULT_LATE_FEE_GRACE_DAYS,
+    period_days: int = DEFAULT_LATE_FEE_PERIOD_DAYS,
+    max_percent: float = DEFAULT_LATE_FEE_MAX_PERCENT,
+    student_id: Optional[int] = None,
+    voucher_id: Optional[int] = None,
+) -> List[StudentFeeVoucher]:
+    """Charge late fees on overdue vouchers and persist the result.
+
+    PERSISTED, not computed-on-read. Two reasons this is not a display-time
+    calculation: (1) `process_fee_payment` validates a payment against the
+    stored `balance_amount`, so a late fee that existed only at render time
+    could be walked straight past at the counter; (2) `total_amount` already
+    folds `fine` in, so the ledger, receipts and any downstream accounting
+    would disagree with the UI. Money owed is state, so it is stored.
+
+    Idempotent by construction: the target late fee is recomputed from
+    scratch each run and only the delta is charged, so running this daily,
+    twice in a row, or after a partial payment never double-charges.
+
+    Late fees never compound — the percentage base excludes `late_fee_applied`,
+    so a long-overdue voucher accrues on its original principal only, and the
+    total is capped at `max_percent` of that principal.
+    """
+    today = as_of or datetime.date.today()
+
+    conditions = [
+        # PAID vouchers owe nothing; CANCELLED ones are void. Charging either
+        # would resurrect a settled debt.
+        StudentFeeVoucher.status.in_([VoucherStatus.UNPAID, VoucherStatus.PARTIAL]),
+    ]
+    if voucher_id is not None:
+        conditions.append(StudentFeeVoucher.id == voucher_id)
+    if student_id is not None:
+        conditions.append(StudentFeeVoucher.student_id == student_id)
+
+    stmt = select(StudentFeeVoucher).where(and_(*conditions))
+    vouchers = (await session.execute(stmt)).scalars().all()
+
+    updated: List[StudentFeeVoucher] = []
+
+    for voucher in vouchers:
+        days_overdue = (today - voucher.due_date).days - grace_days
+        if days_overdue <= 0:
+            continue
+
+        # Whole periods elapsed, minimum one once past the grace window.
+        periods = max(1, -(-days_overdue // period_days))  # ceil division
+
+        # Base excludes late fees already charged, so fees never compound.
+        principal = max(0.0, voucher.total_amount - voucher.late_fee_applied)
+        if principal <= 0:
+            continue
+
+        target = principal * (rate_percent / 100.0) * periods
+        ceiling = principal * (max_percent / 100.0)
+        target = round(min(target, ceiling), 2)
+
+        delta = round(target - voucher.late_fee_applied, 2)
+        # Sub-cent deltas are noise; never issue a negative (refunding a late
+        # fee is an administrative decision, not an accrual-engine one).
+        if delta <= 0.009:
+            continue
+
+        voucher.late_fee_applied = round(voucher.late_fee_applied + delta, 2)
+        voucher.fine = round(voucher.fine + delta, 2)
+        voucher.total_amount = round(voucher.total_amount + delta, 2)
+        voucher.balance_amount = round(voucher.total_amount - voucher.paid_amount, 2)
+        voucher.late_fee_last_accrued_on = today
+
+        # A voucher that had been fully paid cannot be in this loop, but a
+        # PARTIAL one now owes more again — status stays PARTIAL, which is
+        # already correct. Nothing to change.
+        session.add(voucher)
+        updated.append(voucher)
+
+    if updated:
+        await session.commit()
+        for v in updated:
+            await session.refresh(v)
+
+    logger.info("Late fee accrual as_of=%s updated %d voucher(s)", today, len(updated))
+    return updated
+
+
 async def fetch_student_fee_ledger(
     session: AsyncSession,
     student_id: int,

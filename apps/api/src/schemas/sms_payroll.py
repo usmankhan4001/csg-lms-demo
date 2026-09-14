@@ -51,6 +51,9 @@ class SalarySlipRead(BaseModel):
     tax_deduction: float
     provident_fund: float
     other_deductions: float
+    # Surfaced so the payslip can show why pay was docked, not just that it was.
+    unpaid_leave_days: int = 0
+    unpaid_leave_deduction: float = 0.0
     gross_salary: float
     total_deductions: float
     net_salary: float

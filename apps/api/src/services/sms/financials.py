@@ -124,6 +124,135 @@ async def validate_and_create_journal_entry(
     return entry
 
 
+async def reverse_journal_entry(
+    session: AsyncSession,
+    entry_id: int,
+    reason: Optional[str] = None,
+    entry_date: Optional[datetime.date] = None,
+) -> JournalEntry:
+    """Post a new entry that exactly negates `entry_id` and links back to it.
+
+    The ledger is append-only by design (the router exposes no PATCH/PUT/
+    DELETE), which is correct for an audit trail but leaves no first-class way
+    to undo a mis-posting. Before this, correcting one meant hand-posting an
+    offsetting entry through the generic endpoint, with nothing recording that
+    the two were related — so a reader could not distinguish a correction from
+    a real second transaction, and nothing stopped the same mistake being
+    "corrected" twice.
+
+    Every debit becomes a credit and vice versa, so account balances return
+    exactly to their pre-entry values via the same balance-mutation path as
+    any other entry (no special-case arithmetic that could drift from it).
+    """
+    entry = (
+        await session.execute(select(JournalEntry).where(JournalEntry.id == entry_id))
+    ).scalar_one_or_none()
+    if not entry:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Journal entry {entry_id} not found.",
+        )
+
+    # Reversing a reversal would let someone silently re-apply the original
+    # mistake; if the reversal itself was wrong, the correct move is to post a
+    # fresh, deliberate entry.
+    if entry.reverses_entry_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Journal entry {entry_id} is itself a reversal of "
+                f"{entry.reverses_entry_id} and cannot be reversed. Post a new "
+                "entry instead."
+            ),
+        )
+
+    existing_reversal = (
+        await session.execute(
+            select(JournalEntry).where(JournalEntry.reverses_entry_id == entry_id)
+        )
+    ).scalars().first()
+    if existing_reversal:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Journal entry {entry_id} was already reversed by "
+                f"{existing_reversal.reference_no}. Reversing twice would "
+                "double-count the correction."
+            ),
+        )
+
+    original_lines = (
+        await session.execute(
+            select(JournalEntryLine).where(JournalEntryLine.entry_id == entry_id)
+        )
+    ).scalars().all()
+    if not original_lines:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Journal entry {entry_id} has no lines to reverse.",
+        )
+
+    account_ids = [line.account_id for line in original_lines]
+    accounts = {
+        acc.id: acc
+        for acc in (
+            await session.execute(
+                select(ChartOfAccounts).where(ChartOfAccounts.id.in_(account_ids))
+            )
+        ).scalars().all()
+    }
+    for aid in account_ids:
+        if aid not in accounts:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Chart of accounts ID {aid} referenced by the original entry no longer exists.",
+            )
+
+    rev_date = entry_date or datetime.date.today()
+    rev_ref = f"REV-{entry.reference_no}-{uuid.uuid4().hex[:4].upper()}"
+
+    reversal = JournalEntry(
+        campus_id=entry.campus_id,
+        entry_date=rev_date,
+        reference_no=rev_ref,
+        description=reason or f"Reversal of {entry.reference_no}",
+        reverses_entry_id=entry.id,
+        # Totals mirror the original: a reversal of a balanced entry is itself
+        # balanced, just with the columns swapped.
+        total_debit=entry.total_credit,
+        total_credit=entry.total_debit,
+    )
+    session.add(reversal)
+    await session.flush()
+
+    for line in original_lines:
+        session.add(
+            JournalEntryLine(
+                entry_id=reversal.id,
+                account_id=line.account_id,
+                debit_amount=line.credit_amount,   # swapped
+                credit_amount=line.debit_amount,   # swapped
+                description=f"Reversal: {line.description or ''}".strip(),
+            )
+        )
+
+        account = accounts[line.account_id]
+        if account.account_type in (AccountType.ASSET, AccountType.EXPENSE):
+            account.balance = round(
+                account.balance + line.credit_amount - line.debit_amount, 2
+            )
+        else:
+            account.balance = round(
+                account.balance + line.debit_amount - line.credit_amount, 2
+            )
+        session.add(account)
+
+    await session.commit()
+    await session.refresh(reversal)
+    logger.info("Reversed journal entry %s with %s", entry.reference_no, rev_ref)
+    return reversal
+
+
 async def generate_trial_balance(
     session: AsyncSession,
     campus_id: Optional[int] = None,

@@ -17,7 +17,7 @@ function HydratingSplash() {
   );
 }
 
-/** Shown when a pasted token decodes to a role this app has no mobile IA for (SCHOOL_ADMIN is web-only by design; SUPER_ADMIN/PSYCHOLOGIST have none defined). */
+/** Shown when the signed-in user's server-resolved role has no mobile IA (SCHOOL_ADMIN is web-only by design; SUPER_ADMIN/PSYCHOLOGIST have none defined). */
 function UnsupportedRoleScreen({ role }: { role: string }) {
   const { logout } = useAuth();
   return (

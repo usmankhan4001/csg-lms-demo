@@ -11,6 +11,14 @@ Generates a personalized 4-stage multichannel nurture sequence for prospective s
 from typing import Dict, Any, List, Optional, Tuple
 
 
+class MissingSchoolIdentity(ValueError):
+    """Raised when outbound copy would have to invent who the school is.
+
+    Callers should surface this to the user as "configure the campus first",
+    never swallow it and send the copy anyway.
+    """
+
+
 def _consent_gated_channel_tokens(channel: str) -> List[str]:
     """Extracts the consent-trackable channel tokens (whatsapp/email) referenced
     by a stage's underscore-joined channel string (e.g. "email_whatsapp" ->
@@ -58,17 +66,44 @@ def generate_nurture_sequence(
     if not isinstance(campus_info, dict):
         campus_info = {}
 
+    # "Valued Parent" is a generic salutation, not a claim about the
+    # school, so it stays -- unlike the identity fields above.
     parent_name = lead.get("parent_name") or lead.get("name") or "Valued Parent"
     student_name = lead.get("student_name") or lead.get("child_name") or "your child"
     grade = lead.get("grade") or lead.get("target_grade") or "the upcoming academic year"
     curriculum = lead.get("curriculum_preference") or lead.get("curriculum") or "world-standard dual accredited"
     lead_id = lead.get("id") or lead.get("lead_id") or "lead_unknown"
 
-    campus_name = campus_info.get("name") or campus_info.get("campus_name") or "CSG International Academy"
-    city = campus_info.get("city") or "our central campus"
-    admissions_phone = campus_info.get("admissions_phone") or campus_info.get("phone") or "+1 (800) 555-CSG-EDU"
-    tour_url = campus_info.get("virtual_tour_url") or f"https://tour.csg-edu.org/{campus_name.lower().replace(' ', '-')}"
-    principal_name = campus_info.get("principal_name") or "Dr. Alistair Montgomery"
+    # Outbound copy goes to a real prospective family, so anything that
+    # identifies the school must come from the school's own record. These
+    # previously fell back to invented values -- a fictional campus
+    # ("CSG International Academy"), a fabricated named principal
+    # ("Dr. Alistair Montgomery"), a fake phone and a fake tour URL. A parent
+    # receiving that gets marketing copy naming a school that does not exist,
+    # which is worse than receiving nothing.
+    campus_name = campus_info.get("name") or campus_info.get("campus_name")
+    if not campus_name:
+        raise MissingSchoolIdentity(
+            "Cannot generate outbound copy: this lead has no campus, so the "
+            "school's real name is unknown. Assign the lead to a campus first."
+        )
+    city = campus_info.get("city")
+    admissions_phone = campus_info.get("admissions_phone") or campus_info.get("phone")
+    tour_url = campus_info.get("virtual_tour_url")
+    principal_name = campus_info.get("principal_name")
+
+    # Optional details: omit the clause entirely when the school has not
+    # configured it. Printing "call us at None" is as bad as inventing a
+    # number, so every phrase below is conditional.
+    phone_clause = f"or call us at {admissions_phone}." if admissions_phone else "and our admissions office will be in touch."
+    signer = principal_name or "The Admissions Office"
+    signer_possessive = f"{principal_name}'s Office" if principal_name else "the Admissions Office"
+    contact_line = f"Direct Contact: {admissions_phone} | {campus_name}" if admissions_phone else campus_name
+    tour_clause = (
+        f"Experience our interactive 360° video walkthrough here: {tour_url}"
+        if tour_url
+        else "Ask our admissions office about arranging a walkthrough."
+    )
     scholarship_deadline = campus_info.get("scholarship_deadline") or "the end of the current term"
 
     sequence: List[Dict[str, Any]] = []
@@ -170,7 +205,7 @@ def generate_nurture_sequence(
         "stage": 4,
         "day": 14,
         "channel": "phone_whatsapp",
-        "subject": f"Personal Follow-up from {principal_name}'s Office – {campus_name}",
+        "subject": f"Personal Follow-up from {signer_possessive} – {campus_name}",
         "content": (
             f"Dear {parent_name},\n\n"
             f"I hope you are doing well. As seats for {grade} at {campus_name} are approaching full capacity for the upcoming session, "
@@ -180,7 +215,7 @@ def generate_nurture_sequence(
             f"Please let me know if tomorrow at 11:00 AM or 3:00 PM works for a quick phone call or in-person coffee on campus.\n\n"
             f"Sincerely,\n"
             f"{principal_name} & The Admissions Executive Team\n"
-            f"Direct Contact: {admissions_phone} | {campus_name}"
+            f"{contact_line}"
         ),
         "call_to_action": "Confirm 1-on-1 Executive Consultation",
         "metadata": {

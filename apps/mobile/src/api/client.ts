@@ -50,8 +50,24 @@ function classifyStatus(status: number): ApiErrorKind {
   return 'unknown';
 }
 
+/**
+ * Notified when the server rejects our token (401) mid-session.
+ *
+ * Access tokens last ~8 hours, so this fires in normal use: without it an
+ * expired session leaves every screen showing an error the user cannot act on,
+ * with no route back to sign-in. A module-level callback rather than a hook
+ * because this file is plain TypeScript with no React context available --
+ * `AuthProvider` registers itself on mount.
+ */
+type UnauthenticatedHandler = () => void;
+let onUnauthenticated: UnauthenticatedHandler | null = null;
+
+export function setUnauthenticatedHandler(handler: UnauthenticatedHandler | null): void {
+  onUnauthenticated = handler;
+}
+
 async function getBearerToken(): Promise<string | null> {
-  const session = await loadStoredSession();
+  const { session } = await loadStoredSession();
   return session?.token ?? null;
 }
 
@@ -112,7 +128,13 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
       body && typeof body === 'object' && 'code' in (body as Record<string, unknown>)
         ? String((body as Record<string, unknown>).code)
         : undefined;
-    throw new ApiError(response.status, detail, classifyStatus(response.status), code);
+    const kind = classifyStatus(response.status);
+    if (kind === 'unauthenticated') {
+      // Signs the user out so they land on the sign-in screen with an
+      // explanation, rather than on a shell where every request fails.
+      onUnauthenticated?.();
+    }
+    throw new ApiError(response.status, detail, kind, code);
   }
 
   return body as T;

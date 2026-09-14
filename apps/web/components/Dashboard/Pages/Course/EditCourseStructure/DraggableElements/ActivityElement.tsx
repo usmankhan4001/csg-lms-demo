@@ -26,6 +26,7 @@ import {
   Loader2,
   MoreVertical,
   Package,
+  Radio,
   Pencil,
   Puzzle,
   Save,
@@ -541,6 +542,10 @@ const ACTIVITIES = {
   'TYPE_SCORM': {
     displayNameKey: 'scorm',
     Icon: Package
+  },
+  'TYPE_LIVECLASS': {
+    displayNameKey: 'liveclass',
+    Icon: Radio
   },
   'TYPE_CUSTOM': {
     displayNameKey: 'custom',

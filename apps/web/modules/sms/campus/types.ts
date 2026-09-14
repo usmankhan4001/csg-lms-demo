@@ -29,6 +29,16 @@ export interface AcademicYearRead {
   created_at: string
 }
 
+export interface AcademicTermRead {
+  id: number
+  academic_year_id: number
+  name: string
+  term_code?: string | null
+  weight_percentage: number
+  start_date?: string | null
+  end_date?: string | null
+}
+
 export interface ClassSectionRead {
   id: number
   campus_id: number

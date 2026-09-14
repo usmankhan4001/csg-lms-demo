@@ -1,4 +1,5 @@
 import datetime
+from enum import Enum
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -123,6 +124,35 @@ class ScholarshipOfferCreate(BaseModel):
     remarks: Optional[str] = None
 
 
+class OfferDecision(str, Enum):
+    """What the family said about the offer."""
+
+    ACCEPTED = "ACCEPTED"
+    DECLINED = "DECLINED"
+
+
+class OfferResponseRequest(BaseModel):
+    """A family's answer to an offer, recorded by the admissions office.
+
+    `decided_by` names the person at the school who took the call/visit, which
+    is set from the authenticated principal -- never from this payload. The
+    family member's name goes in `responded_by`, as a record of who the school
+    spoke to, not as an authorisation.
+    """
+
+    decision: OfferDecision
+    responded_by: Optional[str] = Field(
+        default=None,
+        description="Name of the parent/guardian who gave the answer, as told to the office.",
+        max_length=255,
+    )
+    note: Optional[str] = Field(
+        default=None,
+        description="Anything the family said that the office should keep.",
+        max_length=2000,
+    )
+
+
 class ScholarshipOfferRead(BaseModel):
     """Schema for reading a generated scholarship offer."""
     id: int
@@ -176,3 +206,31 @@ class LeadDetailResponse(LeadRead):
     """Complete detail view of a lead with interaction audit trail and offers."""
     activities: List[LeadActivityRead] = []
     offers: List[ScholarshipOfferRead] = []
+
+
+class EnrollLeadRequest(BaseModel):
+    """Provision a won lead into a real student.
+
+    `student_email` is required rather than derived: `AdmissionsLead.email`
+    is the PARENT's address (the model carries `parent_name` beside
+    `student_name`), so reusing it would either mis-attribute the account or
+    collide for a second sibling. Synthesising one was previously found and
+    removed from the webhook path, so it is not done here either.
+    """
+    section_id: int
+    academic_year_id: int
+    student_email: str
+    roll_number: Optional[str] = None
+
+
+class EnrollLeadResponse(BaseModel):
+    """What provisioning actually did -- distinguishes a fresh enrollment from
+    a repeat call, so the UI can say 'already enrolled' instead of implying a
+    duplicate was created."""
+    lead: LeadRead
+    student_id: int
+    enrollment_id: int
+    created_user: bool
+    created_role: bool
+    created_enrollment: bool
+    already_provisioned: bool

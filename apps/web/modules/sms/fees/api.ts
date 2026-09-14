@@ -40,3 +40,31 @@ export function recordPayment(payload: RecordPaymentRequest): Promise<FeePayment
 export function getStudentFeeLedger(studentId: number): Promise<StudentFeeLedgerResponse> {
   return apiGet<StudentFeeLedgerResponse>(`/sms/fees/ledger/student/${studentId}`)
 }
+
+/**
+ * Charges late fees on every overdue UNPAID/PARTIAL voucher, returning only
+ * the vouchers that actually changed.
+ *
+ * Idempotent by design on the backend (it recomputes the target fee and
+ * charges only the difference), so re-running it is safe and will not
+ * compound. Narrow it with `studentId`/`voucherId`; omit both to sweep the
+ * whole school. Rate/grace/cap fall back to the server's defaults.
+ */
+export function accrueLateFees(
+  params: {
+    studentId?: number
+    voucherId?: number
+    ratePercent?: number
+    graceDays?: number
+    maxPercent?: number
+  } = {}
+): Promise<StudentFeeVoucherRead[]> {
+  const qs = toQueryString({
+    student_id: params.studentId,
+    voucher_id: params.voucherId,
+    rate_percent: params.ratePercent,
+    grace_days: params.graceDays,
+    max_percent: params.maxPercent,
+  })
+  return apiPost<StudentFeeVoucherRead[]>(`/sms/fees/vouchers/accrue-late-fees${qs}`)
+}

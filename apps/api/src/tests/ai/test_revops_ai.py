@@ -246,6 +246,12 @@ class TestAdmissionsSDRAgent:
 # 3. Tests for Automated Marketing Drip Generator (M27)
 # ===========================================================================
 
+# A real campus record. These tests are about consent gating, not about who
+# the school is -- before the anti-fabrication fix they passed {} and silently
+# relied on the engine inventing "CSG International Academy".
+_REAL_CAMPUS = {"name": "Lighthouse Main Campus", "city": "Islamabad"}
+
+
 class TestMarketingDripGenerator:
     def test_four_stage_sequence_structure(self):
         lead = {
@@ -291,11 +297,22 @@ class TestMarketingDripGenerator:
         assert "Dr. Helena Thorne" in drip[3]["content"]
         assert "Confirm 1-on-1 Executive Consultation" in drip[3]["call_to_action"]
 
-    def test_drip_graceful_defaults(self):
-        drip = generate_nurture_sequence({}, {})
+    def test_drip_refuses_to_invent_the_school(self):
+        """Outbound copy goes to a real family, so a missing campus must stop
+        generation rather than fall back to an invented school name. This
+        previously produced four stages naming "CSG International Academy",
+        a school that does not exist."""
+        from src.services.ai.revops_drip_engine import MissingSchoolIdentity
+
+        with pytest.raises(MissingSchoolIdentity):
+            generate_nurture_sequence({}, {})
+
+    def test_drip_generates_four_stages_with_a_real_campus(self):
+        drip = generate_nurture_sequence({}, _REAL_CAMPUS)
         assert len(drip) == 4
         assert drip[0]["stage"] == 1
         assert drip[3]["stage"] == 4
+        assert "CSG International Academy" not in str(drip)
 
     # -----------------------------------------------------------------------
     # Consent & Compliance gating (does the drip engine actually suppress the
@@ -309,7 +326,7 @@ class TestMarketingDripGenerator:
             "whatsapp_consent": False,
             "email_consent": False,
         }
-        drip = generate_nurture_sequence(lead, {})
+        drip = generate_nurture_sequence(lead, _REAL_CAMPUS)
 
         assert len(drip) == 4  # stages stay visible in the sequence for audit purposes
         for stage in drip:
@@ -321,7 +338,7 @@ class TestMarketingDripGenerator:
     def test_drip_allows_stage_restricted_to_consented_channel_only(self):
         # WhatsApp consented, Email explicitly denied.
         lead = {"id": "lead_901", "whatsapp_consent": True, "email_consent": False}
-        drip = generate_nurture_sequence(lead, {})
+        drip = generate_nurture_sequence(lead, _REAL_CAMPUS)
 
         stage_1 = drip[0]  # channel "email_whatsapp" -- includes denied email leg
         stage_4 = drip[3]  # channel "phone_whatsapp" -- whatsapp consented, phone untracked
@@ -339,7 +356,7 @@ class TestMarketingDripGenerator:
         # No consent keys recorded at all -- must not be blocked (backward
         # compatible with leads captured before consent tracking existed).
         lead = {"id": "lead_902", "parent_name": "Unknown Consent Parent"}
-        drip = generate_nurture_sequence(lead, {})
+        drip = generate_nurture_sequence(lead, _REAL_CAMPUS)
         for stage in drip:
             assert stage["consent_blocked"] is False
             assert stage["content"] is not None
@@ -398,7 +415,11 @@ class TestOfferGenerator:
         assert "100% Annual Tuition Scholarship" in full_scholarship
         assert "$0.00" in full_scholarship
 
-        # Graceful fallback for empty names
-        fallback_letter = generate_personalized_offer_copy("", "", 0.0, "")
-        assert "Candidate" in fallback_letter
-        assert "CSG International Academy" in fallback_letter
+        # An offer letter is a formal representation to a family: with no
+        # campus and no tuition there is nothing honest to send. This
+        # previously returned a letter naming a school that does not exist
+        # and quoting an invented annual tuition of 12,500.
+        from src.services.ai.revops_offer_generator import MissingOfferFacts
+
+        with pytest.raises(MissingOfferFacts):
+            generate_personalized_offer_copy("", "", 0.0, "")

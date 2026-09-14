@@ -15,13 +15,11 @@ separate systemd unit / supervisor entry / container) for any registered
 `functions` or `cron_jobs` to actually fire.
 -----------------------------------------------------------------------------
 
-This is infrastructure-only: `functions` is intentionally empty (nothing to
-run on-demand yet) and `cron_jobs` contains exactly one trivial placeholder
-job (`healthcheck_tick`) that proves the registration mechanism works
-end-to-end. Future features - a marketing drip-sequence engine, scheduled
-report distribution, weekly digests, etc. - should register their real
-functions/cron jobs here later; none of that business logic is implemented
-by this module.
+Registered work: `healthcheck_tick` (a trivial liveness placeholder proving
+the registration mechanism fires) and `send_weekly_digests` (M48), the first
+job in this system that runs without a user request. Further scheduled
+features - a marketing drip-sequence engine, scheduled report distribution -
+register their functions/cron jobs here the same way.
 """
 
 import logging
@@ -32,6 +30,9 @@ from arq import cron
 from arq.connections import RedisSettings
 
 from config.config import get_learnhouse_config
+from src.services.ai.parent_digest import send_weekly_digests
+from src.services.ai.revops_nurture_runner import advance_nurture_sequences
+from src.services.sms.fee_reminders import send_fee_reminders
 
 logger = logging.getLogger(__name__)
 
@@ -106,12 +107,41 @@ class WorkerSettings:
 
     redis_settings = _build_redis_settings()
 
-    # On-demand job functions. Empty for now - future features register
-    # their enqueue-able functions here (e.g. `send_drip_email`,
-    # `generate_scheduled_report`, `send_weekly_digest`).
-    functions: list = []
+    # On-demand job functions, enqueue-able by name.
+    functions: list = [
+        send_weekly_digests,
+        advance_nurture_sequences,
+        send_fee_reminders,
+    ]
 
-    # Scheduled jobs. Only a placeholder today, to prove the wiring works.
+    # Scheduled jobs.
     cron_jobs: list = [
         cron(healthcheck_tick, minute=0),
+        # Weekly parent digest (M48). Monday 06:00 UTC: after the school week
+        # it reports on has closed, and early enough that parents have it
+        # before the new week starts. This is the first job in this system
+        # that acts without a user request, so note the constraint it lives
+        # under -- the digest emails real families, and
+        # services/ai/parent_digest.py therefore omits any figure it cannot
+        # source from actual records rather than estimating one.
+        cron(send_weekly_digests, weekday=0, hour=6, minute=0),
+        # Admissions nurture (M25). Hourly on the half hour: drip stages are
+        # scheduled in DAYS, so hourly is ample precision, and it keeps any
+        # single run small rather than sending a day's worth at once. This
+        # mails prospective parents, so the runner refuses to send to a lead
+        # who opted out or who has already enrolled or declined, and records
+        # every suppressed or failed attempt as a visible row.
+        cron(advance_nurture_sequences, minute=30),
+        # Fee reminders (M08). Daily at 09:00 UTC, deliberately not hourly: a
+        # fee balance changes on the scale of days, and a more frequent job
+        # would be a machine for harassing families. Before this, late fees
+        # accrued automatically and NOBODY told the family -- the balance grew
+        # silently until someone happened to open the ledger.
+        #
+        # Every send goes through the notification service, so the reminder is
+        # readable in-app even when mail is unconfigured and a failed email is
+        # a visible delivery row rather than a swallowed log line.
+        # FeeReminderLog records what was actually delivered, not what was
+        # intended, so a school can tell the difference.
+        cron(send_fee_reminders, hour=9, minute=0),
     ]

@@ -145,10 +145,11 @@ async def api_generate_image(
     except AINotConfiguredError as e:
         refund_ai_credit(org.id, IMAGE_CREDIT_COST)
         raise HTTPException(status_code=403, detail=str(e))
+    except RuntimeError as e:
+        refund_ai_credit(org.id, IMAGE_CREDIT_COST)
+        raise HTTPException(status_code=502, detail=str(e))
     except Exception:
         refund_ai_credit(org.id, IMAGE_CREDIT_COST)
-        # Do not log the traceback: the chained SDK error can embed the API key.
-        # generate_image already logs the sanitized exception type.
         logger.error("Image generation failed")
         raise HTTPException(
             status_code=502,

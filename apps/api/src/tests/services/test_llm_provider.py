@@ -144,8 +144,12 @@ def test_attachments_to_parts():
     assert attachments_to_parts(None) == []
 
 
-def test_model_for_tier_defaults():
+def test_model_for_tier_defaults(monkeypatch):
     # With no config overrides, the three tiers resolve to the Gemini 3 family defaults.
+    monkeypatch.setattr(
+        "src.services.ai.llm.tiers.get_learnhouse_config",
+        lambda: SimpleNamespace(ai_config=SimpleNamespace(model_fast=None, model_standard=None, model_pro=None)),
+    )
     assert model_for_tier("fast") == "gemini-3.1-flash-lite"
     assert model_for_tier("standard") == "gemini-3.5-flash"
     assert model_for_tier("pro") == "gemini-3.1-pro-preview"
@@ -173,6 +177,11 @@ def test_embeddings_follow_google_provider(monkeypatch):
 
 def test_embeddings_follow_openai_provider(monkeypatch):
     _patch_embed_config(monkeypatch, provider="openai", api_key="sk-key")
+    assert type(embeddings_mod.build_embedding_model()).__name__ == "OpenAIEmbeddingModel"
+
+
+def test_embeddings_follow_openrouter_provider(monkeypatch):
+    _patch_embed_config(monkeypatch, provider="openrouter", api_key="sk-or-key")
     assert type(embeddings_mod.build_embedding_model()).__name__ == "OpenAIEmbeddingModel"
 
 

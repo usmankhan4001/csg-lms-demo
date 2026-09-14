@@ -153,3 +153,98 @@ class TermReportCard(SQLModel, table=True):
     # user.id FK, since the sender is identified from the Keycloak principal
     # (see get_current_user_principal), not a Learnhouse-native user row.
     sent_by: Optional[str] = Field(default=None, sa_column=Column(String(255), nullable=True))
+
+
+class GradeChangeAction:
+    """How a GradeChangeEvent row came about.
+
+    ``CREATED`` is the first mark ever recorded for a student on an assessment;
+    ``CHANGED`` is every subsequent overwrite. They must stay distinguishable:
+    "first marked 41" and "was 72, now 41" are different facts in a dispute.
+    """
+
+    CREATED = "created"
+    CHANGED = "changed"
+
+
+class GradeChangeEvent(SQLModel, table=True):
+    """Append-only audit trail for every gradebook mark written.
+
+    Why this exists: ``GradebookEntry`` is uniquely constrained on
+    (student_id, assessment_plan_id) and is UPDATED IN PLACE, so a corrected
+    mark destroys the previous one. ``graded_by``/``graded_at`` record only the
+    CURRENT grader. An auditor, or a parent disputing "this was 72 last week",
+    had no answer available anywhere in the system.
+
+    Why a new table rather than reusing an existing audit facility:
+
+    * ``UserAuditEvent`` (db/user_audit_events.py) says in its own docstring
+      that it is deliberately scoped to LEARNER actions, and its ``user_id`` FK
+      means "the learner who acted". A grade change is a STAFF action ABOUT a
+      learner -- two distinct user ids -- so it would have to overload
+      ``user_id`` and bury the previous score in the ``audit_metadata`` JSON
+      blob, turning "show me every change to this mark" into an unindexed JSON
+      scan.
+    * ``SMSImpersonationEvent`` (db/sms_identity.py) is itself a narrow,
+      purpose-built audit table in this domain -- precedent for this shape.
+    * ``create_all`` creates missing TABLES but never ALTERs an existing one,
+      so a new table lands everywhere automatically while new columns on
+      ``sms_gradebook_entry`` would not.
+
+    APPEND-ONLY: nothing in this codebase updates or deletes these rows, and no
+    endpoint exposes a way to. A trail that can be rewritten is not a trail.
+
+    The identifying columns are deliberately plain integers rather than foreign
+    keys, and student/assessment/section are SNAPSHOTTED here rather than
+    joined. ``GradebookEntry.assessment_plan_id`` is ``ondelete="CASCADE"``, so
+    an FK-linked trail would be destroyed by deleting the assessment plan --
+    exactly when the record matters most. Snapshot, do not join, is the
+    standard audit-log shape for this reason.
+    """
+
+    __tablename__ = "sms_grade_change_event"
+    __table_args__ = (
+        Index("ix_sms_grade_change_entry", "gradebook_entry_id", "created_at"),
+        Index("ix_sms_grade_change_student", "student_id", "created_at"),
+        Index("ix_sms_grade_change_section", "section_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+    # The live row this describes. A plain Integer, not an FK: see class docstring.
+    gradebook_entry_id: int = Field(sa_column=Column(Integer, nullable=False))
+
+    # Snapshots, so the trail stays legible after the entry or plan is deleted.
+    student_id: int = Field(sa_column=Column(Integer, nullable=False))
+    assessment_plan_id: int = Field(sa_column=Column(Integer, nullable=False))
+    # Nullable because a course-wide assessment plan has no section.
+    section_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
+
+    action: str = Field(sa_column=Column(String(16), nullable=False))
+
+    # None on CREATED -- there was no previous mark. Distinct from 0.0, which
+    # is a real score a student can be given.
+    previous_raw_score: Optional[float] = Field(default=None, sa_column=Column(Float, nullable=True))
+    new_raw_score: float = Field(sa_column=Column(Float, nullable=False))
+    previous_letter_grade: Optional[str] = Field(
+        default=None, sa_column=Column(String(10), nullable=True)
+    )
+    new_letter_grade: Optional[str] = Field(default=None, sa_column=Column(String(10), nullable=True))
+    max_score: float = Field(sa_column=Column(Float, nullable=False))
+
+    # The AUTHENTICATED caller, resolved from the principal -- never a
+    # client-supplied `graded_by`, which was found forgeable and fixed in
+    # routers/sms_gradebook.py. Nullable only because a principal may carry no
+    # resolvable Learnhouse user id; an unattributed row is still better than
+    # no row, and reads as "unknown" rather than as somebody else.
+    changed_by_user_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
+    reason: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+
+    created_at: datetime.datetime = Field(
+        default_factory=lambda: datetime.datetime.now(datetime.timezone.utc),
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            default=lambda: datetime.datetime.now(datetime.timezone.utc),
+        ),
+    )

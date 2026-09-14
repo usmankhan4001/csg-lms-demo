@@ -49,6 +49,11 @@ class StudentFeeVoucherRead(BaseModel):
     other_fee: float
     discount: float
     fine: float
+    # Surfaced so a parent can see how much of `fine` is an automatic late
+    # charge versus a fine the school set by hand — an unexplained increase in
+    # what is owed is exactly the kind of thing that generates a support call.
+    late_fee_applied: float = 0.0
+    late_fee_last_accrued_on: Optional[datetime.date] = None
     total_amount: float
     paid_amount: float
     balance_amount: float

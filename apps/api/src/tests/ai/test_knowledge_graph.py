@@ -287,7 +287,10 @@ class TestLiveClassCopilot:
         )
 
         assert resp.safety_flagged is True
-        assert "988" in resp.answer
+        # Was: assert "988" in resp.answer. Fourth test found pinning a
+        # US-only helpline into a deployment serving a school in Pakistan.
+        assert "findahelpline.com" in resp.answer
+        assert "988" not in resp.answer
         mock_session.add.assert_called_once()
 
     @pytest.mark.asyncio

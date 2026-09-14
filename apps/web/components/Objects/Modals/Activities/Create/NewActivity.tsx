@@ -1,5 +1,5 @@
 import React from 'react'
-import { Browsers, PlayCircle, FileText, Backpack, MarkdownLogo, Globe, Package, Cube } from '@phosphor-icons/react'
+import { Browsers, PlayCircle, FileText, Backpack, MarkdownLogo, Globe, Package, Cube, VideoCamera } from '@phosphor-icons/react'
 import { SiGoogledocs, SiGooglesheets, SiGoogleslides, SiGoogleforms, SiFigma, SiNotion, SiCanvas, SiLoom, SiMiro, SiYoutube, SiSpotify, SiAirtable, SiTypeform, SiDropbox, SiTrello } from '@icons-pack/react-simple-icons'
 import dynamic from 'next/dynamic'
 import DynamicCanvaModal from './NewActivityModal/DynamicActivityModal'
@@ -9,6 +9,7 @@ import VideoModal from './NewActivityModal/VideoActivityModal'
 import DocumentPdfModal from './NewActivityModal/DocumentActivityModal'
 import Assignment from './NewActivityModal/AssignmentActivityModal'
 import ResourceModal from './NewActivityModal/ResourceActivityModal'
+import LiveClassModal from './NewActivityModal/LiveClassActivityModal'
 import { useOrg } from '@components/Contexts/OrgContext'
 import { useTranslation } from 'react-i18next'
 
@@ -139,6 +140,15 @@ export const activityTypes: ActivityTypeCard[] = [
     pattern: `radial-gradient(circle, rgba(199,210,254,0.4) 1px, transparent 1px)`,
     patternSize: '12px 12px',
   },
+  {
+    key: 'liveclass',
+    icon: VideoCamera,
+    labelKey: 'dashboard.courses.structure.activity.types.liveclass',
+    color: {
+      icon: 'text-pink-400',
+    },
+    pattern: `repeating-linear-gradient(-45deg, transparent, transparent 6px, rgba(251,207,232,0.25) 6px, rgba(251,207,232,0.25) 7px)`,
+  },
 ]
 
 // SCORM authoring card — only shown when the org has the SCORM feature enabled.
@@ -157,6 +167,7 @@ function NewActivityModal({
   submitActivity,
   submitFileActivity,
   submitExternalVideo,
+  submitLiveClassActivity,
   chapterId,
   course,
   orgslug,
@@ -269,6 +280,14 @@ function NewActivityModal({
               chapterId={chapterId}
               course={course}
               orgslug={orgslug}
+            />
+          )}
+
+          {selectedView === 'liveclass' && (
+            <LiveClassModal
+              submitLiveClassActivity={submitLiveClassActivity}
+              chapterId={chapterId}
+              course={course}
             />
           )}
 

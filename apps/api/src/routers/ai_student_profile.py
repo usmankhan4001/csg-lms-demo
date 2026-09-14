@@ -18,9 +18,10 @@ from src.core.keycloak_auth import (
     SCHOOL_ADMIN,
     SUPER_ADMIN,
     STUDENT,
-    get_optional_user_principal,
+    get_current_user_principal,
     require_roles,
 )
+from src.security.school_ownership import require_own_student_or_privileged
 from src.db.ai_knowledge_graph import (
     ConceptNode,
     ConceptNodeCreate,
@@ -45,6 +46,27 @@ from src.services.ai.live_class_copilot import (
     live_class_copilot,
     LiveClassQAResponse,
 )
+
+# Every endpoint in this router was UNAUTHENTICATED. Not weakly gated -- three
+# handlers used `get_optional_user_principal`, which returns None rather than
+# refusing, and the other eight took no principal at all. Probed against the
+# running API with no Authorization header:
+#
+#   GET  /api/v1/ai/concepts                        -> 200   (leaked)
+#   GET  /api/v1/ai/student/1/recommended-concepts  -> 200   (leaked a named
+#                                                             child's profile)
+#   POST /api/v1/ai/concepts                        -> 422   (validation
+#                                                             reached, i.e. an
+#                                                             anonymous WRITE)
+#
+# A sibling router returned 401 and a bogus path returned 404, so the probe
+# discriminated -- auth works here, it simply was not applied.
+#
+# Writing a mastery score is an assessment judgement about a child, and
+# curriculum edits shape what every student is taught, so both are staff-only.
+# Reading one student's profile reuses require_own_student_or_privileged rather
+# than a new rule: the student, their guardian via StudentGuardian, or staff.
+_STAFF = [SUPER_ADMIN, SCHOOL_ADMIN, TEACHER]
 
 router = APIRouter(tags=["student-profile", "ai-knowledge-graph"])
 
@@ -86,7 +108,7 @@ class PrerequisiteLinkPayload(BaseModel):
 async def api_get_student_mastery_radar(
     student_id: str,
     db_session: AsyncSession = Depends(get_db_session),
-    principal: Optional[KeycloakUserPrincipal] = Depends(get_optional_user_principal),
+    principal: KeycloakUserPrincipal = Depends(require_own_student_or_privileged()),
 ):
     """
     GET /api/v1/ai/student/{student_id}/mastery-radar
@@ -104,7 +126,7 @@ async def api_get_student_learning_path(
     student_id: str,
     subject: Optional[str] = Query(None, description="Optional subject filter"),
     db_session: AsyncSession = Depends(get_db_session),
-    principal: Optional[KeycloakUserPrincipal] = Depends(get_optional_user_principal),
+    principal: KeycloakUserPrincipal = Depends(require_own_student_or_privileged()),
 ):
     """
     GET /api/v1/ai/student/{student_id}/learning-path
@@ -126,7 +148,7 @@ async def api_evaluate_mastery_update(
     student_id: str,
     payload: MasteryEvaluationInput,
     db_session: AsyncSession = Depends(get_db_session),
-    principal: Optional[KeycloakUserPrincipal] = Depends(get_optional_user_principal),
+    principal: KeycloakUserPrincipal = Depends(require_roles(_STAFF)),
 ):
     """
     POST /api/v1/ai/student/{student_id}/mastery-evaluation
@@ -151,6 +173,7 @@ async def api_get_recommended_concepts(
     subject: Optional[str] = Query(None, description="Optional subject filter"),
     limit: int = Query(5, ge=1, le=20),
     db_session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(require_own_student_or_privileged()),
 ):
     """
     GET /api/v1/ai/student/{student_id}/recommended-concepts
@@ -178,6 +201,7 @@ async def api_list_concepts(
     topic_code: Optional[str] = Query(None, description="Filter by topic code"),
     difficulty: Optional[int] = Query(None, ge=1, le=5, description="Filter by difficulty level"),
     db_session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ):
     stmt = select(ConceptNode)
     if subject:
@@ -202,6 +226,7 @@ async def api_list_concepts(
 async def api_create_concept(
     payload: ConceptNodeCreate,
     db_session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(require_roles(_STAFF)),
 ):
     node = ConceptNode(
         subject=payload.subject,
@@ -226,6 +251,7 @@ async def api_create_concept(
 async def api_get_concept_dependency_path(
     concept_id: int,
     db_session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ):
     path = await get_concept_dependency_path(target_concept_id=concept_id, db_session=db_session)
     return path
@@ -242,6 +268,7 @@ async def api_link_prerequisite(
     concept_id: int,
     payload: PrerequisiteLinkPayload,
     db_session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(require_roles(_STAFF)),
 ):
     if concept_id == payload.prerequisite_concept_id:
         raise HTTPException(
@@ -281,6 +308,7 @@ async def api_link_prerequisite(
 async def api_ingest_transcript_chunk(
     session_id: str,
     payload: IngestTranscriptPayload,
+    principal: KeycloakUserPrincipal = Depends(require_roles(_STAFF)),
 ):
     chunk = live_class_copilot.ingest_transcript_chunk(
         session_id=session_id,
@@ -302,6 +330,7 @@ async def api_live_class_qa(
     session_id: str,
     payload: LiveClassQAPayload,
     db_session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ):
     response = await live_class_copilot.answer_student_question(
         session_id=session_id,
@@ -322,6 +351,7 @@ async def api_live_class_qa(
 )
 async def api_live_class_summary(
     session_id: str,
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ):
     summary = await live_class_copilot.generate_live_summary(session_id=session_id)
     return {"session_id": session_id, "summary": summary}

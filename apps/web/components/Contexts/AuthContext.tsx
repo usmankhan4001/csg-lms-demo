@@ -17,7 +17,8 @@ import { isSubdomainOf, isSameHost, isLocalhost as isLocalhostCheck } from '@ser
 import { safeRedirectUrl } from '@services/auth/redirects'
 import { safeExternalUrl } from '@services/security/url'
 import { AUTH_EXPIRED_EVENT, AUTH_REFRESHED_EVENT } from '@/lib/auth/events'
-import { setActiveAccessToken } from '@/lib/api/session-token-bridge'
+import { setActiveAccessToken, markAuthReady } from '@/lib/api/session-token-bridge'
+import { refreshSchoolRoleCookie, clearRoleCookie } from '@/lib/api/school-role-cookie'
 
 // Types matching NextAuth's session structure
 export interface Session {
@@ -568,7 +569,12 @@ export function SessionProvider({
       }
     }
 
-    initSession()
+    // `.finally()`, not awaited inline: session-token-bridge.ts's
+    // `authReadyPromise` must settle exactly once, on every branch above
+    // (including the early no-session-marker return), so api-client.ts's
+    // first SMS request after a fresh page load waits for this restore
+    // instead of racing it with a still-null token.
+    initSession().finally(() => markAuthReady())
 
     return () => {
       isMounted = false
@@ -627,6 +633,15 @@ export function SessionProvider({
         setSession(fullSession)
         sessionCacheRef.current = { data: fullSession, timestamp: Date.now() }
       }
+
+      // Awaited (not fire-and-forget): proxy.ts's single-tenancy role-portal
+      // redirect reads this cookie synchronously the instant `callbackUrl`
+      // navigates below -- if this were fire-and-forget, the redirect could
+      // race ahead of the cookie write and silently fall back to /home for
+      // this one login. A failed/slow fetch degrades to that same fallback
+      // (never blocks or breaks login), so awaiting it costs at most one
+      // network round-trip, never correctness.
+      await refreshSchoolRoleCookie(data.tokens.access_token)
 
       // Notify other tabs
       broadcastChannelRef.current?.postMessage({ type: 'LOGIN' })
@@ -866,6 +881,10 @@ export function SessionProvider({
               // the next /users/session read rather than blocking the redirect.
             }
 
+            // See establishSession()'s identical call for why this is awaited,
+            // not fire-and-forget.
+            await refreshSchoolRoleCookie(options.sso_access_token)
+
             // Notify other tabs
             broadcastChannelRef.current?.postMessage({ type: 'LOGIN' })
 
@@ -1047,6 +1066,11 @@ export function SessionProvider({
     // Clear refresh promise
     refreshPromiseRef.current = null
     isRefreshingRef.current = false
+
+    // A stale LH_role cookie from a previous session must not send the next
+    // (possibly different) person who signs in on this browser to someone
+    // else's role portal.
+    clearRoleCookie()
 
     // Clear any auth cookies on client side
     const { secureAttr, domainAttr } = getCookieAttributes()
@@ -1287,6 +1311,7 @@ export async function signOut(options?: SignOutOptions): Promise<void> {
   // Clear OAuth state
   clearOAuthStateCookie()
   clearSessionMarker()
+  clearRoleCookie()
 
   // Try to notify other tabs (if BroadcastChannel is available)
   try {

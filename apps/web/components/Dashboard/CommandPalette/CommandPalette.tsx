@@ -15,7 +15,7 @@ import {
 
 import { useCommandPalette } from './CommandPaletteContext'
 import { dashboardPages } from '@/lib/dashboard-search/registry'
-import type { SearchMeta } from '@/lib/dashboard-search/types'
+import { ACTION_QUERY_PARAM, type SearchMeta } from '@/lib/dashboard-search/types'
 import {
   useContentSearch,
   type ContentResult,
@@ -24,6 +24,7 @@ import {
 import { useOrgMembership } from '@components/Contexts/OrgContext'
 import { isFeatureAvailable } from '@services/plans/plans'
 import { normalizeForSearch } from '@/lib/search/normalize'
+import { useSchoolSession } from '@/lib/api/useSchoolSession'
 import { useLHAnalytics, AnalyticsEvent } from '@services/analytics'
 
 const CONTENT_TYPE_ICON: Record<ContentResultType, SearchMeta['icon']> = {
@@ -56,16 +57,50 @@ const CONTENT_TYPE_ORDER: ContentResultType[] = [
 function usePagesFiltered(): SearchMeta[] {
   const { org } = useOrgMembership()
   const resolvedFeatures = org?.config?.config?.resolved_features
-  return useMemo(
-    () =>
-      dashboardPages.filter((p) => {
-        if (!p.featureKey) return true
-        const rf = resolvedFeatures?.[p.featureKey]
-        if (rf) return rf.enabled
-        return isFeatureAvailable(p.featureKey)
-      }),
-    [resolvedFeatures],
-  )
+  const { session: schoolSession } = useSchoolSession()
+  const schoolRoles = schoolSession?.roles
+
+  return useMemo(() => {
+    // School-role gating, mirroring DashLeftMenu/DashMobileMenu so the palette
+    // never surfaces a module the sidebar hides. Org admins holding no school
+    // role keep full visibility, otherwise setting the school up would be
+    // impossible. Roles come from GET /sms/me; this is discovery gating only —
+    // the backend authorizes every request independently.
+    const roles = schoolRoles ?? []
+    const noSchoolRole = roles.length === 0
+    const canAdminister =
+      roles.includes('SUPER_ADMIN') || roles.includes('SCHOOL_ADMIN') || noSchoolRole
+    const canTeach = canAdminister || roles.includes('TEACHER')
+    const canBackOffice = canAdminister || roles.includes('STAFF')
+
+    const allowedBySchoolRole = (p: SearchMeta) => {
+      switch (p.schoolAccess) {
+        case undefined:
+          return true
+        case 'administer':
+          return canAdminister
+        case 'teach':
+          return canTeach
+        case 'backOffice':
+          return canBackOffice
+        case 'anyRole':
+          return roles.length > 0 || noSchoolRole
+        case 'counsel':
+          // The counselling module: PSYCHOLOGIST, plus school leadership who
+          // administer it. Deliberately NOT `teach` -- a teacher must not be
+          // pointed at a confidential clinical surface they cannot read.
+          return canAdminister || roles.includes('PSYCHOLOGIST')
+      }
+    }
+
+    return dashboardPages.filter((p) => {
+      if (!allowedBySchoolRole(p)) return false
+      if (!p.featureKey) return true
+      const rf = resolvedFeatures?.[p.featureKey]
+      if (rf) return rf.enabled
+      return isFeatureAvailable(p.featureKey)
+    })
+  }, [resolvedFeatures, schoolRoles])
 }
 
 function groupContentResults(results: ContentResult[]): Record<ContentResultType, ContentResult[]> {
@@ -89,6 +124,11 @@ export default function CommandPalette() {
   const [query, setQuery] = useState('')
 
   const pages = usePagesFiltered()
+  // Actions surface above pages: someone who types "roll" wants to take
+  // roll-call, not read about the attendance module. Both come from the same
+  // filtered list, so feature and role gating apply identically.
+  const actionEntries = useMemo(() => pages.filter((p) => p.action), [pages])
+  const navEntries = useMemo(() => pages.filter((p) => !p.action), [pages])
   const { results, isLoading, isWaiting } = useContentSearch(query)
   const grouped = useMemo(() => groupContentResults(results), [results])
 
@@ -113,6 +153,21 @@ export default function CommandPalette() {
     router.push(href)
   }
 
+  /**
+   * Actions navigate to their page with the intent encoded in the URL; the
+   * destination reads it via `useDeepLinkAction`. Same `router.push` as
+   * navigation — the only difference is the query param — so there is no
+   * second code path to keep in sync.
+   */
+  const onSelectAction = (p: SearchMeta, resultIndex: number) => {
+    const separator = p.href.includes('?') ? '&' : '?'
+    onSelect(
+      `${p.href}${separator}${ACTION_QUERY_PARAM}=${encodeURIComponent(p.action as string)}`,
+      'action',
+      resultIndex,
+    )
+  }
+
   const openSelectedInNewTab = (rootEl: HTMLElement | null) => {
     const selected = rootEl?.querySelector(
       '[cmdk-item][aria-selected="true"]',
@@ -127,13 +182,17 @@ export default function CommandPalette() {
     const description = p.descriptionKey ? t(p.descriptionKey) : undefined
     const keywords = p.keywordsKey ? t(p.keywordsKey) : ''
     const Icon = p.icon
+    const isAction = Boolean(p.action)
     return (
       <Command.Item
         key={p.id}
         value={`${title} ${description ?? ''} ${keywords}`}
-        onSelect={() => onSelect(p.href, 'page', index)}
+        onSelect={() => (isAction ? onSelectAction(p, index) : onSelect(p.href, 'page', index))}
         className="group/item flex cursor-pointer items-center gap-3.5 rounded-lg px-3 py-2.5 text-white/70 transition-colors aria-selected:bg-white/[0.06] aria-selected:text-white"
-        data-href={p.href}
+        // Actions carry no data-href: cmd/ctrl-Enter opens a link in a new
+        // tab, which is meaningless for "generate vouchers". Navigation
+        // entries keep it, so that path is unchanged.
+        {...(isAction ? {} : { 'data-href': p.href })}
       >
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/[0.04] text-white/60 group-aria-selected/item:bg-white/[0.08] group-aria-selected/item:text-white">
           <Icon size={15} />
@@ -273,8 +332,14 @@ export default function CommandPalette() {
                   : t('dashboard.search.no_results')}
               </Command.Empty>
 
+              {actionEntries.length > 0 && (
+                <Command.Group heading={t('dashboard.search.groups.actions')}>
+                  {actionEntries.map(renderPageItem)}
+                </Command.Group>
+              )}
+
               <Command.Group heading={t('dashboard.search.groups.pages')}>
-                {pages.map(renderPageItem)}
+                {navEntries.map(renderPageItem)}
               </Command.Group>
 
               {CONTENT_TYPE_ORDER.map((type) => {

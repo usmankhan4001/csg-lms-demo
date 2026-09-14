@@ -11,7 +11,7 @@ import { getAPIUrl } from '@services/config/config'
 import { getUserAvatarMediaDirectory } from '@services/media/media'
 import { removeUserFromOrg, removeUsersFromOrg, updateUserRole } from '@services/organizations/orgs'
 import { apiFetch } from '@services/utils/ts/requests'
-import { LogOut, Search, ChevronLeft, ChevronRight, Shield, User, Crown, Users, CheckCircle2, XCircle, Mail, Globe, ArrowUp, ArrowDown, X, Filter, Download, BarChart3, GitCompare, ExternalLink } from 'lucide-react'
+import { LogOut, Search, ChevronLeft, ChevronRight, Shield, User, Crown, Users, CheckCircle2, XCircle, Mail, Globe, ArrowUp, ArrowDown, X, Filter, Download, BarChart3, GitCompare, ExternalLink, GraduationCap } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { getUriWithOrg, getUpgradeUrl } from '@services/config/config'
@@ -19,6 +19,7 @@ import { Dialog, DialogContent } from '@components/ui/dialog'
 import UserDossierModal from '@components/Dashboard/Pages/Users/UserAnalytics/UserDossierModal'
 import UsersComparisonTable from '@components/Dashboard/Pages/Users/UserAnalytics/UsersComparisonTable'
 import UserAuditExport from '@components/Dashboard/Pages/Users/UserAnalytics/UserAuditExport'
+import SchoolIdentityModal from '@/modules/sms/identity/components/SchoolIdentityModal'
 import React, { useState, useCallback, useMemo } from 'react'
 import toast from 'react-hot-toast'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -81,6 +82,10 @@ function OrgUsers() {
   // Per-student analytics (integrated into this Users list)
   const [analyticsUserId, setAnalyticsUserId] = useState<number | null>(null)
   const [comparing, setComparing] = useState(false)
+  // School identity (SMS roles + guardian links) for one user. Sits beside
+  // the analytics dossier so a person's Learnhouse record and their school
+  // record are managed in one place rather than two separate windows.
+  const [schoolUser, setSchoolUser] = useState<{ id: number; label: string } | null>(null)
 
   const buildQuery = () => {
     const params = new URLSearchParams()
@@ -749,6 +754,20 @@ function OrgUsers() {
                               <BarChart3 className="w-3.5 h-3.5" />
                               <span>{t('dashboard.users.analytics.button')}</span>
                             </button>
+                            <ToolTip content="School role, campus and guardian links" side="top">
+                              <button
+                                onClick={() =>
+                                  setSchoolUser({
+                                    id: user.user.id,
+                                    label: `${user.user.first_name} ${user.user.last_name}`.trim() || user.user.username,
+                                  })
+                                }
+                                className="inline-flex items-center gap-1.5 h-8 px-3 bg-white text-gray-600 hover:bg-emerald-50 hover:text-emerald-600 rounded-md text-xs font-medium nice-shadow transition-all"
+                              >
+                                <GraduationCap className="w-3.5 h-3.5" />
+                                <span>School</span>
+                              </button>
+                            </ToolTip>
                             <ToolTip content={t('dashboard.users.analytics.open_full_page')} side="top">
                               <Link
                                 href={getUriWithOrg(params.orgslug, '') + `/dash/users/analytics/${user.user.id}`}
@@ -826,6 +845,18 @@ function OrgUsers() {
 
       {/* Per-student analytics (integrated into the Users tab) */}
       <UserDossierModal userId={analyticsUserId} onOpenChange={(o) => !o && setAnalyticsUserId(null)} />
+
+      {/* School identity for the selected user. canManage mirrors the other
+          mutating controls here: the backend gates these endpoints to
+          SUPER_ADMIN/SCHOOL_ADMIN, so a non-manager still sees the record
+          but gets no write controls rather than a 403 on click. */}
+      <SchoolIdentityModal
+        userId={schoolUser?.id ?? null}
+        orgId={org?.id}
+        userLabel={schoolUser?.label}
+        canManage={canManageOrg}
+        onOpenChange={(o) => !o && setSchoolUser(null)}
+      />
       <Dialog open={comparing} onOpenChange={setComparing}>
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto bg-[#f8f8f8] p-6 sm:p-8">
           <h2 className="font-bold text-xl tracking-tight mb-4">{t('dashboard.users.analytics.compare_students')}</h2>

@@ -172,8 +172,15 @@ async def generate_image(
                 )
                 await asyncio.sleep(_RETRY_BACKOFF_SECONDS * attempt)
                 continue
+            err_str = str(e)
+            if "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
+                logger.error("Image generation quota exhausted on Google API key")
+                raise RuntimeError(
+                    "Google Gemini image generation quota exceeded (limit: 0 on free tier). "
+                    "Please enable Billing / Pay-As-You-Go on your Google AI Studio project for this API key to generate images."
+                ) from e
             logger.error("Image generation call failed: %s", type(e).__name__)
-            raise RuntimeError("Image generation failed") from e
+            raise RuntimeError("Image generation failed. Please try again or rephrase your prompt.") from e
 
     image_bytes = _extract_image_bytes(response)
     if not image_bytes:

@@ -103,8 +103,9 @@ services:
       - csg-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.csg-auth.rule=Host(`${KEYCLOAK_HOSTNAME:-auth.csginfotech.com}`)"
+      - "traefik.http.routers.csg-auth.rule=Host(`${KEYCLOAK_DOMAIN:-${KEYCLOAK_HOSTNAME:-auth.csginfotech.com}}`)"
       - "traefik.http.routers.csg-auth.entrypoints=websecure"
+      - "traefik.http.routers.csg-auth.tls=true"
       - "traefik.http.routers.csg-auth.tls.certresolver=letsencrypt"
       - "traefik.http.services.csg-auth.loadbalancer.server.port=8080"
       - "traefik.http.middlewares.csg-auth-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
@@ -133,13 +134,13 @@ services:
       LEARNHOUSE_SQL_CONNECTION_STRING: postgresql+asyncpg://${POSTGRES_USER:-learnhouse}:${POSTGRES_PASSWORD:-change_me_secure_postgres_password}@postgres:5432/${POSTGRES_DB:-learnhouse}
       LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD:-change_me_secure_redis_password}@redis:6379/0
       LEARNHOUSE_REDIS_CONNECTION_STRING: redis://:${REDIS_PASSWORD:-change_me_secure_redis_password}@redis:6379/0
-      LEARNHOUSE_URL: ${LEARNHOUSE_URL:-https://app.csginfotech.com}
-      KEYCLOAK_URL: ${KEYCLOAK_URL:-https://auth.csginfotech.com}
+      LEARNHOUSE_URL: ${APP_URL:-${LEARNHOUSE_URL:-https://${APP_DOMAIN:-app.csginfotech.com}}}
+      KEYCLOAK_URL: ${KEYCLOAK_URL:-https://${KEYCLOAK_DOMAIN:-auth.csginfotech.com}}
       KEYCLOAK_SERVER_URL: http://keycloak:8080
       KEYCLOAK_REALM: csg-lms
       KEYCLOAK_CLIENT_ID: csg-lms-api
       KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/csg-lms/protocol/openid-connect/certs
-      KEYCLOAK_ISSUER: ${KEYCLOAK_URL:-https://auth.csginfotech.com}/realms/csg-lms
+      KEYCLOAK_ISSUER: ${KEYCLOAK_URL:-https://${KEYCLOAK_DOMAIN:-auth.csginfotech.com}}/realms/csg-lms
       KEYCLOAK_VERIFY_SIGNATURE: "true"
       LEARNHOUSE_AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:-change_me_jwt_secret_key_minimum_64_chars}
       AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:-change_me_jwt_secret_key_minimum_64_chars}
@@ -164,6 +165,15 @@ services:
       EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-CSG-LMS}
       # Sentry
       SENTRY_DSN: ${SENTRY_DSN:-}
+      # Tinybird Analytics (Pillar 2 / Admin Insights)
+      LEARNHOUSE_TINYBIRD_API_URL: ${LEARNHOUSE_TINYBIRD_API_URL:-http://tinybird-mock:8080}
+      LEARNHOUSE_TINYBIRD_INGEST_TOKEN: ${LEARNHOUSE_TINYBIRD_INGEST_TOKEN:-mock_ingest_token}
+      LEARNHOUSE_TINYBIRD_READ_TOKEN: ${LEARNHOUSE_TINYBIRD_READ_TOKEN:-mock_read_token}
+      # LiveKit Real-Time Video
+      LIVEKIT_URL: ${LIVEKIT_URL:-wss://${LIVEKIT_DOMAIN:-${LIVEKIT_HOSTNAME:-livekit.csginfotech.com}}}
+      LIVEKIT_INTERNAL_URL: ws://livekit:7880
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set}
     depends_on:
       postgres:
         condition: service_healthy
@@ -181,8 +191,9 @@ services:
       - csg-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.csg-api.rule=Host(`${API_HOSTNAME:-api.csginfotech.com}`)"
+      - "traefik.http.routers.csg-api.rule=Host(`${API_DOMAIN:-${API_HOSTNAME:-api.csginfotech.com}}`)"
       - "traefik.http.routers.csg-api.entrypoints=websecure"
+      - "traefik.http.routers.csg-api.tls=true"
       - "traefik.http.routers.csg-api.tls.certresolver=letsencrypt"
       - "traefik.http.services.csg-api.loadbalancer.server.port=9000"
       - "traefik.http.middlewares.csg-api-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
@@ -195,7 +206,80 @@ services:
           memory: 512M
 
   # ==============================================================================
-  # 5. HOCUSPOCUS CRDT REAL-TIME COLLABORATION SERVICE
+  # 5. LIVEKIT REAL-TIME WEBRTC MEDIA SERVER
+  # ==============================================================================
+  livekit:
+    image: livekit/livekit-server:v1.9.1
+    container_name: csg-lms-livekit
+    restart: always
+    environment:
+      LIVEKIT_CONFIG: |
+        port: 7880
+        rtc:
+          tcp_port: 7881
+          port_range_start: 50000
+          port_range_end: 50100
+          use_external_ip: true
+        keys:
+          ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set}
+        webhook:
+          api_key: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}
+          urls:
+            - http://api:9000/api/v1/live/webhooks
+    ports:
+      - "7881:7881"
+      - "50000-50100:50000-50100/udp"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7880/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 15s
+    networks:
+      - csg-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.csg-livekit.rule=Host(`${LIVEKIT_DOMAIN:-${LIVEKIT_HOSTNAME:-livekit.csginfotech.com}}`)"
+      - "traefik.http.routers.csg-livekit.entrypoints=websecure"
+      - "traefik.http.routers.csg-livekit.tls=true"
+      - "traefik.http.routers.csg-livekit.tls.certresolver=letsencrypt"
+      - "traefik.http.services.csg-livekit.loadbalancer.server.port=7880"
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+        reservations:
+          memory: 256M
+
+  # ==============================================================================
+  # 6. TINYBIRD MOCK ANALYTICS SERVICE
+  # ==============================================================================
+  tinybird-mock:
+    build:
+      context: ./deploy/tinybird-mock
+      dockerfile: Dockerfile
+    image: csg-lms/tinybird-mock:latest
+    container_name: csg-lms-tinybird-mock
+    restart: always
+    environment:
+      PORT: 8080
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health')\" || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 10s
+    networks:
+      - csg-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+
+  # ==============================================================================
+  # 7. HOCUSPOCUS CRDT REAL-TIME COLLABORATION SERVICE
   # ==============================================================================
   collab:
     build:
@@ -227,8 +311,9 @@ services:
       - csg-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.csg-collab.rule=Host(`${COLLAB_HOSTNAME:-collab.csginfotech.com}`)"
+      - "traefik.http.routers.csg-collab.rule=Host(`${COLLAB_DOMAIN:-${COLLAB_HOSTNAME:-collab.csginfotech.com}}`)"
       - "traefik.http.routers.csg-collab.entrypoints=websecure"
+      - "traefik.http.routers.csg-collab.tls=true"
       - "traefik.http.routers.csg-collab.tls.certresolver=letsencrypt"
       - "traefik.http.services.csg-collab.loadbalancer.server.port=4000"
     deploy:
@@ -239,7 +324,7 @@ services:
           memory: 256M
 
   # ==============================================================================
-  # 6. NEXT.JS 15 PRODUCTION STANDALONE FRONTEND
+  # 8. NEXT.JS 15 PRODUCTION STANDALONE FRONTEND
   # ==============================================================================
   web:
     build:
@@ -252,10 +337,10 @@ services:
       NODE_ENV: production
       PORT: 3000
       HOSTNAME: 0.0.0.0
-      NEXT_PUBLIC_APP_URL: ${LEARNHOUSE_URL:-https://app.csginfotech.com}
-      NEXT_PUBLIC_LEARNHOUSE_API_URL: ${LEARNHOUSE_API_URL:-https://api.csginfotech.com}
-      NEXT_PUBLIC_LEARNHOUSE_COLLAB_URL: ${LEARNHOUSE_COLLAB_URL:-wss://collab.csginfotech.com}
-      NEXT_PUBLIC_KEYCLOAK_URL: ${KEYCLOAK_URL:-https://auth.csginfotech.com}
+      NEXT_PUBLIC_APP_URL: ${APP_URL:-${LEARNHOUSE_URL:-https://${APP_DOMAIN:-app.csginfotech.com}}}
+      NEXT_PUBLIC_LEARNHOUSE_API_URL: ${LEARNHOUSE_API_URL:-https://${API_DOMAIN:-api.csginfotech.com}}
+      NEXT_PUBLIC_LEARNHOUSE_COLLAB_URL: ${LEARNHOUSE_COLLAB_URL:-wss://${COLLAB_DOMAIN:-collab.csginfotech.com}}
+      NEXT_PUBLIC_KEYCLOAK_URL: ${KEYCLOAK_URL:-https://${KEYCLOAK_DOMAIN:-auth.csginfotech.com}}
       NEXT_PUBLIC_KEYCLOAK_REALM: csg-lms
       NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: csg-lms-web
       NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
@@ -272,8 +357,9 @@ services:
       - csg-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.csg-web.rule=Host(`${APP_HOSTNAME:-app.csginfotech.com}`)"
+      - "traefik.http.routers.csg-web.rule=Host(`${APP_DOMAIN:-${APP_HOSTNAME:-app.csginfotech.com}}`)"
       - "traefik.http.routers.csg-web.entrypoints=websecure"
+      - "traefik.http.routers.csg-web.tls=true"
       - "traefik.http.routers.csg-web.tls.certresolver=letsencrypt"
       - "traefik.http.services.csg-web.loadbalancer.server.port=3000"
     deploy:

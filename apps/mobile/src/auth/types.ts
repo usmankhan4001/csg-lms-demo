@@ -1,9 +1,18 @@
 /**
- * Mirrors `src.core.keycloak_auth.KeycloakRole` (`apps/api/src/core/keycloak_auth.py`)
- * and the dev convenience claims minted by `mint_dev_keycloak_token`
- * (`apps/api/src/core/dev_tokens.py`) / read back by
- * `apps/web/lib/api/dev-token.ts`'s `DevSessionClaims`.
+ * Mirrors `SchoolRole` (`apps/api/src/db/sms_identity.py`), as returned by
+ * `GET /sms/me` (`apps/api/src/routers/sms_identity.py`).
+ *
+ * NOTE: roles no longer come from the token. A real Learnhouse access token's
+ * payload is `{sub, purpose, amr, exp, iat, type}` with `sub` being the user's
+ * email -- verified against the running API -- so there is no `realm_access`
+ * claim to read a role out of, and none of the CSG convenience claims
+ * (`subject_id`, `section_id`, `children_ids`, ...) the dev token used to
+ * carry. All of that is resolved server-side by `GET /sms/me` instead, which
+ * is the correct place for it: "which roles do I hold" and "which children are
+ * mine" are questions a client must never answer for itself.
  */
+
+import type { MyIdentity } from '@/modules/sms/identity/types';
 
 export type KeycloakRole =
   | 'SUPER_ADMIN'
@@ -48,6 +57,18 @@ export interface SessionClaims {
 
 export interface Session {
   token: string;
-  claims: SessionClaims;
-  role: KeycloakRole;
+  /**
+   * Epoch ms at which the access token stops being accepted, or null when the
+   * server did not say. Checked locally on restore so an expired session sends
+   * the user to sign-in rather than into a shell that 401s on every screen.
+   */
+  expiresAt: number | null;
+  /** Resolved server-side by `GET /sms/me` -- see the note at the top of this file. */
+  identity: MyIdentity;
+  /**
+   * The persona shell to render. Picked from `identity.roles` at sign-in.
+   * A user may hold several roles (an admin who also teaches); the first one
+   * this app has a shell for wins.
+   */
+  role: MobileRole;
 }

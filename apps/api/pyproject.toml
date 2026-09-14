@@ -50,6 +50,8 @@ dependencies = [
     "pgvector==0.5.0",
     "pypdf==6.16.2",
     "regex==2026.9.3",
+    "livekit-api==1.2.1",
+    "reportlab==5.0.1",
 ]
 
 [tool.uv]

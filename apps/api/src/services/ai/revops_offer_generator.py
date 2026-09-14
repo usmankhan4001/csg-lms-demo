@@ -9,6 +9,14 @@ from typing import Optional
 from datetime import datetime, timezone
 
 
+class MissingOfferFacts(ValueError):
+    """Raised when an offer letter would have to invent a name or a figure.
+
+    Surface this to the user as "configure the campus / fee structure first";
+    never swallow it and send a letter containing a placeholder amount.
+    """
+
+
 def generate_personalized_offer_copy(
     student_name: str,
     grade: str,
@@ -39,15 +47,31 @@ def generate_personalized_offer_copy(
     Returns:
         Structured formal markdown letter string.
     """
+    # An offer letter is a formal representation to a family. Every figure and
+    # name in it must come from the school's own record: these previously fell
+    # back to a fictional campus ("CSG International Academy") and, below, an
+    # invented annual tuition of 12,500 -- a financial claim a parent could
+    # reasonably act on. Refuse to generate rather than invent.
+    if not campus_name or not str(campus_name).strip():
+        raise MissingOfferFacts(
+            "Cannot generate an offer letter: the campus name is unknown. "
+            "Assign the lead to a campus first."
+        )
+    if annual_tuition is None or float(annual_tuition) <= 0:
+        raise MissingOfferFacts(
+            "Cannot generate an offer letter: no annual tuition was supplied. "
+            "Link a fee structure so the letter quotes the real amount."
+        )
+
     s_name = str(student_name).strip() if student_name else "Candidate"
     g_name = str(grade).strip() if grade else "Admitted Grade"
-    c_name = str(campus_name).strip() if campus_name else "CSG International Academy"
+    c_name = str(campus_name).strip()
     p_name = str(parent_name).strip() if parent_name else f"The Parents / Guardians of {s_name}"
     curr = str(curriculum).strip() if curriculum else "Advanced Cambridge & STEAM Curriculum"
     year = str(academic_year).strip() if academic_year else "2026-2027 Academic Session"
     
     # Tuition calculations
-    base_fee = float(annual_tuition) if annual_tuition is not None and annual_tuition > 0 else 12500.0
+    base_fee = float(annual_tuition)
     discount = max(0.0, min(100.0, float(discount_pct) if discount_pct is not None else 0.0))
     annual_savings = base_fee * (discount / 100.0)
     net_payable = base_fee - annual_savings

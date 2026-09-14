@@ -5,6 +5,7 @@ Unit and Integration Tests for Keycloak 24 OIDC JWT Authentication & Multi-Campu
 
 import jwt
 import pytest
+import os
 from unittest.mock import patch, MagicMock
 from fastapi import HTTPException
 
@@ -161,10 +162,25 @@ def test_decode_and_verify_token_hmac():
         "org_id": 1,
         "campus_id": 5,
         "realm_access": {"roles": ["TEACHER"]},
+        # The verifier requires an issuer claim and checks it against
+        # settings.issuer. Both are pinned to the same override below rather
+        # than relaxing the check -- a token with no `iss` SHOULD be rejected.
+        "iss": "https://keycloak.test/realms/csg-test",
     }
     token = jwt.encode(token_payload, secret, algorithm="HS256")
 
-    with patch.object(settings, "shared_secret", secret):
+    # `shared_secret` is a read-only @property that resolves from the
+    # environment, so patch the env it actually reads rather than trying to
+    # set the attribute (which raises "property has no setter"). This also
+    # keeps the property's real resolution logic under test instead of
+    # stubbing it out.
+    with patch.dict(
+        os.environ,
+        {
+            "KEYCLOAK_SECRET_KEY": secret,
+            "KEYCLOAK_ISSUER": "https://keycloak.test/realms/csg-test",
+        },
+    ):
         principal = decode_and_verify_token(token)
         assert principal.sub == "jwt-user-007"
         assert principal.email == "agent007@csg.edu"

@@ -54,6 +54,7 @@ from src.security.features_utils.dependencies import (
     require_sms_attendance_feature,
     require_sms_fees_feature,
     require_sms_financials_feature,
+    require_sms_exam_feature,
     require_sms_gradebook_feature,
     require_sms_hr_payroll_feature,
     require_sms_library_feature,
@@ -84,6 +85,9 @@ ROUTER_CASES = [
         "/api/v1/revops/leads/pipeline", require_revops_feature,
         id="sms_revops",
     ),
+    # M04 exams. Mounted next to the gradebook because exam marks are written
+    # as GradebookEntry rows rather than graded independently.
+    pytest.param("/api/v1/sms/exams/", require_sms_exam_feature, id="sms_exam"),
 ]
 
 

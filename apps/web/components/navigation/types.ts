@@ -17,6 +17,43 @@ import {
 
 export type UserRole = 'STUDENT' | 'TEACHER' | 'PARENT' | 'ADMIN'
 
+/**
+ * Real school roles (7: SUPER_ADMIN, SCHOOL_ADMIN, TEACHER, STUDENT, PARENT,
+ * STAFF, PSYCHOLOGIST -- see apps/api/src/db/sms_identity.py's SchoolRole)
+ * bucketed into this UI's 4 nav personas. STAFF/PSYCHOLOGIST have no
+ * dedicated portal built yet, so they fall back to STUDENT nav rather than
+ * crashing on an unmapped value. Shared by `the retired `app/(dashboard)/layout.tsx`
+ * (which persona is "current") and `RoleSidebar`/`PortalHeader` (which
+ * personas a multi-role user can switch between).
+ */
+export function bucketRealmRole(realmRole: string | undefined): UserRole {
+  switch (realmRole) {
+    case 'SCHOOL_ADMIN':
+    case 'SUPER_ADMIN':
+      return 'ADMIN'
+    case 'TEACHER':
+      return 'TEACHER'
+    case 'PARENT':
+      return 'PARENT'
+    default:
+      return 'STUDENT'
+  }
+}
+
+/**
+ * Single source of truth for "which route does this persona's portal live
+ * at" -- shared by `RoleSidebar` (role-switcher dropdown), `PortalHeader`
+ * (quick portal switcher), and `the retired `app/(dashboard)/layout.tsx`
+ * (`handleRoleChange`), which previously each hardcoded their own copy of
+ * this same 4-entry map.
+ */
+export const ROLE_PORTAL_PATHS: Record<UserRole, string> = {
+  STUDENT: '/student',
+  TEACHER: '/teacher',
+  PARENT: '/parent',
+  ADMIN: '/campus-admin',
+}
+
 export interface NavItem {
   id: string
   title: string
@@ -40,27 +77,6 @@ export interface NavItem {
   }[]
 }
 
-export interface Campus {
-  id: string
-  name: string
-  code: string
-  city: string
-  studentCount: number
-  facultyCount: number
-  status: 'active' | 'maintenance'
-  director: string
-}
-
-export interface AcademicTerm {
-  id: string
-  name: string
-  code: string
-  academicYear: string
-  startDate: string
-  endDate: string
-  isCurrent: boolean
-}
-
 export interface NotificationItem {
   id: string
   title: string
@@ -71,82 +87,6 @@ export interface NotificationItem {
   priority: 'low' | 'medium' | 'high'
   actionUrl?: string
 }
-
-export interface UserProfile {
-  id: string
-  name: string
-  email: string
-  avatarUrl?: string
-  role: UserRole
-  roleTitle: string
-  campus: string
-  gradeOrDept?: string
-  studentId?: string
-}
-
-export const CAMPUSES: Campus[] = [
-  {
-    id: 'isb-main',
-    name: 'CSG Islamabad Main Campus',
-    code: 'ISB-01',
-    city: 'Islamabad (H-8/4)',
-    studentCount: 1250,
-    facultyCount: 68,
-    status: 'active',
-    director: 'Dr. Tariq Mehmood',
-  },
-  {
-    id: 'rwp-north',
-    name: 'CSG Rawalpindi North Campus',
-    code: 'RWP-02',
-    city: 'Rawalpindi (Westridge)',
-    studentCount: 890,
-    facultyCount: 45,
-    status: 'active',
-    director: 'Prof. Sajjad Akhtar',
-  },
-  {
-    id: 'lhr-gulberg',
-    name: 'CSG Lahore Gulberg Campus',
-    code: 'LHR-03',
-    city: 'Lahore (Gulberg III)',
-    studentCount: 1100,
-    facultyCount: 58,
-    status: 'active',
-    director: 'Engr. Ayesha Malik',
-  },
-  {
-    id: 'khi-dha',
-    name: 'CSG Karachi DHA Campus',
-    code: 'KHI-04',
-    city: 'Karachi (DHA Phase VI)',
-    studentCount: 680,
-    facultyCount: 35,
-    status: 'active',
-    director: 'Syed Hamza Ali',
-  },
-]
-
-export const ACADEMIC_TERMS: AcademicTerm[] = [
-  {
-    id: 'term-fall-2026',
-    name: 'Term 1 - Fall 2026',
-    code: 'F26-T1',
-    academicYear: '2026-2027',
-    startDate: '2026-08-15',
-    endDate: '2026-12-20',
-    isCurrent: true,
-  },
-  {
-    id: 'term-spring-2027',
-    name: 'Term 2 - Spring 2027',
-    code: 'S27-T2',
-    academicYear: '2026-2027',
-    startDate: '2027-01-10',
-    endDate: '2027-06-15',
-    isCurrent: false,
-  },
-]
 
 /**
  * Persona navigation per DESIGN-SYSTEM.md §2.3 ("Navigation IA per persona"),
@@ -296,46 +236,6 @@ export const ROLE_NAV_ITEMS: Record<UserRole, NavItem[]> = {
       icon: Building2,
     },
   ],
-}
-
-export const SAMPLE_USERS: Record<UserRole, UserProfile> = {
-  STUDENT: {
-    id: 'usr_std_101',
-    name: 'Zaid Usman Khan',
-    email: 'zaid.khan@student.csg.edu.pk',
-    role: 'STUDENT',
-    roleTitle: 'Grade 11 Student (Pre-Engineering)',
-    campus: 'CSG Islamabad Main Campus',
-    gradeOrDept: 'Grade 11 - Section A',
-    studentId: 'CSG-2024-ISB-4921',
-  },
-  TEACHER: {
-    id: 'usr_tch_202',
-    name: 'Dr. Fatima Noor',
-    email: 'fatima.noor@faculty.csg.edu.pk',
-    role: 'TEACHER',
-    roleTitle: 'Senior Physics & STEM Faculty',
-    campus: 'CSG Islamabad Main Campus',
-    gradeOrDept: 'Dept. of Physical Sciences',
-  },
-  PARENT: {
-    id: 'usr_par_303',
-    name: 'Muhammad Usman Khan',
-    email: 'm.usman.khan@gmail.com',
-    role: 'PARENT',
-    roleTitle: 'Guardian of Zaid Khan & Amina Khan',
-    campus: 'CSG Islamabad Main Campus',
-    studentId: 'PAR-ISB-88301',
-  },
-  ADMIN: {
-    id: 'usr_adm_404',
-    name: 'Syed Tariq Mehmood',
-    email: 'tariq.mehmood@admin.csg.edu.pk',
-    role: 'ADMIN',
-    roleTitle: 'Executive Director & Campus Admin',
-    campus: 'CSG Islamabad Main Campus',
-    gradeOrDept: 'Central Directorate',
-  },
 }
 
 export const INITIAL_NOTIFICATIONS: NotificationItem[] = [

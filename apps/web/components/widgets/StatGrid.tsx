@@ -29,7 +29,7 @@ const GRID_COLS: Record<2 | 3 | 4 | 5, string> = {
 export function StatGrid({ items, state = 'success', error, onRetry, columns = 4, skeletonCount = 4, className }: StatGridProps) {
   if (state === 'error') {
     return (
-      <div className={cn('rounded-xl border border-border bg-card', className)}>
+      <div className={cn('rounded-xl bg-white nice-shadow', className)}>
         <EmptyState
           tone="critical"
           title="Couldn't load these metrics"
@@ -53,7 +53,7 @@ export function StatGrid({ items, state = 'success', error, onRetry, columns = 4
 
   if (state === 'empty' || items.length === 0) {
     return (
-      <div className={cn('rounded-xl border border-border bg-card', className)}>
+      <div className={cn('rounded-xl bg-white nice-shadow', className)}>
         <EmptyState title="No metrics yet" description="Data will appear here once activity is recorded." />
       </div>
     )

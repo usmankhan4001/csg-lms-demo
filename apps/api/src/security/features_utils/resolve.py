@@ -28,9 +28,18 @@ ALL_FEATURES = [
     # CSG-LMS SMS / RevOps modules (sms_campus is the tenancy root and lives
     # in ALWAYS_ON_FEATURES below instead, so it has no admin toggle).
     "sms_attendance", "sms_timetable", "sms_gradebook", "sms_fees",
-    "sms_financials", "sms_hr_payroll", "sms_library", "revops",
+    "sms_financials", "sms_hr_payroll", "sms_library", "sms_exam", "revops",
+    # M19 cross-module reporting (reads attendance/grades/fees/admissions).
+    "sms_reports",
     # Phase 4, Part B: Counseling / Wellbeing / Career Guidance module.
     "tutor_counseling",
+    # M34 Inventory & Procurement, M36 Hostel & Dormitory. dependencies.py
+    # declared require_sms_{inventory,hostel}_feature gating on these keys, but
+    # they were never registered here -- and resolve_feature FAILS OPEN on an
+    # unknown key, so the gate was decorative: the modules could not be
+    # switched off, and would not have appeared in the admin toggle surface.
+    "sms_inventory",
+    "sms_hostel",
 ]
 
 

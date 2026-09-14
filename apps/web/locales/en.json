@@ -1469,7 +1469,8 @@
     "group_into_grid": "Group into Grid",
     "markdown": "Markdown",
     "custom": "Custom",
-    "scorm": "SCORM"
+    "scorm": "SCORM",
+    "liveclass": "Live class"
   },
   "embed": {
     "not_supported_title": "This activity is not supported",
@@ -2777,6 +2778,7 @@
             "markdown": "Markdown",
             "embed": "Embed",
             "resource": "Resource",
+            "liveclass": "Live class",
             "custom": "Custom"
           },
           "toasts": {
@@ -4892,7 +4894,8 @@
         "communities": "Communities",
         "discussions": "Discussions",
         "playgrounds": "Playgrounds",
-        "podcasts": "Podcasts"
+        "podcasts": "Podcasts",
+        "actions": "Actions"
       },
       "entries": {
         "home": {
@@ -5048,6 +5051,221 @@
         "account_purchases": {
           "description": "Your purchases and subscriptions",
           "keywords": "purchases, subscriptions, billing, history, receipts"
+        },
+        "campus": {
+          "title": "Campus",
+          "description": "Campuses, academic years, terms and class sections",
+          "keywords": "campus, academic year, term, section, grade, class, school setup"
+        },
+        "admissions": {
+          "title": "Admissions",
+          "description": "Admissions pipeline and lead management",
+          "keywords": "admissions, leads, enquiry, enrolment, enrollment, applicants, crm, pipeline"
+        },
+        "revops": {
+          "title": "Admissions Insights",
+          "description": "Funnel performance, lead quality and outreach consent",
+          "keywords": "revops, funnel, conversion, leads, insights, analytics, consent"
+        },
+        "timetable": {
+          "title": "Timetable",
+          "description": "Weekly class timetable, periods and substitutions",
+          "keywords": "timetable, schedule, periods, lessons, substitution, cover, rota"
+        },
+        "attendance": {
+          "title": "Attendance",
+          "description": "Daily roll-call and attendance records",
+          "keywords": "attendance, roll call, register, absent, present, late, truancy"
+        },
+        "liveClasses": {
+          "title": "Live classes",
+          "description": "Schedule, run and review live classes",
+          "keywords": "live class, video, online lesson, livekit, recording, virtual classroom, join"
+        },
+        "gradebook": {
+          "title": "Gradebook",
+          "description": "Marks, assessment plans and report cards",
+          "keywords": "gradebook, grades, marks, scores, gpa, report card, assessment"
+        },
+        "exams": {
+          "title": "Exams",
+          "description": "Exam scheduling, invigilation and results",
+          "keywords": "exam, exams, test, paper, results, invigilator, proctoring"
+        },
+        "ai-tutor": {
+          "title": "AI Tutor",
+          "description": "AI tutor oversight, transcripts and access controls",
+          "keywords": "ai tutor, oversight, transcripts, kill switch, safety, socratic"
+        },
+        "fees": {
+          "title": "Fees",
+          "description": "Fee vouchers, collections and outstanding balances",
+          "keywords": "fees, vouchers, invoice, payment, challan, billing, late fee, outstanding"
+        },
+        "financials": {
+          "title": "Financials",
+          "description": "Journal entries, trial balance and reversals",
+          "keywords": "financials, ledger, accounting, journal, trial balance, debit, credit"
+        },
+        "hr": {
+          "title": "Staff & Payroll",
+          "description": "Staff profiles, leave and payslips",
+          "keywords": "hr, staff, payroll, salary, payslip, leave, employee"
+        },
+        "school-library": {
+          "title": "School Library",
+          "description": "Book catalogue and lending",
+          "keywords": "school library, books, catalogue, borrow, loan, return, overdue, fine"
+        },
+        "messages": {
+          "title": "Messages",
+          "description": "Conversations and notifications",
+          "keywords": "messages, chat, inbox, notifications, parent, teacher, thread"
+        },
+        "actionNewFeeStructure": {
+          "title": "New fee structure",
+          "description": "Define tuition, transport and lab fees for a grade",
+          "keywords": "fee structure, tuition, create fee, new fee, pricing, charges"
+        },
+        "actionGenerateVouchers": {
+          "title": "Generate fee vouchers",
+          "description": "Issue fee vouchers to every student in a section",
+          "keywords": "generate vouchers, issue fees, billing, invoice students, fee voucher"
+        },
+        "actionEnrolStudent": {
+          "title": "Enrol a student",
+          "description": "Place a student into a class section for the academic year",
+          "keywords": "enrol, enroll, admit student, add student, class section, roster"
+        },
+        "actionTakeRollCall": {
+          "title": "Take roll-call",
+          "description": "Mark today’s attendance for a class section",
+          "keywords": "roll call, take attendance, mark register, present, absent"
+        },
+        "actionNewAssessment": {
+          "title": "New assessment",
+          "description": "Add an assessment plan so marks can be entered",
+          "keywords": "assessment, assessment plan, exam weight, marks, grading, new test"
+        },
+        "reports": {
+          "title": "Reports",
+          "description": "Whole-school attendance, grades, fees and admissions",
+          "keywords": "reports, analytics, overview, principal, summary, statistics, collection, conversion"
+        },
+        "schoolSettings": {
+          "title": "School settings",
+          "description": "Grading scale, fee policy and school profile",
+          "keywords": "settings, configuration, grading scale, gpa, fee policy, late fee, school profile, principal, policy, setup"
+        },
+        "admissionsLeads": {
+          "title": "Leads",
+          "description": "Filterable list of every admissions enquiry",
+          "keywords": "leads, list, enquiries, enquiry, applicants, prospects, admissions, filter"
+        },
+        "admissionsApplications": {
+          "title": "Applications",
+          "description": "Admission applications, documents, assessments and decisions",
+          "keywords": "applications, application, admissions, apply, documents, birth certificate, assessment, decision, offer, registrar"
+        },
+        "admissionsOffers": {
+          "title": "Offers",
+          "description": "Scholarship and tuition offers issued to families",
+          "keywords": "offers, scholarship, tuition, discount, accepted, declined, admissions"
+        },
+        "admissionsCampaigns": {
+          "title": "Campaigns",
+          "description": "Plan segment-level admissions outreach",
+          "keywords": "campaign, outreach, marketing, segment, audience, consent, admissions"
+        },
+        "admissionsWorklist": {
+          "title": "My worklist",
+          "description": "Active leads needing attention, coldest first",
+          "keywords": "worklist, my leads, follow up, stale, chase, admissions, officer"
+        },
+        "attendanceHistory": {
+          "title": "Attendance history",
+          "description": "A student's month and every correction to their register",
+          "keywords": "attendance history trail corrections audit register"
+        },
+        "attendanceExcuses": {
+          "title": "Absence notes",
+          "description": "Review parents' absence notes and approve or reject them",
+          "keywords": "absence note excuse parent approve reject attendance"
+        },
+        "gradebookReportCards": {
+          "title": "Report cards",
+          "description": "Draft, review and send a section's report cards for a term",
+          "keywords": "report card term end draft send transcript grades studio"
+        },
+        "attendancePastoral": {
+          "title": "At-risk students",
+          "description": "Students flagged by attendance patterns, and what has been done",
+          "keywords": "pastoral at risk truancy concern intervention wellbeing"
+        },
+        "attendanceBulkMark": {
+          "title": "Bulk marking",
+          "description": "Mark a whole section across a date range",
+          "keywords": "bulk attendance trip closure range mark section"
+        },
+        "timetableGenerate": {
+          "title": "Generate timetable",
+          "description": "Bulk-place a section's weekly lessons into free slots",
+          "keywords": "timetable generate build schedule bulk create week auto"
+        },
+        "timetableLessons": {
+          "title": "Lesson log",
+          "description": "What was taught, homework set, and notes for the next teacher",
+          "keywords": "lesson log taught covered homework handover substitute cover notes"
+        },
+        "timetableConflicts": {
+          "title": "Timetable conflicts",
+          "description": "Double-bookings that already exist in the timetable",
+          "keywords": "timetable conflict clash double booked room teacher scan check"
+        },
+        "counseling": {
+          "title": "Counselling",
+          "description": "Confidential 1:1 session records and wellbeing signals",
+          "keywords": "counselling, counseling, psychologist, wellbeing, sessions, pastoral, safeguarding"
+        },
+        "counselingCareer": {
+          "title": "Career guidance",
+          "description": "Structured career pathway plans for a student",
+          "keywords": "career, guidance, pathways, future, advice, plan"
+        },
+        "examSeating": {
+          "title": "Exam seating",
+          "description": "Allocate candidates to seats for a sitting",
+          "keywords": "seating,seat,exam,hall,invigilator,plan,allocate"
+        },
+        "examResits": {
+          "title": "Resits",
+          "description": "Approved second sittings, with the original result intact",
+          "keywords": "resit,retake,second sitting,exam,absent,makeup"
+        },
+        "libraryHolds": {
+          "title": "Holds",
+          "description": "Library reservation queue",
+          "keywords": "hold,holds,reservation,reserve,queue,library,waiting"
+        },
+        "payroll": {
+          "title": "Payroll",
+          "description": "Salary slips, approval and disbursement",
+          "keywords": "payroll salary slip pay wages approve disburse payslip"
+        },
+        "attendanceDigest": {
+          "title": "Family digest",
+          "description": "The weekly summary a guardian receives, previewed",
+          "keywords": "digest parent guardian weekly summary family newsletter"
+        },
+        "revopsConfig": {
+          "title": "Agent configuration",
+          "description": "Lead scoring weights, nurture cadence and consent policy",
+          "keywords": "revops config, scoring, weights, nurture, cadence, drip, consent, agent settings, admissions config"
+        },
+        "revopsKnowledge": {
+          "title": "Knowledge base",
+          "description": "Approved content the admissions agents may quote",
+          "keywords": "knowledge base, kb, sources, citations, agent content, published, drafts"
         }
       }
     },

@@ -16,16 +16,79 @@ full background.
 changes -- only how the principal gets CONSTRUCTED changes.
 """
 
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Union
 
-from fastapi import HTTPException, status
+import jwt
+from jwt.exceptions import PyJWTError
+from fastapi import HTTPException, Request, status
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.keycloak_auth import SUPER_ADMIN, KeycloakUserPrincipal
 from src.db.organizations import Organization
 from src.db.sms_identity import SMSUserRole
-from src.db.users import APITokenUser, PublicUser, SuperadminAPITokenUser
+from src.db.users import APITokenUser, PublicUser, SuperadminAPITokenUser, User
+from src.security.security import ALGORITHM, SECRET_KEY
+
+# ---------------------------------------------------------
+# Superadmin impersonation (QA/demo tool)
+# ---------------------------------------------------------
+#
+# Permanent, audited replacement for the old dev-only Keycloak-shaped-JWT
+# minting mechanism (now fully removed -- see PROJECT_DOCS/ARCHITECTURE.md).
+# A real superadmin, already authenticated via
+# their own real Learnhouse session, can temporarily view the app AS a
+# specific target user for QA/demo/support purposes -- NOT a new token type,
+# and NOT a bypass of resolve_school_principal()'s normal resolution: the
+# target's own SMSUserRole grants are what get resolved below, exactly as if
+# the target had logged in themselves. See src/routers/sms_identity.py's
+# POST /identity/impersonate and /identity/impersonate/stop.
+#
+# Signed with the exact same HS256 mechanism (SECRET_KEY/ALGORITHM from
+# src.security.security) that src.security.auth already uses for the
+# session/refresh/single-purpose JWTs (create_access_token, create_refresh_token)
+# -- not a new signing scheme.
+IMPERSONATION_COOKIE_NAME = "sms_impersonation"
+IMPERSONATION_COOKIE_MAX_AGE_SECONDS = 2 * 60 * 60  # 2 hours
+_IMPERSONATION_COOKIE_PURPOSE = "sms_impersonation"
+
+
+def create_impersonation_cookie_value(*, actor_user_id: int, target_user_id: int) -> str:
+    """Mint the signed, short-lived JWT stored in the `sms_impersonation` cookie."""
+    now = datetime.now(timezone.utc)
+    payload = {
+        "purpose": _IMPERSONATION_COOKIE_PURPOSE,
+        "actor_user_id": actor_user_id,
+        "target_user_id": target_user_id,
+        "iat": now,
+        "exp": now + timedelta(seconds=IMPERSONATION_COOKIE_MAX_AGE_SECONDS),
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_impersonation_cookie(cookie_value: Optional[str]) -> Optional[dict]:
+    """Verify and decode the `sms_impersonation` cookie value.
+
+    Never raises: returns `None` for anything missing, malformed, expired, or
+    signed with the wrong secret/purpose, so every caller fails SAFE (falls
+    back to resolving the real, already-authenticated user) rather than
+    erroring out.
+    """
+    if not cookie_value:
+        return None
+    try:
+        payload = jwt.decode(
+            cookie_value,
+            SECRET_KEY,
+            algorithms=[ALGORITHM],
+            options={"require": ["exp", "iat", "target_user_id", "purpose"]},
+        )
+    except PyJWTError:
+        return None
+    if payload.get("purpose") != _IMPERSONATION_COOKIE_PURPOSE:
+        return None
+    return payload
 
 
 async def _get_default_org_id(db_session: AsyncSession) -> Optional[int]:
@@ -43,6 +106,7 @@ async def _get_default_org_id(db_session: AsyncSession) -> Optional[int]:
 async def resolve_school_principal(
     current_user: Union[PublicUser, APITokenUser, SuperadminAPITokenUser],
     db_session: AsyncSession,
+    request: Optional[Request] = None,
 ) -> KeycloakUserPrincipal:
     """Builds the SMS auth principal for a real, already-authenticated Learnhouse user.
 
@@ -50,6 +114,16 @@ async def resolve_school_principal(
     `SMSUserRole` rows -- an empty role set is a valid, readable state (e.g.
     for GET /sms/me to report "you have no school role yet"). Route-level
     `require_roles()`/feature dependencies are still what enforce access.
+
+    `request` is optional (and unused when omitted) so existing direct callers
+    -- notably the unit tests in test_school_principal.py -- are unaffected.
+    When provided, it is consulted ONLY for superadmin impersonation (see the
+    module docstring above): if `current_user` (the REAL, already-authenticated
+    caller) is a superadmin AND carries a valid `sms_impersonation` cookie, the
+    principal is built from the target user's OWN grants instead. Any other
+    combination (no cookie, invalid cookie, or a non-superadmin caller who
+    somehow has the cookie) falls straight through to resolving `current_user`
+    normally -- fail safe, never fail open.
     """
     if isinstance(current_user, (APITokenUser, SuperadminAPITokenUser)):
         # API tokens have no school-role concept -- there was never a way to
@@ -60,33 +134,58 @@ async def resolve_school_principal(
             detail="API tokens are not supported for SMS endpoints",
         )
 
+    effective_user: PublicUser = current_user
+    impersonated_by_user_id: Optional[int] = None
+
+    if request is not None and current_user.is_superadmin:
+        payload = decode_impersonation_cookie(request.cookies.get(IMPERSONATION_COOKIE_NAME))
+        if payload is not None:
+            target_user_id = payload.get("target_user_id")
+            target = await db_session.get(User, target_user_id) if target_user_id is not None else None
+            if target is not None:
+                effective_user = PublicUser(
+                    id=target.id,
+                    username=target.username,
+                    first_name=target.first_name,
+                    last_name=target.last_name,
+                    email=target.email,
+                    user_uuid=target.user_uuid,
+                    email_verified=target.email_verified,
+                    is_superadmin=target.is_superadmin,
+                )
+                impersonated_by_user_id = current_user.id
+
     result = await db_session.execute(
-        select(SMSUserRole).where(SMSUserRole.user_id == current_user.id, SMSUserRole.is_active == True)  # noqa: E712
+        select(SMSUserRole).where(SMSUserRole.user_id == effective_user.id, SMSUserRole.is_active == True)  # noqa: E712
     )
     grants = list(result.scalars().all())
 
     roles = {g.role.value if hasattr(g.role, "value") else str(g.role) for g in grants}
-    if current_user.is_superadmin:
+    if effective_user.is_superadmin:
         roles.add(SUPER_ADMIN)
 
     org_id = next((g.org_id for g in grants if g.org_id), None)
     campus_id = next((g.campus_id for g in grants if g.campus_id), None)
-    if org_id is None and current_user.is_superadmin:
+    if org_id is None and effective_user.is_superadmin:
         org_id = await _get_default_org_id(db_session)
 
+    raw_claims: dict = {"lh_user_id": effective_user.id}
+    if impersonated_by_user_id is not None:
+        raw_claims["impersonated_by_user_id"] = impersonated_by_user_id
+
     return KeycloakUserPrincipal(
-        sub=current_user.user_uuid,
-        email=getattr(current_user, "email", None),
-        preferred_username=getattr(current_user, "username", None),
-        given_name=getattr(current_user, "first_name", None),
-        family_name=getattr(current_user, "last_name", None),
+        sub=effective_user.user_uuid,
+        email=getattr(effective_user, "email", None),
+        preferred_username=getattr(effective_user, "username", None),
+        given_name=getattr(effective_user, "first_name", None),
+        family_name=getattr(effective_user, "last_name", None),
         name=" ".join(
-            filter(None, [getattr(current_user, "first_name", None), getattr(current_user, "last_name", None)])
+            filter(None, [getattr(effective_user, "first_name", None), getattr(effective_user, "last_name", None)])
         )
         or None,
         org_id=org_id,
         campus_id=campus_id,
         realm_roles=sorted(roles),
         roles=roles,
-        raw_claims={"lh_user_id": current_user.id},
+        raw_claims=raw_claims,
     )

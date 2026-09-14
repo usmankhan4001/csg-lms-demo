@@ -9,21 +9,20 @@
 
 import { useState } from 'react'
 import toast from 'react-hot-toast'
-import { Button } from '@/components/ui/button'
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+  LH_GHOST_BUTTON,
+  LH_INPUT,
+  LH_PRIMARY_BUTTON,
+  LH_SECONDARY_BUTTON,
+  SchoolDialog,
+  SchoolField,
+} from '@/components/widgets'
 import { recordPayment } from '../api'
 import type { PaymentMethod, StudentFeeVoucherRead } from '../types'
 
-const PAYMENT_METHODS: PaymentMethod[] = ['CASH', 'BANK_TRANSFER', 'CARD', 'ONLINE', 'CHEQUE']
+/** The backend's real `PaymentMethod` enum. `CARD` used to be offered here
+ * and would have been rejected on submit -- it is not a value the API accepts. */
+const PAYMENT_METHODS: PaymentMethod[] = ['CASH', 'BANK_TRANSFER', 'ONLINE', 'CHEQUE']
 
 export interface PayVoucherDialogProps {
   voucher: StudentFeeVoucherRead
@@ -57,45 +56,71 @@ export function PayVoucherDialog({ voucher, onPaid, trigger }: PayVoucherDialogP
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger ?? <Button size="sm">Pay voucher</Button>}</DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Record payment for {voucher.voucher_no}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 px-6 py-2">
-          <p className="text-sm text-muted-foreground">
-            Outstanding balance: <span className="font-semibold text-foreground">Rs. {voucher.balance_amount.toFixed(2)}</span>
-          </p>
-          <div className="space-y-1.5">
-            <Label htmlFor="pay-amount">Amount paid</Label>
-            <Input id="pay-amount" type="number" min={0} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="pay-method">Payment method</Label>
-            <select
-              id="pay-method"
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
-              value={method}
-              onChange={(e) => setMethod(e.target.value as PaymentMethod)}
-            >
-              {PAYMENT_METHODS.map((m) => (
-                <option key={m} value={m}>
-                  {m.replace('_', ' ')}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <DialogFooter className="px-6 pb-6">
-          <Button variant="outline" onClick={() => setOpen(false)} disabled={submitting}>
+    <SchoolDialog
+      open={open}
+      onOpenChange={setOpen}
+      trigger={
+        trigger ?? (
+          <button type="button" className={LH_SECONDARY_BUTTON}>
+            <span>Pay voucher</span>
+          </button>
+        )
+      }
+      title={`Record payment for ${voucher.voucher_no}`}
+      footer={
+        <>
+          <button
+            type="button"
+            className={LH_GHOST_BUTTON}
+            onClick={() => setOpen(false)}
+            disabled={submitting}
+          >
             Cancel
-          </Button>
-          <Button onClick={handleSubmit} disabled={submitting}>
-            {submitting ? 'Recording…' : 'Record payment'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </button>
+          <button
+            type="button"
+            className={LH_PRIMARY_BUTTON}
+            onClick={handleSubmit}
+            disabled={submitting}
+          >
+            <span>{submitting ? 'Recording…' : 'Record payment'}</span>
+          </button>
+        </>
+      }
+    >
+      <p className="text-sm text-gray-500">
+        Outstanding balance:{' '}
+        <span className="font-semibold text-gray-900">
+          Rs. {voucher.balance_amount.toFixed(2)}
+        </span>
+      </p>
+
+      <SchoolField id="pay-amount" label="Amount paid">
+        <input
+          id="pay-amount"
+          type="number"
+          min={0}
+          step="0.01"
+          className={LH_INPUT}
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+        />
+      </SchoolField>
+
+      <SchoolField id="pay-method" label="Payment method">
+        <select
+          id="pay-method"
+          className={LH_INPUT}
+          value={method}
+          onChange={(e) => setMethod(e.target.value as PaymentMethod)}
+        >
+          {PAYMENT_METHODS.map((m) => (
+            <option key={m} value={m}>
+              {m.replace('_', ' ')}
+            </option>
+          ))}
+        </select>
+      </SchoolField>
+    </SchoolDialog>
   )
 }

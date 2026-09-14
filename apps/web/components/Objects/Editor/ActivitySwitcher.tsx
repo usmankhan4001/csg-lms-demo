@@ -13,6 +13,7 @@ import {
   PuzzlePiece,
   MarkdownLogo,
   Globe,
+  VideoCamera,
 } from '@phosphor-icons/react'
 
 import { useAuth } from '@components/Contexts/AuthContext'
@@ -37,6 +38,8 @@ function ActivityTypeIcon({ type, subType, size = 12 }: { type?: string; subType
       return <Backpack size={size} weight="fill" />
     case 'TYPE_SCORM':
       return <Package size={size} weight="fill" />
+    case 'TYPE_LIVECLASS':
+      return <VideoCamera size={size} weight="fill" />
     case 'TYPE_CUSTOM':
       return <PuzzlePiece size={size} weight="fill" />
     case 'TYPE_DYNAMIC':

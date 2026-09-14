@@ -20,6 +20,7 @@ from src.core.keycloak_auth import (
     TEACHER,
     SCHOOL_ADMIN,
     SUPER_ADMIN,
+    PSYCHOLOGIST,
     get_optional_user_principal,
     require_roles,
 )
@@ -32,8 +33,15 @@ from src.services.ai.socratic_tutor import (
     check_tutor_daily_rate_limit,
 )
 from src.services.ai.base import get_chat_session_history, save_message_to_history
+from src.services.ai.crisis_classifier import classify_prompt_safety, log_safety_incident
+from src.db.sms_ai_consent import AIConsentType
+from src.services.sms.ai_consent import may_screen_for_crisis, resolve_consent
 
 logger = logging.getLogger(__name__)
+
+# Knowing THAT a named child disclosed self-harm is itself the disclosure, so
+# this matches ai_oversight._SAFEGUARDING rather than general staff oversight.
+_SAFEGUARDING = [SUPER_ADMIN, SCHOOL_ADMIN, PSYCHOLOGIST]
 
 router = APIRouter(prefix="/tutor", tags=["ai-tutor"])
 
@@ -53,6 +61,81 @@ class SocraticHistoryResponse(BaseModel):
     message_history: List[Dict[str, Any]]
 
 
+async def consent_denied_event_generator(
+    query_text: str,
+    student_db_id: Optional[int],
+    user_id: str,
+    org_id: Optional[int],
+    course_id: Optional[str],
+    db_session: AsyncSession,
+    consent_reason: str,
+):
+    """What a student gets when their guardian has not consented to AI tutoring.
+
+    This does NOT simply refuse. The prompt is still run through the local
+    safety screen first, because `classify_prompt_safety` is pure regex -- no
+    model call, no network, nothing leaves the server (see
+    services/sms/ai_consent.CONSENT_CRISIS_OVERRIDE_RATIONALE). A child who is
+    blocked from tutoring and then discloses self-harm must still be shown
+    crisis resources and still reach a counsellor; refusing them on a consent
+    technicality would be the worst possible reading of a parent's wishes.
+
+    The tutoring itself -- the part that ships their words to a third-party
+    LLM -- is what is withheld.
+    """
+    screened = False
+    if await may_screen_for_crisis(db_session, student_db_id, org_id):
+        screened = True
+        safety_result = classify_prompt_safety(query_text)
+        if safety_result.is_flagged and safety_result.counselor_escalation_required:
+            logger.warning(
+                "Crisis detected for student '%s' who has NO AI tutoring consent. "
+                "Tutoring withheld; safety escalation proceeding (category=%s).",
+                user_id,
+                safety_result.category.value,
+            )
+            try:
+                await log_safety_incident(
+                    student_id=user_id,
+                    severity=safety_result.severity.value,
+                    trigger_category=safety_result.category.value,
+                    prompt_snippet=query_text,
+                    counselor_notified=True,
+                    db_session=db_session,
+                    org_id=org_id,
+                    course_id=str(course_id) if course_id else None,
+                    details=safety_result.reason,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to log safety incident for consent-blocked student '%s'", user_id
+                )
+            message = safety_result.canned_response or (
+                "Your message triggered safety protocols. A counselor has been notified."
+            )
+            payload = json.dumps({"chunk": message, "session_uuid": None})
+            yield f"data: {payload}\n\n"
+            yield f"data: {json.dumps({'done': True, 'full_response': message, 'session_uuid': None})}\n\n"
+            return
+
+    if not screened:
+        logger.info(
+            "Crisis screening skipped for student '%s': org disabled the crisis override "
+            "and wellbeing monitoring consent is refused.",
+            user_id,
+        )
+
+    message = (
+        f"{consent_reason} The AI tutor is unavailable until that is in place. "
+        "Your teacher can still help, and your course materials are unaffected."
+    )
+    payload = json.dumps(
+        {"chunk": message, "session_uuid": None, "code": "AI_CONSENT_REQUIRED"}
+    )
+    yield f"data: {payload}\n\n"
+    yield f"data: {json.dumps({'done': True, 'full_response': message, 'code': 'AI_CONSENT_REQUIRED'})}\n\n"
+
+
 async def socratic_chat_event_generator(
     query_text: str,
     course_id: Optional[str],
@@ -68,6 +151,24 @@ async def socratic_chat_event_generator(
     Generate Server-Sent Events (SSE) stream for Socratic Tutor responses.
     """
     accumulated_response = []
+
+    # Tag a crisis turn so the client can give it deliberate prominence rather
+    # than rendering it as an ordinary tutor reply. The consent refusal already
+    # carries AI_CONSENT_REQUIRED; this is its safety equivalent.
+    #
+    # Classified HERE rather than threaded out of the generator on purpose:
+    # classify_prompt_safety is pure, synchronous, local regex with no database
+    # and no network, so re-running it on the same input cannot diverge, and
+    # the crisis path inside the generator is left completely untouched. A
+    # failure here must never block the stream.
+    safety_code = None
+    try:
+        _pre = classify_prompt_safety(query_text)
+        if _pre.is_flagged and _pre.counselor_escalation_required:
+            safety_code = "SAFETY_ESCALATION"
+    except Exception:
+        logger.exception("Pre-stream safety tagging failed; streaming untagged.")
+
     try:
         async for chunk in stream_socratic_guidance(
             query=query_text,
@@ -80,7 +181,10 @@ async def socratic_chat_event_generator(
             model_name=model_name,
         ):
             accumulated_response.append(chunk)
-            payload = json.dumps({"chunk": chunk, "session_uuid": session_uuid})
+            frame = {"chunk": chunk, "session_uuid": session_uuid}
+            if safety_code:
+                frame["code"] = safety_code
+            payload = json.dumps(frame)
             yield f"data: {payload}\n\n"
 
         # End of stream event
@@ -98,7 +202,10 @@ async def socratic_chat_event_generator(
             except Exception as hist_err:
                 logger.warning("Failed to save Socratic chat to history: %s", hist_err)
 
-        done_payload = json.dumps({"done": True, "full_response": full_text, "session_uuid": session_uuid})
+        done_frame = {"done": True, "full_response": full_text, "session_uuid": session_uuid}
+        if safety_code:
+            done_frame["code"] = safety_code
+        done_payload = json.dumps(done_frame)
         yield f"data: {done_payload}\n\n"
 
     except Exception as e:
@@ -155,6 +262,39 @@ async def api_socratic_tutor_chat(
             headers={"Retry-After": str(retry_after)},
         )
 
+    # Parental consent gate (M47). A minor's words are about to be sent to a
+    # third-party LLM; without a recorded guardian decision that must not
+    # happen silently. Checked AFTER the rate limit so a consent-blocked
+    # student cannot be used to bypass quota accounting.
+    #
+    # `student_db_id` is the real integer user id from the session, never
+    # anything the client supplied -- consent is resolved against the
+    # StudentGuardian link, so a forged id would defeat the whole control.
+    student_db_id: Optional[int] = None
+    if principal is not None:
+        raw = (principal.raw_claims or {}).get("lh_user_id")
+        if isinstance(raw, int):
+            student_db_id = raw
+
+    if student_db_id is not None:
+        consent = await resolve_consent(
+            db_session, student_db_id, AIConsentType.AI_TUTOR, org_id
+        )
+        if not consent.allowed:
+            return StreamingResponse(
+                consent_denied_event_generator(
+                    query_text=query_text,
+                    student_db_id=student_db_id,
+                    user_id=user_id,
+                    org_id=org_id,
+                    course_id=payload.course_id,
+                    db_session=db_session,
+                    consent_reason=consent.reason or "Parental consent has not been recorded.",
+                ),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
+
     # If history is not explicitly passed in payload, attempt retrieval from session_uuid
     effective_history = payload.history
     if effective_history is None and payload.session_uuid:
@@ -205,8 +345,14 @@ async def api_get_socratic_history(
     "/safety-flags",
     response_model=List[AISafetyIncidentRead],
     summary="List Student Wellbeing & Crisis Safety Incidents",
-    description="Protected endpoint for teachers and campus principals to review AI safety flags and counselor notifications.",
-    dependencies=[Depends(require_roles([TEACHER, SCHOOL_ADMIN, SUPER_ADMIN]))],
+    description=(
+        "Safeguarding surface: lists AI safety incidents for the counsellor and "
+        "school leadership. TEACHER is deliberately excluded -- this returns the "
+        "same AISafetyIncident rows as /ai/oversight/incidents, filterable by "
+        "SELF_HARM, so leaving it teacher-visible would have been a second door "
+        "to the disclosure that endpoint was just narrowed to protect."
+    ),
+    dependencies=[Depends(require_roles(_SAFEGUARDING))],
 )
 async def api_list_safety_flags(
     student_id: Optional[str] = Query(None, description="Filter incidents by student ID"),
@@ -215,7 +361,7 @@ async def api_list_safety_flags(
     limit: int = Query(50, ge=1, le=200, description="Max number of incidents to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     db_session: AsyncSession = Depends(get_db_session),
-    principal: KeycloakUserPrincipal = Depends(require_roles([TEACHER, SCHOOL_ADMIN, SUPER_ADMIN])),
+    principal: KeycloakUserPrincipal = Depends(require_roles(_SAFEGUARDING)),
 ):
     """
     GET /api/v1/ai/tutor/safety-flags - Role-protected safety incident review

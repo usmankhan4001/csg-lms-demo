@@ -58,17 +58,97 @@ class SafetyCheckResult:
     canned_response: Optional[str] = None
 
 
-CRISIS_ESCALATION_MESSAGE = (
+# The supportive wording is deliberately constant; only the RESOURCE LIST
+# varies by school. See `compose_crisis_message`.
+_CRISIS_OPENING = (
     "It sounds like you are going through a very difficult time right now, and your wellbeing is our highest priority. "
     "Please know that you do not have to face this alone.\n\n"
-    "🆘 **Immediate 24/7 Confidential Crisis Support:**\n"
-    "- **National Suicide & Crisis Lifeline:** Call or text **988** (Free & confidential)\n"
-    "- **Crisis Text Line:** Text **HOME to 741741**\n"
-    "- **The Trevor Project (LGBTQ youth):** Call **1-866-488-7386** or text **START to 678-678**\n"
-    "- **International Resources:** Visit [findahelpline.com](https://findahelpline.com)\n\n"
-    "Your campus wellbeing and counseling team has been alerted so they can provide confidential support. "
-    "If you are in immediate danger, please reach out to emergency services (911) or a trusted adult right away."
 )
+
+_CRISIS_CLOSING = (
+    "\nYour campus wellbeing and counseling team has been alerted so they can provide confidential support. "
+    "If you are in immediate danger, please tell a teacher, a parent, or another adult you trust right now."
+)
+
+# What a school that has configured nothing sees.
+#
+# This used to list 988, the Crisis Text Line, the Trevor Project and
+# "emergency services (911)" -- all US-only, in a deployment serving a school
+# in Pakistan. A child in crisis was handed numbers that do not connect.
+#
+# The fix is NOT to swap in another country's numbers. The software cannot know
+# them, and a wrong helpline is worse than none: a child dials it at the worst
+# moment of their life and reaches nothing. So the fallback carries only what
+# is true everywhere -- an international directory, and the instruction to tell
+# a trusted adult -- and states plainly that the school has not configured its
+# local lines, which is how an administrator finds out before a child does.
+_UNCONFIGURED_RESOURCES = (
+    "\U0001F198 **Support available to you right now:**\n"
+    "- **Tell a teacher, a parent, or another adult you trust.** Say what you told me. "
+    "You do not have to explain it perfectly.\n"
+    "- **Find a helpline in your country:** [findahelpline.com](https://findahelpline.com)\n\n"
+    "_Your school has not yet added its local crisis helpline numbers to this system. "
+    "Please also speak to someone at school as soon as you can._\n"
+)
+
+CRISIS_ESCALATION_MESSAGE = _CRISIS_OPENING + _UNCONFIGURED_RESOURCES + _CRISIS_CLOSING
+
+
+def compose_crisis_message(resources: Optional[object] = None) -> str:
+    """The crisis message, using the school's own helplines when it has them.
+
+    `resources` is a `CrisisResourcesSettings` (schemas/sms_settings.py), or
+    None when no school context is available. It is typed loosely and
+    duck-checked so this module stays importable without the settings layer --
+    a crisis path that dies on an import is worse than one with generic
+    resources.
+
+    NEVER RAISES. Malformed configuration falls back to the unconfigured
+    message rather than propagating: a student in distress must receive
+    something, always.
+    """
+    if resources is None:
+        return CRISIS_ESCALATION_MESSAGE
+
+    try:
+        contacts = list(getattr(resources, "resources", None) or [])
+        emergency = getattr(resources, "emergency_number", None)
+        extra = getattr(resources, "extra_guidance", None)
+
+        if not contacts and not emergency:
+            return CRISIS_ESCALATION_MESSAGE
+
+        lines = ["\U0001F198 **Immediate confidential support:**\n"]
+        for c in contacts:
+            label = str(getattr(c, "label", "") or "").strip()
+            contact = str(getattr(c, "contact", "") or "").strip()
+            if not label or not contact:
+                # A half-filled row is skipped rather than rendered as a
+                # dangling bullet a child might try to act on.
+                continue
+            desc = str(getattr(c, "description", "") or "").strip()
+            suffix = (" -- " + desc) if desc else ""
+            lines.append("- **" + label + ":** " + contact + suffix + "\n")
+
+        if emergency:
+            lines.append("- **Emergency services:** " + str(emergency).strip() + "\n")
+
+        if len(lines) == 1:
+            # Every contact row was malformed and there is no emergency number.
+            return CRISIS_ESCALATION_MESSAGE
+
+        lines.append(
+            "- **Find a helpline in your country:** [findahelpline.com](https://findahelpline.com)\n"
+        )
+
+        if extra:
+            lines.append("\n" + str(extra).strip() + "\n")
+
+        return _CRISIS_OPENING + "".join(lines) + _CRISIS_CLOSING
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("compose_crisis_message failed; using unconfigured fallback")
+        return CRISIS_ESCALATION_MESSAGE
+
 
 VIOLENCE_ALERT_MESSAGE = (
     "I cannot assist with queries involving violence, weapons, or threats of harm. "
@@ -212,9 +292,35 @@ async def log_safety_incident(
             await db_session.rollback()
 
     if counselor_notified:
-        logger.warning(
-            "🚨 CRITICAL COUNSELOR ESCALATION: Student '%s' triggered '%s' alert with severity '%s'.",
-            student_id, trigger_category, severity
+        # Actually tell someone. Until this call existed, `counselor_notified`
+        # recorded an INTENTION and the only "escalation" was a log line no
+        # human was watching -- see src/services/ai/crisis_alerts.py.
+        # Dispatch never raises, so a mail outage cannot stop the student from
+        # receiving the crisis-support response.
+        from src.services.ai.crisis_alerts import dispatch_crisis_alert
+
+        delivered = await dispatch_crisis_alert(
+            db_session=db_session,
+            org_id=org_id,
+            student_label=str(student_id),
+            category=trigger_category,
+            severity=severity,
+            occurred_at=incident.created_at,
+            incident_id=incident.id,
         )
+
+        # Persist what actually happened, not what was requested. An incident
+        # row claiming `counselor_notified=True` when every send failed would
+        # make an undelivered crisis alert look handled in the counseling UI.
+        if not delivered and db_session and incident.id is not None:
+            try:
+                incident.counselor_notified = False
+                db_session.add(incident)
+                await db_session.commit()
+            except Exception:
+                logger.exception(
+                    "Failed to downgrade counselor_notified on incident id=%s", incident.id
+                )
+                await db_session.rollback()
 
     return incident

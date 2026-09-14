@@ -64,6 +64,24 @@ services:
     networks:
       - csg-local-network
 
+  tinybird-mock:
+    build:
+      context: ./deploy/tinybird-mock
+      dockerfile: Dockerfile
+    image: csg-lms/tinybird-mock:local
+    container_name: csg-lms-local-tinybird
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health')\" || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 3s
+    networks:
+      - csg-local-network
+
   api:
     build:
       context: ./apps/api
@@ -83,9 +101,23 @@ services:
       LEARNHOUSE_INITIAL_ADMIN_EMAIL: admin@csg.dev
       LEARNHOUSE_INITIAL_ADMIN_PASSWORD: AdminPassword123!
       LEARNHOUSE_AUTO_INSTALL: "true"
-      LEARNHOUSE_AI_ENABLED: "false"
+      LEARNHOUSE_IS_AI_ENABLED: "true"
+      LEARNHOUSE_AI_ENABLED: "true"
+      LEARNHOUSE_AI_PROVIDER: openrouter
+      LEARNHOUSE_AI_API_KEY: ${LEARNHOUSE_AI_API_KEY:-}
+      LEARNHOUSE_AI_MODEL_FAST: tencent/hy4-preview
+      LEARNHOUSE_AI_MODEL_STANDARD: z-ai/glm-5.3-flash
+      LEARNHOUSE_AI_MODEL_PRO: z-ai/glm-5.3-flash
+      LEARNHOUSE_AI_EMBEDDING_PROVIDER: openrouter
+      LEARNHOUSE_AI_EMBEDDING_MODEL: openai/text-embedding-3-small
+      LEARNHOUSE_GEMINI_API_KEY: ${LEARNHOUSE_GEMINI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       LEARNHOUSE_SAAS: "false"
       LEARNHOUSE_USE_DEFAULT_ORG: "false"
+      # Analytics configuration (Tinybird Mock for local environment)
+      LEARNHOUSE_TINYBIRD_API_URL: http://tinybird-mock:8080
+      LEARNHOUSE_TINYBIRD_INGEST_TOKEN: csg_local_dev_tinybird_ingest_token
+      LEARNHOUSE_TINYBIRD_READ_TOKEN: csg_local_dev_tinybird_read_token
       # Deliberately localhost + no JWKS/public-key override, so
       # is_hmac_dev_verification_active() stays true inside the container.
       KEYCLOAK_URL: http://localhost:8080
@@ -94,10 +126,15 @@ services:
       KEYCLOAK_CLIENT_ID: csg-lms-api
       LEARNHOUSE_AUTH_JWT_SECRET_KEY: csg_lms_super_secure_dev_jwt_secret_key_32chars_minimum_2026
       AUTH_JWT_SECRET_KEY: csg_lms_super_secure_dev_jwt_secret_key_32chars_minimum_2026
+    volumes:
+      - ./apps/api/src:/app/src
+      - ./apps/api/config:/app/config
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      tinybird-mock:
         condition: service_healthy
     ports:
       - "8000:9000"

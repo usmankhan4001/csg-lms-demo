@@ -92,22 +92,39 @@ async def batch_calculate_overdue_fines(
     session: AsyncSession,
     fine_per_day: float = 1.0,
     as_of_date: Optional[datetime.date] = None,
+    campus_id: Optional[int] = None,
 ) -> Tuple[int, float]:
     """
-    Evaluates all active loans against reference date, marks overdue items, and updates fines.
+    Evaluates active loans against reference date, marks overdue items, and updates fines.
+
+    `campus_id` restricts the run to one campus. Without it this charged every
+    overdue family in the ORG, so a librarian bound to one campus levied fines
+    on families at every other one. BookLoan carries no campus of its own, so
+    the scope is resolved through the book.
+
+    A book with a NULL campus_id is EXCLUDED from a campus-scoped run rather
+    than swept in: charging a family for an unfiled book, on the authority of a
+    campus that book may not belong to, is the worse error. Such loans are
+    still picked up by an org-wide run.
     """
     ref_date = as_of_date or datetime.date.today()
 
-    stmt = select(BookLoan).where(
-        and_(
-            or_(
-                BookLoan.status == BookLoanStatus.BORROWED,
-                BookLoan.status == BookLoanStatus.OVERDUE,
-            ),
-            BookLoan.due_date < ref_date,
-            BookLoan.returned_date.is_(None),
+    conditions = [
+        or_(
+            BookLoan.status == BookLoanStatus.BORROWED,
+            BookLoan.status == BookLoanStatus.OVERDUE,
+        ),
+        BookLoan.due_date < ref_date,
+        BookLoan.returned_date.is_(None),
+    ]
+    if campus_id is not None:
+        conditions.append(
+            BookLoan.book_id.in_(
+                select(LibraryBook.id).where(LibraryBook.campus_id == campus_id)
+            )
         )
-    )
+
+    stmt = select(BookLoan).where(and_(*conditions))
     overdue_loans = (await session.execute(stmt)).scalars().all()
 
     total_fines = 0.0

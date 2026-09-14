@@ -45,6 +45,7 @@ from src.services.orgs.orgs import (
     update_org_signup_mechanism,
     update_org_ai_config,
     update_org_communities_config,
+    update_org_school_module_config,
     update_org_payments_config,
     update_org_folders_config,
     update_org_folders_sort_config,
@@ -487,6 +488,36 @@ async def api_update_org_ai_config(
     """
     return await update_org_ai_config(
         request, ai_enabled, org_id, current_user, db_session, copilot_enabled=copilot_enabled
+    )
+
+
+@feature_config_router.put(
+    "/{org_id}/config/school-module",
+    summary="Enable or disable a CSG school module",
+    description=(
+        "Switch one CSG school module on or off for the organization. "
+        "Disabling hides the module's navigation entry and makes its API "
+        "return 403; it never deletes data. Admin only."
+    ),
+    responses={
+        200: {"description": "School module configuration updated."},
+        400: {"description": "Unknown school module key"},
+        401: {"description": "Not authenticated"},
+        403: {"description": "Caller is not an organization administrator"},
+        404: {"description": "Organization not found"},
+    },
+)
+async def api_update_org_school_module_config(
+    request: Request,
+    org_id: int,
+    module: str,
+    enabled: bool,
+    current_user: PublicUser = Depends(get_current_user),
+    db_session: AsyncSession = Depends(get_db_session),
+):
+    """Update one CSG school module toggle (admin-only)."""
+    return await update_org_school_module_config(
+        request, module, enabled, org_id, current_user, db_session
     )
 
 

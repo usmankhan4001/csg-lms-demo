@@ -98,8 +98,28 @@ async def assert_owns_section_or_privileged(
     endpoints where the id-to-check only exists after the request body is
     parsed (e.g. batch roll-call's `payload.section_id`), so it can't be a
     plain FastAPI dependency reading path/query params."""
-    if principal.is_superadmin or principal.has_role(SCHOOL_ADMIN):
+    if principal.is_superadmin:
         return
+
+    # A SCHOOL_ADMIN bypasses the "must teach it" rule, but NOT campus
+    # isolation. This previously returned unconditionally, so a school admin
+    # bound to campus 2 could take roll-call for, and enter grades against,
+    # any section at any other campus in the org. ClassSection.campus_id is
+    # non-optional, so it is a reliable authority.
+    if principal.has_role(SCHOOL_ADMIN):
+        if principal.campus_id is None:
+            return  # org-level admin, no single campus to be bound to
+        section_campus = (
+            await db_session.execute(
+                select(ClassSection.campus_id).where(ClassSection.id == section_id)
+            )
+        ).scalar_one_or_none()
+        if section_campus is None or section_campus == principal.campus_id:
+            return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Multi-campus isolation policy prohibits cross-campus operations",
+        )
 
     user_id = principal.raw_claims.get("lh_user_id")
     if user_id is not None:
@@ -111,3 +131,62 @@ async def assert_owns_section_or_privileged(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="You can only submit attendance for a section you teach.",
     )
+
+
+# ---------------------------------------------------------------------------
+# Campus scoping.
+#
+# `require_campus_access` (core/keycloak_auth.py) is weaker than its name
+# suggests, in two ways that matter:
+#
+#   1. It reads only `request.path_params` and `request.query_params`, so a
+#      campus_id carried in the request BODY is never checked at all.
+#   2. It rejects only an EXPLICIT mismatch. An unscoped request -- no campus
+#      anywhere -- returns the principal untouched, so a campus-bound admin
+#      gets org-wide reach simply by omitting the field.
+#
+# Both were live: `generate_batch_salary_slips` filters on `payload.campus_id`,
+# so omitting it generated salary slips for every active staff member across
+# every campus. This resolves the campus a request actually operates on,
+# closing both holes, and is the single implementation the modules should use.
+# ---------------------------------------------------------------------------
+
+
+def resolve_scoped_campus_id(
+    principal: KeycloakUserPrincipal,
+    requested: "int | None",
+) -> "int | None":
+    """The campus this request may act on.
+
+    A campus-bound caller is pinned to their own campus whether they asked for
+    another one or asked for none. Only a caller with no campus of their own
+    (a SUPER_ADMIN, or an org-level admin) may operate org-wide, and only then
+    does this return None meaning "all campuses".
+
+    Returning the caller's campus rather than raising keeps unscoped requests
+    working -- they simply narrow to what the caller is entitled to, which is
+    almost always what they meant.
+    """
+    if principal.is_superadmin:
+        return requested
+    if principal.campus_id is not None:
+        return principal.campus_id
+    return requested
+
+
+def assert_campus_allowed(
+    principal: KeycloakUserPrincipal,
+    requested: "int | None",
+) -> None:
+    """Reject an explicit cross-campus request outright.
+
+    Use this where silently narrowing would be misleading -- a write that names
+    a campus should fail loudly rather than quietly land somewhere else.
+    """
+    if principal.is_superadmin or requested is None:
+        return
+    if principal.campus_id is not None and principal.campus_id != requested:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Multi-campus isolation policy prohibits cross-campus operations",
+        )

@@ -2,8 +2,8 @@
 
 import * as React from 'react'
 import { Inbox, type LucideIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { LH_GHOST_BUTTON, LH_PRIMARY_BUTTON } from './lh-styles'
 
 /**
  * The shared placeholder used for the Empty, Error, Offline and
@@ -32,10 +32,12 @@ export interface EmptyStateProps {
   className?: string
 }
 
+// Mirrors Learnhouse's own empty state (dash/podcasts/client.tsx): a large
+// muted circle holding a faint icon, on the light dash ground.
 const TONE_CLASSES: Record<EmptyStateTone, string> = {
-  neutral: 'bg-muted text-muted-foreground',
-  critical: 'bg-destructive/10 text-destructive',
-  caution: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+  neutral: 'bg-gray-100 text-gray-300',
+  critical: 'bg-rose-50 text-rose-400',
+  caution: 'bg-amber-50 text-amber-400',
 }
 
 export function EmptyState({
@@ -50,33 +52,33 @@ export function EmptyState({
 }: EmptyStateProps) {
   return (
     <div className={cn('flex flex-col items-center justify-center gap-3 px-6 py-12 text-center', className)}>
-      <div className={cn('flex size-12 items-center justify-center rounded-full', TONE_CLASSES[tone])}>
-        <Icon className="size-6" aria-hidden="true" />
+      <div className={cn('flex size-16 items-center justify-center rounded-full', TONE_CLASSES[tone])}>
+        <Icon className="size-8" aria-hidden="true" />
       </div>
-      <div className="max-w-sm space-y-1">
-        <p className="text-sm font-semibold text-foreground">{title}</p>
-        {description && <p className="text-sm text-muted-foreground">{description}</p>}
+      <div className="max-w-md space-y-1">
+        <p className="text-lg font-bold text-gray-600">{title}</p>
+        {description && <p className="text-sm text-gray-400">{description}</p>}
       </div>
       {(action || secondaryAction) && (
-        <div className="flex items-center gap-2">
+        <div className="mt-2 flex items-center gap-2">
           {action &&
             (action.href ? (
-              <Button asChild size="sm" variant={tone === 'critical' ? 'default' : 'outline'}>
-                <a href={action.href}>{action.label}</a>
-              </Button>
-            ) : (
-              <Button size="sm" variant={tone === 'critical' ? 'default' : 'outline'} onClick={action.onClick}>
+              <a href={action.href} className={LH_PRIMARY_BUTTON}>
                 {action.label}
-              </Button>
+              </a>
+            ) : (
+              <button type="button" onClick={action.onClick} className={LH_PRIMARY_BUTTON}>
+                {action.label}
+              </button>
             ))}
           {secondaryAction && (
-            <Button size="sm" variant="ghost" onClick={secondaryAction.onClick}>
+            <button type="button" onClick={secondaryAction.onClick} className={LH_GHOST_BUTTON}>
               {secondaryAction.label}
-            </Button>
+            </button>
           )}
         </div>
       )}
-      {code && <p className="mt-1 font-mono text-[11px] text-muted-foreground/70">Code: {code}</p>}
+      {code && <p className="mt-1 font-mono text-[11px] text-gray-400">Code: {code}</p>}
     </div>
   )
 }

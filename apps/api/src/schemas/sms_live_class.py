@@ -1,5 +1,5 @@
 import datetime
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -68,3 +68,91 @@ class LiveClassSessionWithTokenResponse(BaseModel):
     session: LiveClassSessionRead
     token: str
     livekit_url: str
+
+
+# ── Live class as a school module (M02): scheduling, recording, coursework ──
+
+
+class ScheduleLiveClassRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    start_time: datetime.datetime
+    end_time: Optional[datetime.datetime] = None
+    section_id: Optional[int] = Field(None, description="Class section this belongs to")
+    course_id: Optional[int] = Field(None, description="Course this belongs to")
+    description: Optional[str] = None
+    teacher_id: Optional[int] = Field(
+        None,
+        description=(
+            "Host teacher. Ignored for a teacher scheduling their own class -- "
+            "they are the host. Only an admin may schedule on someone's behalf."
+        ),
+    )
+    recording_enabled: bool = Field(
+        False,
+        description=(
+            "Opt in to recording this class. Off by default: these are rooms "
+            "full of children, so recording is never implicit."
+        ),
+    )
+
+
+class LiveClassRecordingRead(BaseModel):
+    """Recording state, always honest about why there is no recording."""
+
+    enabled: bool
+    shared_with_students: bool
+    status: str
+    note: Optional[str] = None
+    url: Optional[str] = None
+    started_at: Optional[datetime.datetime] = None
+    completed_at: Optional[datetime.datetime] = None
+    duration_seconds: Optional[float] = None
+
+
+class LiveClassCourseworkRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    session_id: int
+    activity_id: int
+    attached_by_user_id: int
+    note: Optional[str] = None
+    created_at: datetime.datetime
+
+
+class LiveClassDetailRead(BaseModel):
+    """A scheduled class as the management UI consumes it."""
+
+    id: int
+    title: str
+    description: Optional[str] = None
+    room_name: str
+    teacher_id: int
+    section_id: Optional[int] = None
+    course_id: Optional[int] = None
+    start_time: datetime.datetime
+    end_time: Optional[datetime.datetime] = None
+    status: str = Field(..., description="SCHEDULED | LIVE | ENDED | CANCELLED")
+    cancelled_reason: Optional[str] = None
+    recording: LiveClassRecordingRead
+    coursework: List[LiveClassCourseworkRead] = []
+    can_host: bool = Field(
+        False, description="Whether the CALLER may host/manage this class"
+    )
+
+
+class AttachCourseworkRequest(BaseModel):
+    activity_id: int = Field(..., description="An existing Learnhouse activity id")
+    note: Optional[str] = None
+
+
+class CancelLiveClassRequest(BaseModel):
+    reason: Optional[str] = Field(None, max_length=500)
+
+
+class SetRecordingRequest(BaseModel):
+    enabled: bool
+
+
+class ShareRecordingRequest(BaseModel):
+    shared: bool

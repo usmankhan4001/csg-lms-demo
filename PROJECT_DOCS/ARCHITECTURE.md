@@ -1,102 +1,269 @@
-# Architecture — As It Actually Stands
+# Architecture
 
-This describes the system as verified in code, not as originally pitched. For the module-by-module build status, see [STATUS.md](./STATUS.md). For how bugs in this architecture were found, see [BUGFIXES_LOG.md](./BUGFIXES_LOG.md).
+How the system is built, verified against the code. For what each module does
+see [MODULES.md](./MODULES.md); for why particular choices were made see
+[DECISIONS.md](./DECISIONS.md); for what is missing see
+[KNOWN_GAPS.md](./KNOWN_GAPS.md).
 
 ## What this is
 
-A fork of [Learnhouse](https://github.com/learnhouse/learnhouse) (AGPLv3 — Next.js + FastAPI + Postgres + a Hocuspocus/Yjs collab service), with a second layer of custom "school SMS" and "AI RevOps/Tutor" modules added on top. The base Learnhouse course-authoring, collaboration, and org/auth system is upstream code, not something built for this project. The custom layer (`sms_*`, `revops_*`, `ai_tutor`, `ai_student_profile`, the CSG dashboard pages under `apps/web/app/(dashboard)`) is what this project actually built.
+A fork of [Learnhouse](https://github.com/learnhouse/learnhouse) (AGPLv3 —
+Next.js + FastAPI + Postgres + a Hocuspocus/Yjs collab service), with a school
+management layer and an AI layer added on top.
 
-This is explicitly a **separate, non-commercial experiment**, kept apart from the "official" CSG-LMS product defined in the sibling `CSG-LMS.wiki` repository (NestJS/Drizzle/RabbitMQ, a different architecture entirely). That wiki is read-only reference here — nothing in it is modified by this project.
+The base Learnhouse course-authoring, collaboration and org/auth system is
+upstream code. The custom layer is the `sms_*` / `revops_*` / `ai_*` routers, the
+school dash modules under `apps/web/app/orgs/[orgslug]/dash/`, and the Expo app.
 
-Because the base is AGPLv3, anything derived from it and run as a network service must make its source available to users of that service (AGPLv3 §13) — relevant if this is ever exposed beyond fully internal, non-networked use.
+Because the base is AGPLv3, anything derived from it and run as a network service
+must make its source available to users of that service (AGPLv3 §13).
 
-## Backend module layout
+> **Note:** an older version of this document described the custom layer as
+> living in `apps/web/app/(dashboard)`. That directory was **retired** — it was a
+> second, parallel app shell that still rendered and had drifted out of sync. All
+> school UI now lives inside Learnhouse's own shells.
 
-```
-apps/api/src/
-├── routers/
-│   ├── sms_campus.py, sms_attendance.py, sms_timetable.py, sms_gradebook.py,
-│   │   sms_fees.py, sms_financials.py, sms_hr.py, sms_payroll.py,
-│   │   sms_library.py, sms_revops.py, sms_teacher_tools.py, sms_counseling.py
-│   ├── ai_tutor.py, ai_student_profile.py
-│   └── live_classes.py
-├── db/            # SQLModel tables per module (sms_*.py, ai_knowledge_graph.py)
-├── services/
-│   ├── sms/       # business logic per SMS module
-│   └── ai/        # socratic_tutor.py, crisis_classifier.py, knowledge_graph.py,
-│                  # revops_lead_scoring.py, revops_sdr_agent.py, revops_drip_engine.py,
-│                  # revops_offer_generator.py, content_guardrails.py
-├── core/
-│   ├── keycloak_auth.py       # JWT verification — see "Auth: two systems" below
-│   ├── dev_tokens.py          # mints Keycloak-shaped JWTs locally for dev
-│   ├── events.py              # in-process pub/sub event bus (Phase 0)
-│   └── deployment_mode.py
-└── security/features_utils/   # per-org feature toggles (resolve.py, dependencies.py)
-```
-
-All 12 SMS/RevOps/Tutor routers listed above are mounted with a Keycloak-auth dependency (verify: `grep -rl "Depends(keycloak_auth" src/routers/sms_*.py`) — this was **not** true earlier in the project; see the [BUGFIXES_LOG.md](./BUGFIXES_LOG.md) entry "No auth on 9 of 12 routers."
-
-### Per-org feature toggles
-
-Every SMS sub-module (not just the three pillars) has its own toggle, reusing Learnhouse's existing `OrganizationConfig`/`AdminToggles` JSON-blob mechanism (`apps/api/src/db/organization_config.py`) rather than inventing a new one. `resolve_feature()`/`resolve_all_features()` (`src/security/features_utils/resolve.py`) do the actual resolution; `require_<feature>_feature()` dependencies (`src/security/features_utils/dependencies.py`) gate routes. The frontend reads the same resolved-features payload to hide a disabled module's nav entry.
-
-### Realm roles
-
-`SUPER_ADMIN`, `SCHOOL_ADMIN`, `TEACHER`, `STUDENT`, `PARENT`, `STAFF`, `PSYCHOLOGIST` (`apps/api/src/core/keycloak_auth.py`'s `KeycloakRole` enum). Renamed from an earlier `CAMPUS_PRINCIPAL`/`ACCOUNTANT` naming to match the wiki's terminology.
-
-## Frontend layout
+## Repository layout
 
 ```
-apps/web/
-├── app/
-│   ├── (dashboard)/            # CSG portals: student/, teacher/, parent/, campus-admin/, admissions/
-│   ├── auth/login/, home/      # Learnhouse's own native auth + org picker
-│   ├── orgs/[orgslug]/         # Learnhouse's own org-scoped course/library/etc. pages
-│   ├── dev-login/              # bridge from Learnhouse session -> CSG dev Keycloak token
-│   └── api/auth/[...path]/     # server-side proxy to the FastAPI backend's /auth/*
-├── components/navigation/      # RoleSidebar, PortalHeader (CSG-specific)
-├── components/widgets/         # shared KpiCard/DataTable/SectionCard/EmptyState (7-state model)
-├── lib/api/
-│   ├── api-client.ts           # fetch wrapper for all sms_*/revops_* calls
-│   ├── dev-token.ts            # dev Keycloak JWT storage/decoding (localStorage)
-│   └── devLogin.ts             # mints + stores a dev token from a real Learnhouse session
-├── proxy.ts                    # tenancy/routing proxy — see "The proxy.ts gotcha" below
-└── services/config/config.ts   # runtime config resolution (see "Two backend URLs" below)
+apps/
+├── api/      FastAPI + SQLModel + Postgres (pgvector) + Redis + arq worker
+├── web/      Next.js — Learnhouse UI plus the school modules
+├── mobile/   Expo / React Native / NativeWind
+├── collab/   Hocuspocus/Yjs collaboration service (upstream)
+├── cli/      upstream CLI
+└── e2e/      Playwright
+scripts/      backup.sh, restore.sh, seed_school.py
+PROJECT_DOCS/ these documents
 ```
 
-## Auth: two systems, not one
+## The two frontend shells
 
-This is the single most important thing to understand about this codebase, and the source of most bugs found so far.
+This is the single most important structural fact about the web app.
 
-1. **Learnhouse native auth** (`components/Contexts/AuthContext.tsx`, `/auth/login`, `/api/auth/*`) — real, cookie-based, backed by the FastAPI backend's own user table. `admin@csg.dev` logs in here. This is what powers `/home`, `/orgs/[slug]/*`, course browsing, etc.
+| Shell | Path | Who | Nav |
+|---|---|---|---|
+| **Staff** | `apps/web/app/orgs/[orgslug]/dash/` | admins, teachers, back office, counsellors | `DashLeftMenu` / `DashMobileMenu` |
+| **Learner** | `apps/web/app/orgs/[orgslug]/(withmenu)/` | students, parents | `OrgMenu` |
 
-2. **Dev Keycloak-shaped JWT** (`lib/api/dev-token.ts`, `POST /api/v1/dev/mint_keycloak_token`) — a separate, dev-only token the SMS/RevOps/Tutor routers require, because they were built against a Keycloak-shaped `get_current_user_principal` dependency and **no real Keycloak server has ever been deployed for this project**. This token carries realm roles, `org_id`, `campus_id`, and convenience claims (`subject_id`, `section_id`, `children_ids`) the SMS pages use to answer "show me my data."
+School modules attach to the **staff** shell as ordinary dash modules — the same
+way Learnhouse's own Courses, Boards and Playgrounds do. They inherit
+`ClientAdminLayout`, the sidebar, and the command palette. The learner shell
+carries `my-school`, the AI tutor surface, and Learnhouse's own learner features.
 
-The two are bridged by `/dev-login` (`apps/web/app/dev-login/page.tsx` + `lib/api/devLogin.ts`): it takes your real Learnhouse access token, calls the mint endpoint (which independently requires a Learnhouse superadmin session), and stores the resulting JWT for `api-client.ts` to attach as a Bearer token on every SMS call.
+A third shell used to exist and was removed. Do not add a fourth.
 
-**Safety property of the mint endpoint** (`apps/api/src/routers/dev.py::mint_keycloak_token`): it 404s outright (not 403 — it doesn't even reveal it exists) the instant this deployment looks like it's pointed at a real Keycloak server (`is_hmac_dev_verification_active()` in `keycloak_auth.py`). It's inert-by-construction in any real deployment, not just gated by an env flag.
+### Module shells and tabs
 
-**A real Keycloak service is defined** in `docker-compose.prod.yml` / `deploy/keycloak/realm-export-csg-lms.json`, but **it has never been started or verified end-to-end** — the realm-export JSON has never been confirmed to import cleanly, and the API's JWT validation has never been checked against a live Keycloak instance. That's why `docker-compose.local.yml` deliberately excludes it.
+Each school module is **one sidebar entry** that opens a page with its own tab
+strip. Tab definitions live once in `apps/web/lib/school-modules.ts`; the strip
+is rendered by `DashPageShell` via its `module` prop
+(`apps/web/components/widgets/ModuleTabs.tsx`).
 
-## Two backend URLs (Docker networking)
+Access is **per tab**, not per module — a teacher opening Timetable cannot see
+the admin-only Generate tab. A failing tab is not rendered at all.
 
-In `docker-compose.local.yml`, the web and API run as **separate containers**. This means "the backend URL" is not one value — it depends on who's asking:
+## Identity
 
-| Caller | Correct URL | Why |
-|---|---|---|
-| Browser (client-side fetch) | `http://localhost:8000` (`NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL`) | Reaches the API container via the host's port mapping. |
-| Web container's own Node process (Server Components, Route Handlers, `proxy.ts`) | `http://api:9000` (`LEARNHOUSE_INTERNAL_API_URL`) | Docker-internal service DNS + the API's actual listen port. `localhost:8000` from *inside* the web container is the web container's own loopback — nothing listens there. |
+There is no Keycloak server. The name survives in the code because the principal
+object and its dependency functions were kept while the implementation beneath
+them was replaced.
 
-`services/config/config.ts`'s `deriveAPIUrl()` picks the internal URL when running server-side (`typeof window === 'undefined'`) and the public one otherwise. Every server-only file that builds its own backend URL (rather than going through `deriveAPIUrl()`/`getServerAPIUrl()`) has to apply the same preference independently — three separate files needed this fix (see [BUGFIXES_LOG.md](./BUGFIXES_LOG.md)), because nothing enforces it structurally. **If you add a new server-side fetch to the FastAPI backend, check which URL you're using.**
+```
+Learnhouse session (real, cookie/bearer)
+        │
+        ▼
+get_authenticated_user            apps/api/src/security/auth.py
+        │
+        ▼
+resolve_school_principal          apps/api/src/security/school_principal.py
+        │  reads SMSUserRole, injects SUPER_ADMIN when User.is_superadmin
+        ▼
+KeycloakUserPrincipal             (sub, org_id, campus_id, roles, raw_claims)
+        │
+        ▼
+get_current_user_principal        apps/api/src/core/keycloak_auth.py
+```
 
-## The `proxy.ts` gotcha (Next.js 16)
+Because ~90 call sites depend on `get_current_user_principal` **by name**,
+swapping the implementation beneath it required no changes to the routers.
 
-This project runs Next.js 16, where `middleware.ts` was renamed to **`proxy.ts`** (a real, breaking convention change — see `apps/web/AGENTS.md`'s standing warning that this is "not the Next.js you know"). `apps/web/proxy.ts` is the actual tenancy/routing layer:
+Key tables (`apps/api/src/db/sms_identity.py`):
 
-- Rewrites bare `/login`, `/signup`, etc. to `/auth/login`, `/auth/signup` internally — hitting `/auth/login` **directly** bypasses this and falls through to the org-scoped catch-all, which 404s.
-- Rewrites bare `/` (in single-tenancy mode) to `/orgs/{default_org_slug}/...` — so `app/(dashboard)/page.tsx` (the CSG portal-selector page mapped to bare `/`) is currently **unreachable**; nothing broken depends on it today, but don't assume `/` renders it.
-- Explicitly passes through `/student`, `/teacher`, `/parent`, `/campus-admin`, `/admissions`, `/live`, and `/dev-login` without rewriting — any **new** CSG top-level route needs to be added to this list or it will 404 the same way `/auth/login` does when hit directly.
+- **`SMSUserRole`** — `(user_id, org_id, campus_id, role)`. The source of truth
+  for who is what, replacing Keycloak realm-role claims.
+- **`StudentGuardian`** — the parent↔child link. `children_ids` must never be
+  client-supplied; it resolves from here.
 
-## Deployment status
+**`GET /api/v1/sms/me`** is the single identity source for both clients. It
+returns roles, org, campus, `student_id`, `staff_id`, `section_id` and
+`children_ids`.
 
-`dokploy-compose.yml`, `docker-compose.prod.yml`, and the Keycloak realm export exist on disk but have never been run to completion — a prior Dokploy deployment attempt was stopped before finishing. `docker-compose.local.yml` (Postgres + Redis + API + Web, no Keycloak) is the only path that has actually been run and tested through a real browser; see [LOCAL_SETUP.md](./LOCAL_SETUP.md).
+> The real Learnhouse access token carries **no role claim** — its payload is
+> `{sub, purpose, amr, exp, iat, type}` and `sub` is the email. Any client
+> reading roles from the token will get nothing. Roles come from `/sms/me`.
+
+## Authorization
+
+Three layers, applied together:
+
+1. **Role** — `require_roles([...])` as a FastAPI dependency. Each router defines
+   its own constant (`_BURSAR`, `_HR_ADMIN`, `_SAFEGUARDING`, …) rather than
+   sharing one list, because the right set genuinely differs per module.
+2. **Ownership** — `apps/api/src/security/school_ownership.py`:
+   `assert_owns_section_or_privileged`, `require_own_student_or_privileged`,
+   `get_own_children_ids`.
+3. **Campus scope** — `resolve_scoped_campus_id` (reads narrow to the caller's
+   campus) and `assert_campus_allowed` (writes naming another campus fail
+   loudly).
+
+> **`require_campus_access` is weaker than its name.** It reads only
+> `request.path_params` and `request.query_params` — a `campus_id` in the request
+> **body is never checked** — and it rejects only an *explicit* mismatch, so an
+> unscoped request gives a campus-bound admin org-wide reach. Use the
+> `school_ownership` helpers.
+
+**Never trust the body for identity or privilege.** `is_teacher`, `graded_by`,
+`approved_by`, `participant_id`, `marked_by` and `student_id` were all accepted
+from request payloads at various points and all now derive from the authenticated
+principal.
+
+## Feature toggles
+
+Reuses Learnhouse's own per-org toggle system rather than inventing a parallel
+one.
+
+```
+OrganizationConfig.config (JSON)
+  └── admin_toggles.<feature>.disabled
+        │
+        ▼
+resolve_feature / resolve_all_features    security/features_utils/resolve.py
+        │
+        ├─► require_<feature>_feature      → 403 at the router
+        └─► org info response              → nav hides the entry
+```
+
+Adding a toggle needs **no migration** — it is a JSON blob. But a feature must be
+registered in **both** `ALL_FEATURES` *and* the typed `AdminToggles` model, or it
+becomes enforced-but-unsettable (this happened to `sms_exam`).
+
+Administered at **Org settings → Modules** (`OrgEditModules`).
+
+## Schema strategy — read this before adding a field
+
+`SQLModel.metadata.create_all` runs at app boot
+(`apps/api/src/core/events/database.py:417`) and creates **missing tables**. It
+**never `ALTER`s an existing one.**
+
+| Change | What to do |
+|---|---|
+| New table | Nothing. `import_all_models()` registers it; `create_all` builds it. |
+| **New column on an existing table** | **Write an Alembic migration.** Without one, the code and every existing database silently disagree and the module 500s. |
+
+Alembic head: **`2f4c13b60f5b`**, 71 revisions, single head. The container
+entrypoint runs `alembic upgrade head` at startup.
+
+Two traps that have already cost time:
+
+- **Do not declare a `ForeignKey` in a migration to a table that `create_all`
+  builds at boot.** Alembic runs *first* in the entrypoint, so the constraint
+  would exist on fresh databases and be absent on migrated ones. Use a plain
+  integer.
+- **Do not declare `Index("ix_x_y", "y")` in `__table_args__` *and* `index=True`
+  on the same column.** SQLAlchemy auto-names a column index identically, so
+  `create_all` emits `CREATE INDEX` twice and **the API fails to boot.**
+
+Uniqueness involving a nullable column needs care: `NULL != NULL` in SQL, so a
+unique constraint spanning a nullable `campus_id` or `period_id` will not prevent
+duplicate rows in the NULL case. Those are enforced read-before-write in the
+service layer instead.
+
+## Audit trails
+
+Append-only, same shape in each case, written in the **same transaction** as the
+change so a crash cannot leave a record altered with no trail:
+
+| Table | Covers |
+|---|---|
+| `sms_grade_change_event` | mark changes |
+| `AttendanceChangeEvent` | register corrections |
+| fee change events | money mutations |
+| `sms_data_subject_request` | GDPR exports and erasures |
+| `SMSImpersonationEvent` | superadmin impersonation |
+
+Identifying columns are **snapshotted integers, not foreign keys** — an
+FK-linked trail would be destroyed by a `CASCADE` delete of the thing it
+describes.
+
+Note `UserAuditEvent` is upstream and scoped to *learner* actions; it is not the
+school audit trail.
+
+## Background jobs
+
+`arq` against Redis, registered in `apps/api/src/core/worker.py`:
+
+- weekly parent digest
+- hourly nurture-sequence advance (RevOps)
+- daily fee reminders (09:00 — deliberately not hourly; a balance changes on the
+  scale of days)
+
+All outbound mail routes through `services/notifications/service.py`, so a failed
+send is a visible `NotificationDelivery` row rather than a swallowed log line.
+
+## AI layer
+
+```
+services/ai/
+├── socratic_tutor.py        tutor, enrolment-scoped, rate-limited
+├── crisis_classifier.py     LOCAL regex — no model call, no network
+├── crisis_alerts.py         counsellor/principal dispatch, triage metadata only
+├── content_guardrails.py    age and subject appropriateness
+├── knowledge_graph.py       mastery DAG
+├── revops_*.py              SDR, drip, offers, research, marketing, copywriting
+└── llm/                     provider abstraction + token budgets
+```
+
+`revops_model_router.py` enforces a per-org monthly token budget.
+
+Two safety properties worth knowing:
+
+- **`classify_prompt_safety()` is synchronous and local.** All network calls in
+  `crisis_classifier.py` are in `log_safety_incident` (the DB write and alert
+  dispatch), not the classification. This is why crisis screening can run even
+  when AI consent is refused.
+- **`log_safety_incident` downgrades `counselor_notified` to `False`** when
+  delivery fails, so an undelivered alert never looks handled.
+
+## Frontend conventions
+
+Shared widgets in `apps/web/components/widgets/`:
+
+- `DashPageShell` — page chrome, takes a `module` prop for the tab strip
+- `SectionCard`, `DataTable`, `EmptyState`, `StatGrid`, `StatusChip`
+- `SchoolDialog` / `SchoolField` — **use these for every dialog**
+
+> Learnhouse's `DialogContent` ships with `gap-0` and **no padding**; each
+> consumer supplies its own. A dialog written against shadcn defaults renders
+> with the title overlapping the first field. `SchoolDialog` encodes the correct
+> padding.
+
+Data fetching is a small `useApiResource` hook — no SWR or React Query.
+
+Every screen implements seven states: Default, Loading, Empty, Error, Offline,
+Permission-denied, Success.
+
+Ctrl+K is fed by `page.search.ts` files collected in
+`apps/web/lib/dashboard-search/registry.ts`. Entries carry a `featureKey` and a
+`schoolAccess` level so discovery gating matches the sidebar — a teacher cannot
+find Payroll through search.
+
+## Deployment
+
+- **Local:** `docker-compose.local.yml` — api, web, postgres, redis, livekit,
+  collab.
+- **Production:** `dokploy-compose.yml` via Dokploy. The API entrypoint runs
+  `alembic upgrade head` before starting.
+- **LiveKit:** `docker-compose.livekit.yml` carries an ICE fix
+  (`rtc.node_ip`) — without it LiveKit advertises its Docker-internal IP and
+  participants never connect.

@@ -50,3 +50,37 @@ export type TeacherMoreStackParamList = {
 };
 
 export type EnrollmentWithLabel = StudentEnrollmentRead & { label?: string };
+
+// ── PARENT ──
+// `studentId` is only ever taken from the server-resolved children list
+// (GET /sms/me -> children_ids); it is a navigation convenience, not a
+// trust boundary. Every per-child endpoint re-checks guardianship via
+// `require_own_student_or_privileged`, so a wrong id here yields a 403,
+// not another family's data.
+
+export type ParentHomeStackParamList = {
+  HomeMain: undefined;
+  ChildDetail: { studentId: number; name: string };
+};
+
+export type ParentChildrenStackParamList = {
+  ChildrenMain: undefined;
+  ChildDetail: { studentId: number; name: string };
+};
+
+export type ParentFeesStackParamList = {
+  FeesMain: undefined;
+};
+
+export type ParentMessagesStackParamList = {
+  MessagesMain: undefined;
+  ThreadDetail: { threadId: number; subject: string };
+};
+
+export type ParentMoreStackParamList = {
+  MoreMain: undefined;
+};
+
+export type StaffDirectoryStackParamList = {
+  DirectoryMain: undefined;
+};

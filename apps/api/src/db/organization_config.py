@@ -190,6 +190,18 @@ class AdminToggles(BaseModel):
     sms_attendance: FeatureAdminToggle = FeatureAdminToggle()
     sms_timetable: FeatureAdminToggle = FeatureAdminToggle()
     sms_gradebook: FeatureAdminToggle = FeatureAdminToggle()
+    # M04 Exams (src/routers/sms_exam.py). Registered in ALL_FEATURES when the
+    # module landed but the matching AdminToggles field was skipped, so the
+    # toggle resolved correctly yet could never be SET through this typed
+    # surface -- only by hand-editing the config JSON. Its own key rather than
+    # reusing sms_gradebook: a school can run continuous assessment without
+    # formal exams, and exam results feed the gradebook rather than the reverse.
+    sms_exam: FeatureAdminToggle = FeatureAdminToggle()
+    # M34 / M36. Registered in ALL_FEATURES alongside these fields so the flag
+    # is both enforceable AND settable -- the sms_exam mismatch above is the
+    # cautionary case for splitting the two.
+    sms_inventory: FeatureAdminToggle = FeatureAdminToggle()
+    sms_hostel: FeatureAdminToggle = FeatureAdminToggle()
     sms_fees: FeatureAdminToggle = FeatureAdminToggle()
     sms_financials: FeatureAdminToggle = FeatureAdminToggle()
     # HR and Payroll share ONE toggle: salary structures/slips FK straight to
@@ -199,6 +211,10 @@ class AdminToggles(BaseModel):
     # data (or vice versa) -- combining them avoids that inconsistent state.
     sms_hr_payroll: FeatureAdminToggle = FeatureAdminToggle()
     sms_library: FeatureAdminToggle = FeatureAdminToggle()
+    # M19 cross-module reports (src/routers/sms_reports.py). Gets its own
+    # toggle rather than reusing a source module's, because it reads four of
+    # them and no single one owns it.
+    sms_reports: FeatureAdminToggle = FeatureAdminToggle()
     revops: FeatureAdminToggle = FeatureAdminToggle()
     # Phase 4, Part B: Counseling / Wellbeing / Career Guidance module
     # (src/routers/sms_counseling.py). Part A's teacher-module additions

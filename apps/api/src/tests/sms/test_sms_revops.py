@@ -34,6 +34,7 @@ from src.routers.sms_revops import (
     update_lead_endpoint,
     update_lead_stage_endpoint,
 )
+from src.tests.sms._principals import SUPERADMIN
 
 
 @pytest.mark.asyncio
@@ -54,7 +55,8 @@ async def test_admissions_lead_lifecycle_and_kanban_pipeline(db: AsyncSession):
         budget_range="$10k-$15k",
         notes="Interested in STEM and Robotics programs.",
     )
-    lead = await create_lead_endpoint(payload=create_payload, session=db)
+    lead = await create_lead_endpoint(payload=create_payload, session=db,
+        principal=SUPERADMIN)
     assert lead.id is not None
     assert lead.student_name == "Alice Doe"
     assert lead.stage == LeadStage.NEW_INQUIRY
@@ -76,12 +78,14 @@ async def test_admissions_lead_lifecycle_and_kanban_pipeline(db: AsyncSession):
             notes="Walk-in inquiry during open house.",
         ),
         session=db,
+            principal=SUPERADMIN,
     )
     assert lead2.id is not None
     assert lead2.lead_score >= lead.lead_score  # WALK_IN has higher source weight
 
     # 3. Check Kanban Pipeline Structure
-    pipeline = await get_pipeline_endpoint(campus_id=1, session=db)
+    pipeline = await get_pipeline_endpoint(campus_id=1, session=db,
+        principal=SUPERADMIN)
     assert pipeline.total_leads == 2
     # 8 stages: the original 7-stage pipeline plus STALLED, which loops a
     # non-converted lead back to NEW_INQUIRY per the loop-funnel redesign.
@@ -124,7 +128,8 @@ async def test_admissions_lead_lifecycle_and_kanban_pipeline(db: AsyncSession):
     assert stage_update.lead_score >= detail.lead_score  # stage progression boosts score
 
     # 6. Check updated pipeline grouping
-    updated_pipeline = await get_pipeline_endpoint(campus_id=1, session=db)
+    updated_pipeline = await get_pipeline_endpoint(campus_id=1, session=db,
+        principal=SUPERADMIN)
     tour_stage = next(s for s in updated_pipeline.stages if s.stage == LeadStage.TOUR_BOOKED)
     assert tour_stage.count == 1
     assert tour_stage.leads[0].id == lead.id
@@ -149,6 +154,7 @@ async def test_dynamic_scholarship_offer_and_enrollment(db: AsyncSession):
             notes="High academic achiever, requested merit scholarship evaluation.",
         ),
         session=db,
+            principal=SUPERADMIN,
     )
 
     # 2. Advance stage to ASSESSMENT_SCHEDULED
@@ -187,7 +193,8 @@ async def test_dynamic_scholarship_offer_and_enrollment(db: AsyncSession):
     assert lead_detail.offers[0].id == offer.id
 
     # 5. List and retrieve offers
-    offers_list = await list_offers_endpoint(lead_id=lead.id, session=db)
+    offers_list = await list_offers_endpoint(lead_id=lead.id, session=db,
+        principal=SUPERADMIN)
     assert len(offers_list) == 1
 
     single_offer = await get_offer_endpoint(offer_id=offer.id, session=db)
@@ -223,6 +230,7 @@ async def test_batch_ai_scoring_and_filtering(db: AsyncSession):
             source=LeadSource.META_ADS,
         ),
         session=db,
+            principal=SUPERADMIN,
     )
     l2 = await create_lead_endpoint(
         payload=LeadCreate(
@@ -237,6 +245,7 @@ async def test_batch_ai_scoring_and_filtering(db: AsyncSession):
             notes="Ready to enroll immediately.",
         ),
         session=db,
+            principal=SUPERADMIN,
     )
 
     # Run batch AI scoring
@@ -253,12 +262,14 @@ async def test_batch_ai_scoring_and_filtering(db: AsyncSession):
     assert "source_score" in r2.breakdown
 
     # Search filter testing
-    search_results = await list_leads_endpoint(search="Santana", session=db)
+    search_results = await list_leads_endpoint(search="Santana", session=db,
+        principal=SUPERADMIN)
     assert len(search_results) == 1
     assert search_results[0].parent_name == "Carlos Santana"
 
     # Stage filter testing
-    inquiry_results = await list_leads_endpoint(stage=LeadStage.NEW_INQUIRY, session=db)
+    inquiry_results = await list_leads_endpoint(stage=LeadStage.NEW_INQUIRY, session=db,
+        principal=SUPERADMIN)
     assert len(inquiry_results) >= 2
 
     # Update basic lead details
@@ -293,6 +304,7 @@ async def test_stalled_lead_loopback_transition_and_audit_log(db: AsyncSession):
             source=LeadSource.META_ADS,
         ),
         session=db,
+            principal=SUPERADMIN,
     )
 
     # Advance a bit, then stall out (lead exits active nurture without converting)
@@ -336,7 +348,8 @@ async def test_stalled_lead_loopback_transition_and_audit_log(db: AsyncSession):
 
     # Kanban pipeline recognizes the STALLED bucket even though this lead has
     # already looped back out of it.
-    pipeline = await get_pipeline_endpoint(campus_id=3, session=db)
+    pipeline = await get_pipeline_endpoint(campus_id=3, session=db,
+        principal=SUPERADMIN)
     stalled_group = next(s for s in pipeline.stages if s.stage == LeadStage.STALLED)
     assert stalled_group.count == 0
 
@@ -362,6 +375,7 @@ async def test_inbound_outbound_origin_tagging(db: AsyncSession):
             origin=LeadOrigin.INBOUND,
         ),
         session=db,
+            principal=SUPERADMIN,
     )
     assert inbound_lead.origin == LeadOrigin.INBOUND
 
@@ -377,6 +391,7 @@ async def test_inbound_outbound_origin_tagging(db: AsyncSession):
             source=LeadSource.META_ADS,
         ),
         session=db,
+            principal=SUPERADMIN,
     )
     assert outbound_lead.origin == LeadOrigin.OUTBOUND
 
@@ -385,11 +400,13 @@ async def test_inbound_outbound_origin_tagging(db: AsyncSession):
     assert detail.origin == LeadOrigin.OUTBOUND
 
     # Filterable via list endpoint
-    outbound_results = await list_leads_endpoint(campus_id=4, origin=LeadOrigin.OUTBOUND, session=db)
+    outbound_results = await list_leads_endpoint(campus_id=4, origin=LeadOrigin.OUTBOUND, session=db,
+        principal=SUPERADMIN)
     assert len(outbound_results) == 1
     assert outbound_results[0].id == outbound_lead.id
 
-    inbound_results = await list_leads_endpoint(campus_id=4, origin=LeadOrigin.INBOUND, session=db)
+    inbound_results = await list_leads_endpoint(campus_id=4, origin=LeadOrigin.INBOUND, session=db,
+        principal=SUPERADMIN)
     assert len(inbound_results) == 1
     assert inbound_results[0].id == inbound_lead.id
 
@@ -414,6 +431,7 @@ async def test_consent_capture_and_update_endpoint(db: AsyncSession):
             whatsapp_consent=True,
         ),
         session=db,
+            principal=SUPERADMIN,
     )
     assert lead.whatsapp_consent is True
     assert lead.email_consent is False  # default opt-out until explicitly granted

@@ -108,7 +108,16 @@ class TestCrisisClassifier:
         assert result.category == AISafetyCategory.SELF_HARM
         assert result.severity == AISafetySeverity.CRITICAL
         assert result.counselor_escalation_required is True
-        assert "988" in result.canned_response
+        # Was: assert "988" in result.canned_response -- that pinned a
+        # HARDCODED US helpline into a system serving a school in Pakistan,
+        # where 988 does not connect. The message now carries the school's own
+        # resources, or an honest fallback when none are configured. Assert the
+        # support is real and no foreign number is implied.
+        assert result.canned_response is not None
+        assert "findahelpline.com" in result.canned_response
+        assert "adult you trust" in result.canned_response
+        for foreign in ("988", "911", "741741"):
+            assert foreign not in result.canned_response
 
     def test_violence_trigger(self):
         result = classify_prompt_safety("I'm going to bring a gun to school and shoot up the place")
@@ -190,7 +199,12 @@ class TestSocraticGuidanceStream:
             mock_gen.assert_not_called()
 
         full_output = "".join(chunks)
-        assert "988" in full_output
+        # Was: assert "988" in full_output. Third test in this file pinning a
+        # US-only helpline into a Pakistani deployment. The stream must carry
+        # real support, and must not imply a number that will not connect.
+        assert "findahelpline.com" in full_output
+        assert "adult you trust" in full_output
+        assert "988" not in full_output
         mock_session.add.assert_called_once()
 
     @pytest.mark.asyncio

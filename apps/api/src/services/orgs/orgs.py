@@ -1138,6 +1138,64 @@ async def _update_feature_toggle(
     return {"detail": f"{feature.capitalize()} configuration updated"}
 
 
+# The CSG school modules that an org admin may switch on and off. Kept as an
+# explicit allowlist rather than "anything in ALL_FEATURES" so that this
+# endpoint can never be used to flip a Learnhouse platform feature (or a
+# security toggle) that has its own dedicated, differently-validated route.
+#
+# sms_campus is deliberately absent: it is the multi-campus tenancy root every
+# other module hangs off, and is hardcoded into ALWAYS_ON_FEATURES.
+SCHOOL_MODULE_FEATURES = {
+    "sms_attendance",
+    "sms_timetable",
+    "sms_gradebook",
+    "sms_exam",
+    "sms_fees",
+    "sms_financials",
+    "sms_hr_payroll",
+    "sms_library",
+    "sms_reports",
+    "revops",
+    "tutor_counseling",
+}
+
+
+async def update_org_school_module_config(
+    request: Request,
+    module: str,
+    enabled: bool,
+    org_id: int,
+    current_user: PublicUser | AnonymousUser,
+    db_session: AsyncSession,
+):
+    """Enable or disable one CSG school module for an organization.
+
+    One generic route instead of eleven near-identical ones: these toggles all
+    have identical semantics, and a per-module endpoint would mean a new route
+    every time a module lands -- which is exactly how sms_exam ended up
+    resolvable but not settable.
+
+    Disabling NEVER deletes anything. It hides the module's navigation entry
+    and makes its API return 403; the records stay in the database and
+    reappear intact when the module is switched back on.
+    """
+    if module not in SCHOOL_MODULE_FEATURES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unknown school module '{module}'. "
+                f"Expected one of: {', '.join(sorted(SCHOOL_MODULE_FEATURES))}"
+            ),
+        )
+
+    # v1_default enabled=True: a school that has never touched these settings
+    # has every module ON, which is the behaviour before this endpoint existed.
+    return await _update_feature_toggle(
+        request, module, enabled, org_id, current_user, db_session,
+        v1_default={"enabled": True},
+    )
+
+
 async def update_org_communities_config(
     request: Request,
     communities_enabled: bool,
