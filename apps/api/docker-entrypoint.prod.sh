@@ -55,22 +55,22 @@ fi
 # 2. Parse and wait for Redis
 REDIS_CONN="${LEARNHOUSE_REDIS_URL:-$LEARNHOUSE_REDIS_CONNECTION_STRING}"
 if [ -n "$REDIS_CONN" ]; then
-    REDIS_HOST=$(echo "$REDIS_CONN" | sed -n 's|redis://\([^:/]*\):\([0-9]*\).*|\1|p')
-    REDIS_PORT=$(echo "$REDIS_CONN" | sed -n 's|redis://\([^:/]*\):\([0-9]*\).*|\2|p')
+    if echo "$REDIS_CONN" | grep -q '@'; then
+        REDIS_HOST=$(echo "$REDIS_CONN" | sed -n 's|.*@\([^:/]*\).*|\1|p')
+        REDIS_PORT=$(echo "$REDIS_CONN" | sed -n 's|.*@[^:/]*:\([0-9]*\).*|\1|p')
+    else
+        REDIS_HOST=$(echo "$REDIS_CONN" | sed -n 's|redis://\([^:/]*\).*|\1|p')
+        REDIS_PORT=$(echo "$REDIS_CONN" | sed -n 's|redis://[^:/]*:\([0-9]*\).*|\1|p')
+    fi
     
     if [ -z "$REDIS_PORT" ]; then
         REDIS_PORT=6379
     fi
     if [ -z "$REDIS_HOST" ]; then
-        REDIS_HOST=$(echo "$REDIS_CONN" | sed -n 's|redis://.*@\([^:/]*\):\([0-9]*\).*|\1|p')
-    fi
-    if [ -z "$REDIS_HOST" ]; then
-        REDIS_HOST=$(echo "$REDIS_CONN" | sed -n 's|redis://\([^:/]*\).*|\1|p')
+        REDIS_HOST="redis"
     fi
     
-    if [ -n "$REDIS_HOST" ]; then
-        wait_for_service "$REDIS_HOST" "$REDIS_PORT" "Redis Cache"
-    fi
+    wait_for_service "$REDIS_HOST" "$REDIS_PORT" "Redis Cache"
 fi
 
 # 3. Execute Alembic Migrations
