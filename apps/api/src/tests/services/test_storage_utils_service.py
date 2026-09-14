@@ -7,6 +7,7 @@ import pytest
 from botocore.exceptions import ClientError, NoCredentialsError
 
 import src.services.courses.transfer.storage_utils as storage_utils
+import src.services.utils.s3_client as s3_client_mod
 
 
 def _make_config(
@@ -157,12 +158,20 @@ class TestStorageClientHelpers:
             assert storage_utils.get_storage_client() is None
             boto_client.assert_not_called()
 
+        # get_storage_client() now delegates to the shared builder in
+        # services/utils/s3_client.py, which reads the config through its own
+        # import. Patching only storage_utils' reference would leave the builder
+        # reading the real environment, so both seams are patched here.
         with patch.object(
             storage_utils,
             "get_content_delivery_type",
             return_value="s3api",
         ), patch.object(
             storage_utils,
+            "get_learnhouse_config",
+            return_value=fake_config,
+        ), patch.object(
+            s3_client_mod,
             "get_learnhouse_config",
             return_value=fake_config,
         ), patch.object(
