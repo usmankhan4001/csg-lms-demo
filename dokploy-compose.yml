@@ -78,6 +78,12 @@ services:
       LEARNHOUSE_SQL_CONNECTION_STRING: postgresql+asyncpg://${POSTGRES_USER:-learnhouse}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-learnhouse}
       LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       LEARNHOUSE_REDIS_CONNECTION_STRING: redis://:${REDIS_PASSWORD}@redis:6379/0
+      LEARNHOUSE_DOMAIN: ${DOMAIN:-csginfotech.co}
+      LEARNHOUSE_FRONTEND_DOMAIN: ${APP_DOMAIN:-lms-demo.csginfotech.co}
+      LEARNHOUSE_ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://lms-demo.csginfotech.co,https://demo-lms.csginfotech.co,https://learnhouse.csginfotech.co,https://api-demo.csginfotech.co,https://collab-demo.csginfotech.co,https://livekit-demo.csginfotech.co,http://localhost:3000}
+      LEARNHOUSE_ALLOWED_REGEXP: ${ALLOWED_REGEXP:-^https?://([a-zA-Z0-9-]+\.)*csginfotech\.co(:\d+)?$}
+      LEARNHOUSE_COOKIE_DOMAIN: .csginfotech.co
+      LEARNHOUSE_COOKIE_DOMAIN_ALLOW_BROAD: "true"
       LEARNHOUSE_URL: ${APP_URL:-${LEARNHOUSE_URL:-https://${APP_DOMAIN:-lms-demo.csginfotech.co}}}
       LEARNHOUSE_AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY}
       AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY}

@@ -14,10 +14,55 @@ from pydantic import BaseModel, Field
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 from src.services.ai.llm import generate, generate_stream, model_for_tier
-from src.services.ai.crisis_classifier import classify_prompt_safety, log_safety_incident
+from src.services.ai.crisis_classifier import (
+    classify_prompt_safety,
+    compose_crisis_message,
+    log_safety_incident,
+)
 from src.db.ai_models import AISafetySeverity, AISafetyCategory
 
 logger = logging.getLogger(__name__)
+
+
+async def _safety_reply(
+    safety_result,
+    db_session: Optional[AsyncSession],
+    org_id: Optional[int],
+    fallback: str,
+) -> str:
+    """The message a flagged student actually sees, school-aware where possible.
+
+    `classify_prompt_safety` is sync regex with no database, so the message it
+    carries is always the UNCONFIGURED fallback -- the one that says the school
+    has not added its helplines yet. The Socratic tutor already upgrades that to
+    the school's own numbers; the live-class copilot never did, so a child in
+    distress in a live lesson got the "not configured" text even at a school
+    that had configured its helplines. This closes that gap using the same
+    lookup, so both surfaces stay in step.
+
+    NEVER RAISES: a settings lookup failing must not stop a student in distress
+    receiving support.
+    """
+    message = safety_result.canned_response or fallback
+    if (
+        db_session is None
+        or org_id is None
+        or safety_result.category != AISafetyCategory.SELF_HARM
+    ):
+        return message
+
+    try:
+        from src.services.sms.settings import get_crisis_resources
+
+        resources = await get_crisis_resources(db_session, org_id)
+        return compose_crisis_message(resources)
+    except Exception:
+        logger.exception(
+            "Could not load school crisis resources for org %s; "
+            "using the unconfigured message.",
+            org_id,
+        )
+        return message
 
 LIVE_COPILOT_SYSTEM_PROMPT = """You are the AI Teaching Assistant for a live interactive classroom.
 Your role is to answer student questions in real-time during an ongoing lecture without disrupting the class.
@@ -138,6 +183,7 @@ class LiveClassQAAssistant:
         course_id: Optional[str] = None,
         db_session: Optional[AsyncSession] = None,
         model_name: Optional[str] = None,
+        org_id: Optional[int] = None,
     ) -> LiveClassQAResponse:
         """
         Generates a contextual response to a student's live chat question based on what the teacher explained.
@@ -165,7 +211,12 @@ class LiveClassQAAssistant:
                 student_id=student_id,
                 student_name=student_name,
                 question=question,
-                answer=safety_result.canned_response or "Your message was flagged by safety filters.",
+                answer=await _safety_reply(
+                    safety_result,
+                    db_session,
+                    org_id,
+                    "Your message was flagged by safety filters.",
+                ),
                 safety_flagged=True,
             )
 
@@ -239,6 +290,7 @@ Provide a helpful, concise answer grounded in the teacher's recent explanation."
         course_id: Optional[str] = None,
         db_session: Optional[AsyncSession] = None,
         model_name: Optional[str] = None,
+        org_id: Optional[int] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Streams SSE tokens for live in-stream Q&A response.
@@ -261,7 +313,12 @@ Provide a helpful, concise answer grounded in the teacher's recent explanation."
                 except Exception as e:
                     logger.error("Failed to log live safety incident: %s", e)
 
-            yield safety_result.canned_response or "Your message was flagged by safety filters."
+            yield await _safety_reply(
+                safety_result,
+                db_session,
+                org_id,
+                "Your message was flagged by safety filters.",
+            )
             return
 
         transcript_context = self.format_transcript_context(session_id)

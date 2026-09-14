@@ -34,6 +34,12 @@ from src.services.ai.crisis_classifier import (
 FOREIGN_ONLY = ("988", "741741", "1-866-488-7386", "678-678", "(911)")
 
 
+async def _noop_incident(**kwargs):
+    """Incident logging is exercised by test_crisis_alerts.py; stubbed here so
+    these tests isolate which MESSAGE the student receives."""
+    return None
+
+
 def _configured() -> CrisisResourcesSettings:
     return CrisisResourcesSettings(
         resources=[
@@ -158,3 +164,88 @@ class TestTheClassifierStillCarriesAMessage:
         result = classify_prompt_safety("I want to end my life")
         for number in FOREIGN_ONLY:
             assert number not in result.canned_response
+
+
+class TestLiveClassCopilotUsesSchoolResources:
+    """The live-class copilot is the other surface a child can disclose on.
+
+    The Socratic tutor was upgraded to the school's own helplines; the live
+    copilot was not, so a student who disclosed self-harm during a live lesson
+    was told their school had not configured any numbers -- at a school that
+    had. Both surfaces must now answer the same way.
+    """
+
+    @pytest.mark.asyncio
+    async def test_self_harm_in_live_chat_serves_school_numbers(self, monkeypatch):
+        from src.services.ai import live_class_copilot as lcc
+
+        async def _fake_get_crisis_resources(session, org_id, campus_id=None):
+            assert org_id == 7
+            return _configured()
+
+        import src.services.sms.settings as settings_mod
+        monkeypatch.setattr(
+            settings_mod, "get_crisis_resources", _fake_get_crisis_resources
+        )
+
+        copilot = lcc.LiveClassQAAssistant()
+        monkeypatch.setattr(lcc, "log_safety_incident", _noop_incident)
+
+        resp = await copilot.answer_student_question(
+            session_id="s1",
+            student_id="stu-1",
+            student_name="A Student",
+            question="i want to kill myself",
+            db_session=object(),
+            org_id=7,
+        )
+
+        assert resp.safety_flagged is True
+        assert "Example School Helpline" in resp.answer
+        assert "has not yet added its local crisis helpline numbers" not in resp.answer
+
+    @pytest.mark.asyncio
+    async def test_without_org_context_falls_back_honestly(self, monkeypatch):
+        from src.services.ai import live_class_copilot as lcc
+
+        copilot = lcc.LiveClassQAAssistant()
+        monkeypatch.setattr(lcc, "log_safety_incident", _noop_incident)
+
+        resp = await copilot.answer_student_question(
+            session_id="s1",
+            student_id="stu-1",
+            student_name="A Student",
+            question="i want to kill myself",
+            db_session=None,
+            org_id=None,
+        )
+
+        # No school context means the honest unconfigured message -- never a
+        # guessed number, and never silence.
+        assert resp.safety_flagged is True
+        assert resp.answer == CRISIS_ESCALATION_MESSAGE
+
+    @pytest.mark.asyncio
+    async def test_settings_failure_still_answers(self, monkeypatch):
+        """A broken settings lookup must not leave a child with nothing."""
+        from src.services.ai import live_class_copilot as lcc
+
+        async def _boom(session, org_id, campus_id=None):
+            raise RuntimeError("settings backend down")
+
+        import src.services.sms.settings as settings_mod
+        monkeypatch.setattr(settings_mod, "get_crisis_resources", _boom)
+
+        copilot = lcc.LiveClassQAAssistant()
+        monkeypatch.setattr(lcc, "log_safety_incident", _noop_incident)
+
+        resp = await copilot.answer_student_question(
+            session_id="s1",
+            student_id="stu-1",
+            student_name="A Student",
+            question="i want to kill myself",
+            db_session=object(),
+            org_id=7,
+        )
+        assert resp.safety_flagged is True
+        assert resp.answer == CRISIS_ESCALATION_MESSAGE

@@ -340,6 +340,9 @@ async def api_live_class_qa(
         course_id=payload.course_id,
         db_session=db_session,
         model_name=payload.model_name,
+        # Without org context the crisis path can only serve the "your school
+        # has not configured helplines" fallback, even to a school that has.
+        org_id=principal.org_id,
     )
     return response
 

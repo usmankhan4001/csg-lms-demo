@@ -1,5 +1,6 @@
 """Tenancy-aware CORS configuration."""
 
+import os
 import re
 from urllib.parse import urlparse
 
@@ -32,8 +33,10 @@ def _single_tenancy_origin_regex(config) -> str:
     """
     hosts = set()
     for cfg_value in (
-        config.hosting_config.frontend_domain,
-        config.hosting_config.domain,
+        getattr(config.hosting_config, "frontend_domain", None),
+        getattr(config.hosting_config, "domain", None),
+        os.environ.get("LEARNHOUSE_URL"),
+        os.environ.get("APP_URL"),
     ):
         host = _host_from(cfg_value)
         # Exclude only the loopback hosts themselves (added separately below).
@@ -43,12 +46,23 @@ def _single_tenancy_origin_regex(config) -> str:
         if host and host not in ("localhost", "127.0.0.1"):
             hosts.add(host)
 
+    allowed_origins = getattr(config.hosting_config, "allowed_origins", None) or []
+    for origin in allowed_origins:
+        host = _host_from(origin)
+        if host and host not in ("localhost", "127.0.0.1"):
+            hosts.add(host)
+
     if not hosts:
+        allowed_regexp = getattr(config.hosting_config, "allowed_regexp", None)
+        if allowed_regexp:
+            return allowed_regexp
         return _SINGLE_TENANCY_LOCALHOST_REGEX
 
-    host_alternation = "|".join(
-        rf"(?:www\.)?{re.escape(h)}" for h in sorted(hosts)
-    )
+    host_patterns = []
+    for h in sorted(hosts):
+        host_patterns.append(rf"(?:[a-zA-Z0-9-]+\.)*{re.escape(h)}")
+
+    host_alternation = "|".join(host_patterns)
     return (
         rf"^https?://(?:{host_alternation}|localhost|127\.0\.0\.1)(:\d+)?$"
     )
@@ -92,3 +106,4 @@ def configure_cors(app: FastAPI) -> None:
         allow_credentials=True,
         allow_headers=["*"],
     )
+
