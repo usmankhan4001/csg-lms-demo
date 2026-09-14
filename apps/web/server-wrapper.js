@@ -15,8 +15,8 @@ const env = process.env;
 // Collect all NEXT_PUBLIC_* variables from the environment
 const runtimeConfig = {};
 
-// Additional non-NEXT_PUBLIC vars that need client-side access
-const EXTRA_CLIENT_VARS = ['LEARNHOUSE_PLATFORM_URL'];
+// Additional non-NEXT_PUBLIC vars that need client/SSR access
+const EXTRA_CLIENT_VARS = ['LEARNHOUSE_PLATFORM_URL', 'LEARNHOUSE_INTERNAL_API_URL'];
 
 Object.keys(env).forEach((key) => {
   if (key.startsWith('NEXT_PUBLIC_') || EXTRA_CLIENT_VARS.includes(key)) {

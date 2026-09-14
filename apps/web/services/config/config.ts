@@ -83,7 +83,14 @@ const getCookieValue = (name: string): string | null => {
 // Dynamic config getters - these are functions to ensure runtime values are used
 const getLEARNHOUSE_HTTP_PROTOCOL = () =>
   (getConfig('NEXT_PUBLIC_LEARNHOUSE_HTTPS') === 'true') ? 'https://' : 'http://'
-const getLEARNHOUSE_BACKEND_URL = () => getConfig('NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL', 'http://localhost/')
+const getLEARNHOUSE_BACKEND_URL = () => {
+  if (typeof window === 'undefined') {
+    const internalUrl = getConfig('LEARNHOUSE_INTERNAL_API_URL')
+    if (internalUrl) return internalUrl.replace(/\/+$/, '')
+  }
+  const backend = getConfig('NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL') || getConfig('NEXT_PUBLIC_LEARNHOUSE_API_URL') || 'http://localhost/'
+  return backend.replace(/\/+$/, '')
+}
 const getLEARNHOUSE_DOMAIN = () => {
   // 1. Env var (backward compat for existing deploys)
   const envVal = getConfig('NEXT_PUBLIC_LEARNHOUSE_DOMAIN')
@@ -144,30 +151,27 @@ export const isOnCustomDomain = (): boolean => {
 
 // Derive API URL from backend URL (with backward compat for NEXT_PUBLIC_LEARNHOUSE_API_URL)
 const deriveAPIUrl = (): string => {
-  // Backward compat: if explicit API URL is set, use it
-  const explicitApiUrl = getConfig('NEXT_PUBLIC_LEARNHOUSE_API_URL')
-  if (explicitApiUrl) return explicitApiUrl
-
   // Server-side (SSR/Server Components/Route Handlers): when the web process
   // runs in a different container from the API (e.g. Docker Compose),
-  // NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL is the *browser*-facing address and is
-  // unreachable from inside this process -- calling it here connects back to
-  // the web container's own loopback (nothing listens there), producing a
-  // ConnectionRefused that crashes every SSR org-resolution page with a
-  // generic "Minified React error #441" (confirmed via docker logs: digest
-  // matched a live user report exactly, path was `http://localhost:8000/...`
-  // from inside the web container). LEARNHOUSE_INTERNAL_API_URL (no
-  // NEXT_PUBLIC_ prefix -- must never reach the browser bundle) is the
-  // container-network address the server should use instead. Falls back to
-  // the public URL for single-host deployments where the two are the same.
+  // LEARNHOUSE_INTERNAL_API_URL (no NEXT_PUBLIC_ prefix) is the container-network address.
   if (typeof window === 'undefined') {
     const internalUrl = getConfig('LEARNHOUSE_INTERNAL_API_URL')
-    if (internalUrl) return `${internalUrl.replace(/\/+$/, '')}/api/v1/`
+    if (internalUrl) {
+      const cleaned = internalUrl.replace(/\/+$/, '')
+      return cleaned.endsWith('/api/v1') ? `${cleaned}/` : `${cleaned}/api/v1/`
+    }
+  }
+
+  // Backward compat: if explicit API URL is set, ensure it has /api/v1/ with trailing slash
+  const explicitApiUrl = getConfig('NEXT_PUBLIC_LEARNHOUSE_API_URL')
+  if (explicitApiUrl) {
+    const cleaned = explicitApiUrl.replace(/\/+$/, '')
+    return cleaned.endsWith('/api/v1') ? `${cleaned}/` : `${cleaned}/api/v1/`
   }
 
   // Derive from backend URL
   const backendUrl = getLEARNHOUSE_BACKEND_URL().replace(/\/+$/, '')
-  return `${backendUrl}/api/v1/`
+  return backendUrl.endsWith('/api/v1') ? `${backendUrl}/` : `${backendUrl}/api/v1/`
 }
 
 // For direct usage, these call the getters
