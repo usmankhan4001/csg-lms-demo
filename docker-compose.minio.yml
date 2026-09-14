@@ -1,0 +1,98 @@
+# Self-hosted S3-compatible object storage (MinIO).
+#
+# OPTIONAL overlay. Storage works three ways and this file is only needed for
+# the third:
+#
+#   * Cloudflare R2  -- set the S3_* variables, no extra service
+#   * AWS S3         -- set the S3_* variables, no extra service
+#   * MinIO          -- this file, for a school that wants no cloud account
+#
+# It unblocks something concrete: LiveKit class recording reports UNAVAILABLE
+# until an S3 backend exists, so an online school cannot record a lesson
+# without one.
+#
+# Usage:
+#   docker compose -f docker-compose.local.yml -f docker-compose.minio.yml up -d
+#
+# Required in your .env (no defaults -- see the note below):
+#   MINIO_ROOT_USER, MINIO_ROOT_PASSWORD
+#
+# The image is pulled from quay.io, MinIO's own registry, because Docker Hub
+# pulls of minio/minio require authentication in some environments.
+#
+# WHY THERE ARE NO DEFAULT CREDENTIALS: a published default secret was found in
+# docker-compose.prod.yml in this repo -- anyone reading it could have used it.
+# `${VAR:?...}` fails the command loudly instead of silently booting something
+# the whole internet can log into.
+
+services:
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: csg-lms-local-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set - choose your own, there is no default}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set - minimum 8 characters, there is no default}
+    ports:
+      # 9000 = S3 API, 9001 = web console.
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    networks:
+      - default
+
+  # One-shot: creates the bucket, then exits. Compose reruns it on every `up`,
+  # and `mb --ignore-existing` makes that a no-op, so this stays correct
+  # without anyone remembering a manual setup step.
+  minio-createbucket:
+    image: quay.io/minio/minio:latest
+    container_name: csg-lms-local-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:-csg-lms-storage}
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 \"$${MINIO_ROOT_USER}\" \"$${MINIO_ROOT_PASSWORD}\" &&
+      mc mb --ignore-existing local/\"$${S3_BUCKET_NAME}\" &&
+      echo 'bucket ready:' \"$${S3_BUCKET_NAME}\"
+      "
+    networks:
+      - default
+
+  api:
+    environment:
+      # Point the app at the MinIO service. These override whatever the base
+      # compose sets, so the same app image serves R2, AWS or MinIO unchanged.
+      LEARNHOUSE_STORAGE_TYPE: s3api
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set}
+      S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:-csg-lms-storage}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      # THE MINIO-SPECIFIC SETTING. botocore's "auto" resolves to virtual-hosted
+      # addressing for a custom endpoint, which points at "bucket.minio" -- a
+      # name that does not resolve. The error looks like a network failure and
+      # says nothing about addressing, so this is set explicitly here.
+      S3_ADDRESSING_STYLE: path
+      # Public URL for stored objects. Left unset by default: a guessed domain
+      # produces links that 404, and an absent URL is easier to diagnose than a
+      # broken one.
+      S3_PUBLIC_DOMAIN: ${S3_PUBLIC_DOMAIN:-}
+    depends_on:
+      minio:
+        condition: service_healthy
+
+volumes:
+  minio_data:

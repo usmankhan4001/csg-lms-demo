@@ -16,6 +16,7 @@ import boto3
 import botocore.config
 from botocore.exceptions import ClientError, NoCredentialsError
 from config.config import get_learnhouse_config
+from src.services.utils.s3_client import build_s3_client
 
 logger = logging.getLogger(__name__)
 
@@ -79,24 +80,10 @@ def get_storage_client():
     with _s3_client_lock:
         if _s3_client is not None:
             return _s3_client
-        learnhouse_config = get_learnhouse_config()
-        # Cloudflare R2 requires SigV4 and the "auto" region; without this,
-        # botocore falls back to SigV2 for presigned URLs (the legacy
-        # AWSAccessKeyId/Signature/Expires form), which R2 rejects with 401.
-        # Overridable via LEARNHOUSE_S3_API_REGION for real AWS S3 / MinIO, which
-        # validate the region against the endpoint.
-        region = os.environ.get("LEARNHOUSE_S3_API_REGION") or "auto"
-        _s3_client = boto3.client(
-            "s3",
-            endpoint_url=learnhouse_config.hosting_config.content_delivery.s3api.endpoint_url,
-            region_name=region,
-            config=botocore.config.Config(
-                signature_version="s3v4",
-                connect_timeout=10,
-                read_timeout=60,
-                retries={"max_attempts": 2},
-            ),
-        )
+        # SigV4, region and addressing style now live in the shared builder --
+        # this site used to be the only one that set them, so uploads and
+        # presigned downloads of the same object were configured differently.
+        _s3_client = build_s3_client()
         return _s3_client
 
 

@@ -28,6 +28,9 @@ verified, it says so.
 - **[LOCAL_SETUP.md](./LOCAL_SETUP.md)** — the runbook to get it running locally.
 - **[BACKUP_RESTORE.md](./BACKUP_RESTORE.md)** — backup and restore procedure.
   The restore path has genuinely been tested.
+- **[OBJECT_STORAGE.md](./OBJECT_STORAGE.md)** — R2, AWS S3 and MinIO. Storage
+  was wired to env var names the code never read; this explains the fix and how
+  to verify a real upload rather than assume one.
 - **[BUGFIXES_LOG.md](./BUGFIXES_LOG.md)** — earlier bug history with root
   causes. Worth checking before assuming something is broken.
 - **[STATUS.md](./STATUS.md)** — an earlier point-in-time status snapshot.

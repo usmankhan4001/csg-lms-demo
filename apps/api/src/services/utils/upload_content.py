@@ -9,6 +9,7 @@ from fastapi import HTTPException, UploadFile
 from config.config import get_learnhouse_config
 from src.security.file_validation import validate_upload
 from src.services.utils.video_processing import ensure_faststart
+from src.services.utils.s3_client import build_s3_client
 
 logger = logging.getLogger(__name__)
 
@@ -127,11 +128,7 @@ async def upload_content(
         await asyncio.to_thread(ensure_faststart, safe_path)
 
     elif content_delivery == "s3api":
-        s3 = boto3.client(
-            "s3",
-            endpoint_url=learnhouse_config.hosting_config.content_delivery.s3api.endpoint_url,
-            config=botocore.config.Config(connect_timeout=10, read_timeout=60, retries={"max_attempts": 2}),
-        )
+        s3 = build_s3_client()
 
         bucket_name = learnhouse_config.hosting_config.content_delivery.s3api.bucket_name or "learnhouse-media"
         local_path = safe_path
@@ -192,11 +189,7 @@ async def read_content(
     content_delivery = learnhouse_config.hosting_config.content_delivery.type
 
     if content_delivery == "s3api":
-        s3 = boto3.client(
-            "s3",
-            endpoint_url=learnhouse_config.hosting_config.content_delivery.s3api.endpoint_url,
-            config=botocore.config.Config(connect_timeout=10, read_timeout=60, retries={"max_attempts": 2}),
-        )
+        s3 = build_s3_client()
         bucket_name = learnhouse_config.hosting_config.content_delivery.s3api.bucket_name or "learnhouse-media"
         s3_key = f"content/{type_of_dir}/{uuid}/{directory}/{file_and_format}"
         try:

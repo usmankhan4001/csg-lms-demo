@@ -1,3 +1,4 @@
+import logging
 import os
 import yaml
 from typing import Literal, Optional
@@ -80,8 +81,23 @@ class AIConfig(BaseModel):
 
 
 class S3ApiConfig(BaseModel):
+    """S3-compatible object storage: AWS S3, Cloudflare R2, or self-hosted MinIO.
+
+    Credentials live here rather than only in boto3's ambient AWS_* chain so a
+    deployment can use the S3_* names its compose files already document. Both
+    spellings are accepted -- see `get_learnhouse_config`.
+    """
+
     bucket_name: str | None
     endpoint_url: str | None
+    access_key_id: str | None = None
+    secret_access_key: str | None = None
+    region: str | None = None
+    public_domain: str | None = None
+    # MinIO generally requires path-style addressing (host/bucket/key); AWS and
+    # R2 use virtual-hosted (bucket.host/key). "auto" lets botocore decide,
+    # which is correct for AWS/R2 and wrong for MinIO on an IP or bare host.
+    addressing_style: str | None = None
 
 
 class ContentDeliveryConfig(BaseModel):
@@ -422,30 +438,99 @@ def get_learnhouse_config() -> LearnHouseConfig:
         "frontend_domain", "localhost:3000"
     )
 
-    env_content_delivery_type = os.environ.get("LEARNHOUSE_CONTENT_DELIVERY_TYPE")
+    # Storage type. Accepts LEARNHOUSE_STORAGE_TYPE as well, because every
+    # compose file in this repo sets THAT name while the code only ever read
+    # LEARNHOUSE_CONTENT_DELIVERY_TYPE -- so an operator following the
+    # documented variables stayed on "filesystem" no matter what they set.
+    env_content_delivery_type = os.environ.get(
+        "LEARNHOUSE_CONTENT_DELIVERY_TYPE"
+    ) or os.environ.get("LEARNHOUSE_STORAGE_TYPE")
     content_delivery_type: str = env_content_delivery_type or (
         (yaml_config.get("hosting_config", {}).get("content_delivery", {}).get("type"))
         or "filesystem"
     )  # default to filesystem
+    # "local" is the compose files' spelling of the filesystem backend.
+    if content_delivery_type == "local":
+        content_delivery_type = "filesystem"
 
-    env_bucket_name = os.environ.get("LEARNHOUSE_S3_API_BUCKET_NAME")
-    env_endpoint_url = os.environ.get("LEARNHOUSE_S3_API_ENDPOINT_URL")
-    bucket_name = (
-        yaml_config.get("hosting_config", {})
-        .get("content_delivery", {})
-        .get("s3api", {})
-        .get("bucket_name")
-    ) or env_bucket_name
-    endpoint_url = (
-        yaml_config.get("hosting_config", {})
-        .get("content_delivery", {})
-        .get("s3api", {})
-        .get("endpoint_url")
-    ) or env_endpoint_url
+    _s3_yaml = (
+        yaml_config.get("hosting_config", {}).get("content_delivery", {}).get("s3api", {})
+        or {}
+    )
+
+    def _s3_env(*names: str) -> str | None:
+        """First non-empty value among these env names.
+
+        Both spellings are supported on purpose: the compose files and the
+        deployment's own .env use the short S3_* names, while the code
+        historically read LEARNHOUSE_S3_API_*. Accepting both means neither
+        has to be rewritten, and live_class_recording.py -- which already read
+        the short names -- stops being the odd one out.
+        """
+        for n in names:
+            v = (os.environ.get(n) or "").strip()
+            if v:
+                return v
+        return None
+
+    # NOTE: yaml wins over env here, preserved from the original code. In
+    # practice config.yaml ships these as "", so env is what takes effect.
+    bucket_name = _s3_yaml.get("bucket_name") or _s3_env(
+        "LEARNHOUSE_S3_API_BUCKET_NAME", "S3_BUCKET_NAME"
+    )
+    endpoint_url = _s3_yaml.get("endpoint_url") or _s3_env(
+        "LEARNHOUSE_S3_API_ENDPOINT_URL", "S3_ENDPOINT_URL"
+    )
+    # Credentials: boto3's ambient chain only reads AWS_*, so a deployment
+    # setting S3_ACCESS_KEY_ID got no credentials at all. All three spellings
+    # are accepted and passed to the client explicitly.
+    access_key_id = _s3_yaml.get("access_key_id") or _s3_env(
+        "LEARNHOUSE_S3_API_ACCESS_KEY_ID", "S3_ACCESS_KEY_ID", "AWS_ACCESS_KEY_ID"
+    )
+    secret_access_key = _s3_yaml.get("secret_access_key") or _s3_env(
+        "LEARNHOUSE_S3_API_SECRET_ACCESS_KEY",
+        "S3_SECRET_ACCESS_KEY",
+        "AWS_SECRET_ACCESS_KEY",
+    )
+    region = _s3_yaml.get("region") or _s3_env(
+        "LEARNHOUSE_S3_API_REGION", "S3_REGION", "AWS_REGION"
+    )
+    public_domain = _s3_yaml.get("public_domain") or _s3_env(
+        "LEARNHOUSE_S3_API_PUBLIC_DOMAIN", "S3_PUBLIC_DOMAIN"
+    )
+    addressing_style = _s3_yaml.get("addressing_style") or _s3_env(
+        "LEARNHOUSE_S3_API_ADDRESSING_STYLE", "S3_ADDRESSING_STYLE"
+    )
+
+    # Cloudflare's dashboard shows the R2 endpoint WITH the bucket appended
+    # (".../<account-id>.r2.cloudflarestorage.com/<bucket>"), and pasting that
+    # verbatim silently corrupts every key: boto3 appends the bucket again, so
+    # an object meant for "avatars/1.png" lands at "<bucket>/avatars/1.png".
+    # It does NOT error -- verified against MinIO -- so uploads appear to work
+    # while every public URL and every read by the correct key 404s.
+    if endpoint_url and bucket_name:
+        _stripped = endpoint_url.rstrip("/")
+        if _stripped.endswith("/" + bucket_name.strip("/")):
+            endpoint_url = _stripped[: -(len(bucket_name.strip("/")) + 1)]
+            logging.warning(
+                "S3 endpoint ended with the bucket name (%r); using %r instead. "
+                "The bucket is sent separately -- leaving it in the endpoint "
+                "would store every object under a duplicated prefix.",
+                _stripped,
+                endpoint_url,
+            )
 
     content_delivery = ContentDeliveryConfig(
         type=content_delivery_type,  # type: ignore
-        s3api=S3ApiConfig(bucket_name=bucket_name, endpoint_url=endpoint_url),  # type: ignore
+        s3api=S3ApiConfig(  # type: ignore
+            bucket_name=bucket_name,
+            endpoint_url=endpoint_url,
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            region=region,
+            public_domain=public_domain,
+            addressing_style=addressing_style,
+        ),
     )
 
     # Database config
@@ -488,9 +573,22 @@ def get_learnhouse_config() -> LearnHouseConfig:
 
     # Mailing config
     env_email_provider = os.environ.get("LEARNHOUSE_EMAIL_PROVIDER")
-    env_resend_api_key = os.environ.get("LEARNHOUSE_RESEND_API_KEY")
-    env_system_email_address = os.environ.get("LEARNHOUSE_SYSTEM_EMAIL_ADDRESS")
-    env_system_email_sender_name = os.environ.get("LEARNHOUSE_SYSTEM_EMAIL_SENDER_NAME")
+    # Same aliasing rationale as _s3_env above: dokploy-compose.yml and the
+    # deployment's own .env set the SHORT names (RESEND_API_KEY,
+    # EMAIL_FROM_ADDRESS, EMAIL_FROM_NAME), while this file historically read
+    # only the LEARNHOUSE_-prefixed ones. Nothing read the short spellings, so
+    # an operator could set RESEND_API_KEY, see no error, and still have every
+    # email silently fail -- including crisis alerts to a counsellor, which is
+    # the one path where silent failure is unacceptable. Accept both.
+    env_resend_api_key = os.environ.get(
+        "LEARNHOUSE_RESEND_API_KEY"
+    ) or os.environ.get("RESEND_API_KEY")
+    env_system_email_address = os.environ.get(
+        "LEARNHOUSE_SYSTEM_EMAIL_ADDRESS"
+    ) or os.environ.get("EMAIL_FROM_ADDRESS")
+    env_system_email_sender_name = os.environ.get(
+        "LEARNHOUSE_SYSTEM_EMAIL_SENDER_NAME"
+    ) or os.environ.get("EMAIL_FROM_NAME")
     env_smtp_host = os.environ.get("LEARNHOUSE_SMTP_HOST")
     env_smtp_port = os.environ.get("LEARNHOUSE_SMTP_PORT")
     env_smtp_username = os.environ.get("LEARNHOUSE_SMTP_USERNAME")

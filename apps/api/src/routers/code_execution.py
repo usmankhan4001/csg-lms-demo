@@ -213,14 +213,15 @@ def _read_storage_file(file_path: str) -> bytes:
         with open(resolved, "rb") as f:
             return f.read()
     elif content_delivery == "s3api":
-        import boto3
         from botocore.exceptions import ClientError
 
-        s3 = boto3.client(
-            "s3",
-            endpoint_url=config.hosting_config.content_delivery.s3api.endpoint_url,
-        )
-        bucket = config.hosting_config.content_delivery.s3api.bucket_name or "learnhouse-media"
+        from src.services.utils.s3_client import build_s3_client, get_s3_bucket_name
+
+        # Shared builder: this site previously set no region, no signature
+        # version and no credentials, so it could not read an object that the
+        # upload path had written to R2 or MinIO.
+        s3 = build_s3_client()
+        bucket = get_s3_bucket_name()
         try:
             response = s3.get_object(Bucket=bucket, Key=safe_path)
             return response["Body"].read()
