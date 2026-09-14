@@ -65,79 +65,6 @@ services:
         reservations:
           memory: 256M
 
-  # ── Keycloak 24/26 OIDC IAM ────────────────────────────────────────────────
-  # ---------------------------------------------------------------------------
-  # KEYCLOAK -- CANDIDATE FOR REMOVAL. NOTHING AUTHENTICATES AGAINST IT.
-  #
-  # `get_current_user_principal` (apps/api/src/core/keycloak_auth.py:469) now
-  # depends on `get_authenticated_user` -- a real Learnhouse session -- and
-  # builds the principal from the user's SMSUserRole grants. Its own docstring
-  # states the token-decoding path is "left in place below but unreferenced ...
-  # dormant insurance for a possible future real-Keycloak cutover".
-  #
-  # So this service costs a container, a database connection and a
-  # Traefik-exposed admin console at ${KEYCLOAK_HOSTNAME}, for no function.
-  # An exposed identity-provider admin surface that nothing uses is a
-  # liability, not a spare part.
-  #
-  # NOT REMOVED HERE, deliberately -- deleting a service from a deploy file is
-  # the owner's call, and note the API `depends_on` it with
-  # `condition: service_healthy` (see the api service below), so Keycloak
-  # failing currently blocks the entire API from starting for no reason.
-  #
-  # To remove it: delete this service block, the `keycloak` entry under the
-  # api service's `depends_on`, and the KEYCLOAK_* variables in the api and
-  # web environments. Keep KEYCLOAK_* only if a real cutover is planned.
-  # ---------------------------------------------------------------------------
-  keycloak:
-    image: quay.io/keycloak/keycloak:26.1.0
-    restart: always
-    command: ["start", "--import-realm"]
-    environment:
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-learnhouse}
-      KC_DB_USERNAME: ${POSTGRES_USER:-learnhouse}
-      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
-      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-auth.csginfotech.com}
-      KC_HOSTNAME_ADMIN: ${KEYCLOAK_HOSTNAME:-auth.csginfotech.com}
-      KC_HOSTNAME_STRICT: "false"
-      KC_HOSTNAME_STRICT_HTTPS: "true"
-      KC_HTTP_ENABLED: "true"
-      KC_PROXY_HEADERS: "xforwarded"
-      KC_HEALTH_ENABLED: "true"
-      KC_METRICS_ENABLED: "true"
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
-    volumes:
-      - ./deploy/keycloak/realm-export-csg-lms.json:/opt/keycloak/data/import/realm-export-csg-lms.json:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK' || exit 1"]
-      interval: 15s
-      timeout: 10s
-      retries: 6
-      start_period: 45s
-    networks:
-      - dokploy-network
-      - csg-internal
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.csg-auth.rule=Host(`${KEYCLOAK_DOMAIN:-${KEYCLOAK_HOSTNAME:-auth-demo.csginfotech.co}}`)"
-      - "traefik.http.routers.csg-auth.entrypoints=websecure"
-      - "traefik.http.routers.csg-auth.tls=true"
-      - "traefik.http.routers.csg-auth.tls.certresolver=letsencrypt"
-      - "traefik.http.services.csg-auth.loadbalancer.server.port=8080"
-      - "traefik.http.middlewares.csg-auth-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
-      - "traefik.http.routers.csg-auth.middlewares=csg-auth-headers"
-    deploy:
-      resources:
-        limits:
-          memory: 1536M
-        reservations:
-          memory: 512M
-
   # ── FastAPI Backend ─────────────────────────────────────────────────────────
   api:
     build:
@@ -152,13 +79,6 @@ services:
       LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       LEARNHOUSE_REDIS_CONNECTION_STRING: redis://:${REDIS_PASSWORD}@redis:6379/0
       LEARNHOUSE_URL: ${APP_URL:-${LEARNHOUSE_URL:-https://${APP_DOMAIN:-lms-demo.csginfotech.co}}}
-      KEYCLOAK_URL: ${KEYCLOAK_URL:-https://${KEYCLOAK_DOMAIN:-auth-demo.csginfotech.co}}
-      KEYCLOAK_SERVER_URL: http://keycloak:8080
-      KEYCLOAK_REALM: csg-lms
-      KEYCLOAK_CLIENT_ID: csg-lms-api
-      KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/csg-lms/protocol/openid-connect/certs
-      KEYCLOAK_ISSUER: ${KEYCLOAK_URL:-https://${KEYCLOAK_DOMAIN:-auth-demo.csginfotech.co}}/realms/csg-lms
-      KEYCLOAK_VERIFY_SIGNATURE: "true"
       LEARNHOUSE_AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY}
       AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY}
       COLLAB_INTERNAL_KEY: ${COLLAB_INTERNAL_KEY}
@@ -183,15 +103,14 @@ services:
       # Sentry
       SENTRY_DSN: ${SENTRY_DSN:-}
       # Tinybird Analytics (Pillar 2 / Admin Insights)
-      # Defaults to local tinybird-mock service if unset.
       LEARNHOUSE_TINYBIRD_API_URL: ${LEARNHOUSE_TINYBIRD_API_URL:-http://tinybird-mock:8080}
       LEARNHOUSE_TINYBIRD_INGEST_TOKEN: ${LEARNHOUSE_TINYBIRD_INGEST_TOKEN:-mock_ingest_token}
       LEARNHOUSE_TINYBIRD_READ_TOKEN: ${LEARNHOUSE_TINYBIRD_READ_TOKEN:-mock_read_token}
       # LiveKit Real-Time Video
       LIVEKIT_URL: ${LIVEKIT_URL:-wss://${LIVEKIT_DOMAIN:-${LIVEKIT_HOSTNAME:-livekit-demo.csginfotech.co}}}
       LIVEKIT_INTERNAL_URL: ws://livekit:7880
-      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-csg_livekit_key}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-csg_livekit_secret_minimum_32_chars_2026}
     depends_on:
       postgres:
         condition: service_healthy
@@ -227,21 +146,9 @@ services:
     image: livekit/livekit-server:v1.9.1
     restart: always
     environment:
-      LIVEKIT_CONFIG: |
-        port: 7880
-        rtc:
-          tcp_port: 7883
-          port_range_start: 50200
-          port_range_end: 50250
-          use_external_ip: true
-        keys:
-          ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
-        webhook:
-          api_key: ${LIVEKIT_API_KEY}
-          urls:
-            - http://api:9000/api/v1/live/webhooks
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-csg_livekit_key}: ${LIVEKIT_API_SECRET:-csg_livekit_secret_minimum_32_chars_2026}"
     ports:
-      - "7883:7883"
+      - "7883:7880"
       - "50200-50250:50200-50250/udp"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:7880/ || exit 1"]
