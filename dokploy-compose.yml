@@ -230,9 +230,9 @@ services:
       LIVEKIT_CONFIG: |
         port: 7880
         rtc:
-          tcp_port: 7881
-          port_range_start: 50000
-          port_range_end: 50100
+          tcp_port: 7883
+          port_range_start: 50200
+          port_range_end: 50250
           use_external_ip: true
         keys:
           ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
@@ -241,8 +241,8 @@ services:
           urls:
             - http://api:9000/api/v1/live/webhooks
     ports:
-      - "7881:7881"
-      - "50000-50100:50000-50100/udp"
+      - "7883:7883"
+      - "50200-50250:50200-50250/udp"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:7880/ || exit 1"]
       interval: 15s
@@ -265,23 +265,6 @@ services:
           memory: 1024M
         reservations:
           memory: 256M
-
-  # ── Cloudflare Tunnel ────────────────────────────────────────────────────────
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    restart: always
-    command: ["tunnel", "--no-autoupdate", "run"]
-    environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
-    networks:
-      - dokploy-network
-      - csg-internal
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 64M
 
   # ── Hocuspocus Real-Time Collab ─────────────────────────────────────────────
   collab:
