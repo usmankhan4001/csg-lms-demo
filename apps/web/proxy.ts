@@ -462,19 +462,31 @@ export default async function proxy(req: NextRequest) {
   }
 
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // 5a. Role portal shortcuts and legacy redirects
+  // -------------------------------------------------------------------------
+  if (pathname === '/student') {
+    return NextResponse.redirect(new URL(`/my-school${search}`, req.url))
+  }
+  if (pathname === '/teacher' || pathname.startsWith('/teacher/')) {
+    return NextResponse.redirect(new URL(`/dash${search}`, req.url))
+  }
+  if (pathname === '/parent' || pathname.startsWith('/parent/')) {
+    return NextResponse.redirect(new URL(`/my-school${search}`, req.url))
+  }
+  if (pathname === '/admissions' || pathname.startsWith('/admissions/')) {
+    return NextResponse.redirect(new URL(`/dash/admissions${search}`, req.url))
+  }
+
+  // -------------------------------------------------------------------------
   // 5b. Direct route pass-through for the few non-org-scoped CSG routes.
   //
-  //     Trimmed when `app/(dashboard)/` was retired. `/teacher`, `/parent`,
-  //     `/campus-admin` and `/admissions` were that shell's routes and no
-  //     longer exist -- matching them here would have rewritten a live URL to
-  //     a 404 instead of letting §11 resolve it. What remains:
   //       /student/* — the course lesson player (AI tutor chat), which lives
-  //                    at app/student/... and is NOT org-scoped, so the §11
-  //                    catch-all would wrongly send it to /orgs/{slug}/student.
+  //                    at app/student/... and is NOT org-scoped.
   //       /live/*    — the standalone live-class room.
   // -------------------------------------------------------------------------
   if (
-    pathname === '/student' || pathname.startsWith('/student/') ||
+    pathname.startsWith('/student/') ||
     pathname === '/live' || pathname.startsWith('/live/')
   ) {
     const resolved = await resolveTenant(req, instance)
