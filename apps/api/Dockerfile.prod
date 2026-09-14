@@ -73,8 +73,10 @@ WORKDIR /app
 COPY --from=builder --chown=appuser:appgroup /app/.venv /app/.venv
 COPY --from=builder --chown=appuser:appgroup /app /app
 
-# Ensure entrypoint is executable
-RUN chmod +x /app/docker-entrypoint.prod.sh /app/docker-entrypoint.sh 2>/dev/null || true
+# Ensure entrypoint is executable and runtime directories exist with appuser ownership
+RUN mkdir -p /app/content /app/uploads \
+    && chown -R appuser:appgroup /app \
+    && chmod +x /app/docker-entrypoint.prod.sh /app/docker-entrypoint.sh 2>/dev/null || true
 
 # Set environment paths so virtualenv binaries (uvicorn, alembic, python) are primary
 ENV PATH="/app/.venv/bin:$PATH" \
