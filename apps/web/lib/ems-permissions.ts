@@ -122,8 +122,11 @@ export interface EMSRole {
   id: string
   name: string
   code: string
+  slug?: string
   description: string
   isSystem: boolean
+  is_system_template?: boolean
+  is_clinical_specialist?: boolean
   inheritsFrom?: string
   permissions: EMSPermissionRule[]
   created_at?: string

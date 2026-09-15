@@ -39,8 +39,8 @@ function loadRuntimeConfig(): Record<string, string> {
       
       for (const configPath of possiblePaths) {
         try {
-          if (fs.existsSync(configPath)) {
-            runtimeConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+          if (fs.existsSync(/*turbopackIgnore: true*/ configPath)) {
+            runtimeConfig = JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ configPath, 'utf8'));
             break;
           }
         } catch {

@@ -14,8 +14,8 @@ try {
   ];
   for (const configPath of possiblePaths) {
     try {
-      if (fs.existsSync(configPath)) {
-        const rc = JSON.parse(fs.readFileSync(configPath, "utf8"));
+      if (fs.existsSync(/*turbopackIgnore: true*/ configPath)) {
+        const rc = JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ configPath, "utf8"));
         SENTRY_DSN = rc.NEXT_PUBLIC_LEARNHOUSE_SENTRY_DSN || SENTRY_DSN;
         LEARNHOUSE_ENV = rc.NEXT_PUBLIC_LEARNHOUSE_ENV || LEARNHOUSE_ENV;
         break;
