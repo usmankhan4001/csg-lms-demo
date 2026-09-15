@@ -20,7 +20,7 @@ adopt this same dependency there as each is actually exposed to a real
 (non-superadmin) user, not all at once.
 """
 
-from typing import Callable, List
+from typing import Callable, List, Optional
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlmodel import select
@@ -232,3 +232,53 @@ def require_org_id(principal: KeycloakUserPrincipal) -> int:
             ),
         )
     return principal.org_id
+
+
+def require_user_id(principal: KeycloakUserPrincipal) -> int:
+    """The integer Learnhouse user id behind this request, or refuse it.
+
+    `principal.sub` is the user's `user_uuid` STRING (see
+    `security/school_principal.py`, which sets `sub=effective_user.user_uuid`).
+    The integer id travels alongside it in `raw_claims["lh_user_id"]`.
+
+    Two teacher-identity systems grew out of that split: `LessonPlan.teacher_id`
+    and the two counselling `psychologist_id` columns stored the string, while
+    timetable, live classes and section ownership stored the integer -- so a
+    teacher's lesson plans and their timetable could not be joined, and "what is
+    this teacher doing today" had no answer in SQL. Everything is converging on
+    the integer, and this is the one place that reads it.
+
+    403 rather than 400, for the same reason as `require_org_id` above: the
+    request is well-formed and the caller is authenticated, so there is nothing
+    for them to correct.
+
+    Never returns a fallback. An unidentifiable caller is unknown, not user 1.
+    """
+    raw = principal.raw_claims or {}
+    user_id = raw.get("lh_user_id")
+    if not isinstance(user_id, int):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Forbidden: this request carries no Learnhouse user identity, "
+                "so it cannot be attributed to a person."
+            ),
+        )
+    return user_id
+
+
+def get_user_id(principal: KeycloakUserPrincipal) -> Optional[int]:
+    """The integer Learnhouse user id if this request carries one, else None.
+
+    The lenient counterpart to `require_user_id`. Use this wherever the integer
+    identity is being ADOPTED rather than depended on -- during the migration
+    from the legacy `user_uuid` string (b7e2d41a9c38), a record is still fully
+    attributable by its string column, so a missing integer must not refuse an
+    otherwise valid write.
+
+    None here means "not resolved", never "nobody". Callers must not treat it as
+    a match: two records with NULL are not the same author.
+    """
+    raw = principal.raw_claims or {}
+    user_id = raw.get("lh_user_id")
+    return user_id if isinstance(user_id, int) else None

@@ -305,3 +305,87 @@ async def test_existing_user_is_reused_rather_than_duplicated(db, org):
     # Still gets the role and enrollment it was missing.
     assert resp.created_role is True
     assert resp.created_enrollment is True
+
+
+@pytest.mark.asyncio
+async def test_enrolled_learner_gets_an_organisation_membership(db, org):
+    """The admissions funnel must produce a member of the school, not an orphan.
+
+    `provision_learner_from_lead` carried its own copy of the create-account
+    sequence and the copy had drifted: it wrote User, SMSUserRole and
+    StudentEnrollment but never the `UserOrganization` membership row.
+
+    The SMS modules kept working -- `school_principal` builds roles from
+    SMSUserRole alone -- which is exactly what hid the bug. What broke was
+    everything that asks "is this person in this organisation":
+
+      * `routers/sms_identity.list_school_directory` JOINs UserOrganization,
+        so the admitted student was absent from the School Directory and an
+        administrator could not find the person they had just admitted.
+      * `routers/content_files` refuses private course content with 403
+        without that row -- the student could not open the materials for the
+        course they were enrolled in.
+
+    Without the membership write this assertion fails, which is the point.
+    """
+    from src.db.user_organizations import UserOrganization
+
+    campus, year, section = await _school(db, org.id, code="ENR-ORG")
+    lead = await _lead(db, campus.id, email="org.parent@example.com")
+
+    resp = await enroll_lead_endpoint(
+        lead_id=lead.id,
+        payload=EnrollLeadRequest(
+            section_id=section.id,
+            academic_year_id=year.id,
+            student_email="org.learner@example.com",
+        ),
+        session=db,
+    )
+    assert resp.created_user is True
+
+    student = (
+        await db.exec(select(User).where(User.email == "org.learner@example.com"))
+    ).first()
+    assert student is not None
+
+    membership = (
+        await db.exec(
+            select(UserOrganization).where(
+                UserOrganization.user_id == student.id,
+                UserOrganization.org_id == org.id,
+            )
+        )
+    ).first()
+    assert membership is not None, (
+        "Learner admitted from a lead has no UserOrganization row -- they are "
+        "invisible in the School Directory and get 403 on course content."
+    )
+
+
+@pytest.mark.asyncio
+async def test_admissions_provenance_survives_the_shared_provisioning_path(db, org):
+    """Delegating to provision_person must not erase how a learner arrived.
+
+    Both paths now share one implementation, so without an explicit
+    signup_method every learner would read as 'school_provisioning' and the
+    admissions funnel would become unauditable after the fact.
+    """
+    campus, year, section = await _school(db, org.id, code="ENR-PROV")
+    lead = await _lead(db, campus.id, email="prov.parent@example.com")
+
+    await enroll_lead_endpoint(
+        lead_id=lead.id,
+        payload=EnrollLeadRequest(
+            section_id=section.id,
+            academic_year_id=year.id,
+            student_email="prov.learner@example.com",
+        ),
+        session=db,
+    )
+
+    student = (
+        await db.exec(select(User).where(User.email == "prov.learner@example.com"))
+    ).first()
+    assert student is not None
+    assert student.signup_method == "admissions_enrollment"

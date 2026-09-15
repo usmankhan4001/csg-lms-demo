@@ -727,3 +727,75 @@ class TestOnlineRefund:
             )
         assert exc.value.status_code == 400
         assert fake_provider.refunds == []
+
+
+class TestReceiptLinkSurvivesACrashBetweenCommits:
+    """`handle_provider_webhook` credits money and writes the receipt in one
+    transaction, then links `intent.receipt_id` in a SECOND one -- it has to,
+    because the receipt id does not exist until the first commit returns.
+
+    A crash in that window leaves a correctly-credited payment whose intent
+    points at no receipt. The money is right; the audit link is missing, and
+    the parent's payment-history screen reads exactly that column
+    (`routers/sms_fees.py`). Nothing repaired it: `reconcile_stale_intent`
+    returns early for anything already SUCCEEDED, so the state was terminal.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_dangling_receipt_link_is_repaired(
+        self, db: AsyncSession, fake_provider, payments_on
+    ):
+        from src.services.sms.fee_checkout import reconcile_stale_intent
+
+        voucher = await _voucher(db, student_id=7801)
+        intent = await start_checkout(
+            session=db, voucher_id=voucher.id, principal=SUPERADMIN,
+            success_url="https://s", cancel_url="https://c",
+        )
+        fake_provider.pending_event = _success_event(intent, event_id="evt_dangle")
+        assert await handle_provider_webhook(
+            session=db, provider_name="fake", payload=b"{}", signature="sig"
+        ) == "credited"
+
+        await db.refresh(intent)
+        credited_receipt_id = intent.receipt_id
+        assert credited_receipt_id is not None
+
+        # Simulate the crash: the money landed, the link did not.
+        intent.receipt_id = None
+        db.add(intent)
+        await db.commit()
+        await db.refresh(intent)
+        assert intent.receipt_id is None
+
+        repaired = await reconcile_stale_intent(db, intent)
+
+        assert repaired.receipt_id == credited_receipt_id, (
+            "A credited payment was left with no receipt link and nothing "
+            "could repair it."
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_receipt_means_no_invented_link(
+        self, db: AsyncSession, fake_provider, payments_on
+    ):
+        """A missing receipt means the payment genuinely was not processed.
+
+        Inventing a link there would assert money arrived when it did not --
+        far worse than leaving the gap visible.
+        """
+        from src.services.sms.fee_checkout import backfill_missing_receipt_link
+
+        voucher = await _voucher(db, student_id=7802)
+        intent = await start_checkout(
+            session=db, voucher_id=voucher.id, principal=SUPERADMIN,
+            success_url="https://s", cancel_url="https://c",
+        )
+        intent.status = PaymentIntentStatus.SUCCEEDED
+        intent.provider_payment_ref = "ref-that-has-no-receipt"
+        intent.receipt_id = None
+        db.add(intent)
+        await db.commit()
+
+        result = await backfill_missing_receipt_link(db, intent)
+        assert result.receipt_id is None

@@ -147,8 +147,13 @@ async def create_admissions_lead(
     lead.intent_level = payload.intent_level or intent
 
     session.add(lead)
-    await session.commit()
-    await session.refresh(lead)
+    # Flush rather than commit: the id is needed for the activity row below,
+    # but a commit here published the lead in its own transaction. An
+    # interruption before the second commit left a lead with no acquisition
+    # entry at all -- the CRM would show an inquiry that arrived from nowhere,
+    # and lead scoring counts activities, so the record would also score low
+    # for the rest of its life.
+    await session.flush()
 
     # Create initial activity log
     initial_activity = LeadActivityLog(
@@ -440,8 +445,13 @@ async def generate_scholarship_offer(
         created_at=now,
     )
     session.add(offer)
-    await session.commit()
-    await session.refresh(offer)
+    # Flush, not commit. The id is needed to build the offer-letter URL below,
+    # but committing here published the offer as a separate transaction from
+    # everything that gives it meaning: an interruption in the window left a
+    # ScholarshipOffer row with a NULL letter URL, a lead still sitting in its
+    # previous stage, and no activity entry -- an offer the CRM had no record
+    # of having made, while the family had been told one was coming.
+    await session.flush()
 
     # Set dynamic offer letter URL
     offer.offer_letter_url = f"/api/v1/revops/offers/{offer.id}/offer-letter.pdf"

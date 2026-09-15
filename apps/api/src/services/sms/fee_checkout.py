@@ -38,7 +38,12 @@ from src.db.sms_fee_payments import (
     PaymentIntentStatus,
     PaymentWebhookEvent,
 )
-from src.db.sms_fees import StudentFeeVoucher, PaymentMethod, VoucherStatus
+from src.db.sms_fees import (
+    FeePaymentReceipt,
+    PaymentMethod,
+    StudentFeeVoucher,
+    VoucherStatus,
+)
 from src.schemas.sms_fees import RecordPaymentRequest
 from src.security.school_ownership import get_own_children_ids
 from src.services.payments import (
@@ -351,8 +356,17 @@ async def handle_provider_webhook(
     session.add(intent)
 
     # `process_fee_payment` commits, which also commits the webhook-event row
-    # and the intent update above -- receipt, voucher balance, intent and
-    # replay guard all land together or not at all.
+    # and the intent update above -- receipt, voucher balance, intent status
+    # and replay guard all land together or not at all.
+    #
+    # ONE FIELD IS OUTSIDE THAT GUARANTEE: `intent.receipt_id`, set below,
+    # cannot be written until the receipt has an id, which only exists after
+    # that commit. A crash in the window between them credits the money
+    # correctly but leaves the intent unlinked to its receipt, which the
+    # parent's payment-history screen reads. The money is never wrong; the
+    # audit link is. `backfill_missing_receipt_link` repairs it from the
+    # receipt's `transaction_ref`, which carries the same provider reference,
+    # so the relationship survives the gap even when the column does not.
     receipt = await process_fee_payment(
         session=session,
         payload=RecordPaymentRequest(
@@ -383,6 +397,56 @@ async def list_intents_for_voucher(
     return list(result.scalars().all())
 
 
+async def backfill_missing_receipt_link(
+    session: AsyncSession, intent: FeePaymentIntent
+) -> FeePaymentIntent:
+    """Repair a SUCCEEDED intent whose `receipt_id` never landed.
+
+    `handle_provider_webhook` credits the money and writes the receipt in one
+    transaction, then links `intent.receipt_id` in a second one, because the
+    receipt id does not exist until the first commit returns. A crash between
+    the two leaves a correctly-credited payment with a dangling intent.
+
+    Nothing else could repair it: `reconcile_stale_intent` returns early for
+    anything already SUCCEEDED, by design, so the state was terminal.
+
+    This does not move money and cannot create a payment. It only re-establishes
+    a link that is already implied by the receipt's `transaction_ref`, which
+    holds the same provider reference the intent does. If no such receipt
+    exists the intent is returned untouched -- a missing receipt means the
+    payment genuinely was not processed, and inventing a link would be far
+    worse than leaving the gap visible.
+    """
+    if intent.status != PaymentIntentStatus.SUCCEEDED or intent.receipt_id is not None:
+        return intent
+
+    reference = intent.provider_payment_ref or intent.provider_session_id
+    if not reference:
+        return intent
+
+    receipt = (
+        await session.execute(
+            select(FeePaymentReceipt).where(
+                FeePaymentReceipt.voucher_id == intent.voucher_id,
+                FeePaymentReceipt.transaction_ref == reference,
+            )
+        )
+    ).scalars().first()
+    if receipt is None:
+        return intent
+
+    intent.receipt_id = receipt.id
+    intent.updated_at = datetime.datetime.now(datetime.timezone.utc)
+    session.add(intent)
+    await session.commit()
+    await session.refresh(intent)
+    logger.info(
+        "Backfilled receipt link for intent %s -> receipt %s.",
+        intent.reference, receipt.id,
+    )
+    return intent
+
+
 async def reconcile_stale_intent(
     session: AsyncSession, intent: FeePaymentIntent
 ) -> FeePaymentIntent:
@@ -393,7 +457,10 @@ async def reconcile_stale_intent(
     never send one.
     """
     if intent.status not in (PaymentIntentStatus.CREATED, PaymentIntentStatus.PENDING):
-        return intent
+        # Terminal already -- but a SUCCEEDED intent may still be missing its
+        # receipt link if the process died between the two commits in
+        # `handle_provider_webhook`. This is the only path that repairs it.
+        return await backfill_missing_receipt_link(session, intent)
     if not intent.provider_session_id:
         return intent
 

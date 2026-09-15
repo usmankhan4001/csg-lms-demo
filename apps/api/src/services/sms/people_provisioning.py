@@ -233,6 +233,7 @@ async def provision_person(
     org_id: int,
     actor_user_id: Optional[int],
     via_bulk_import: bool = False,
+    signup_method: str = "school_provisioning",
 ) -> ProvisionResult:
     """Create (or reuse) an account, grant its school role, and place it.
 
@@ -348,7 +349,11 @@ async def provision_person(
             password=_unusable_password_hash(),
             user_uuid=f"user_{uuid4()}",
             email_verified=False,
-            signup_method="school_provisioning",
+            # Provenance: how this person entered the school. The admissions
+            # funnel passes its own value so a learner admitted from a won lead
+            # stays distinguishable from one an administrator typed in. Losing
+            # that distinction would make the funnel unauditable after the fact.
+            signup_method=signup_method,
             creation_date=get_utc_now_iso(),
             update_date=get_utc_now_iso(),
         )

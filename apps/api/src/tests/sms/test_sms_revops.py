@@ -458,3 +458,78 @@ async def test_consent_capture_and_update_endpoint(db: AsyncSession):
     assert len(consent_entries) == 1
     assert consent_entries[0].metadata_json["changes"]["whatsapp_consent"] is False
     assert consent_entries[0].metadata_json["changes"]["email_consent"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_failed_offer_leaves_no_half_made_offer(db: AsyncSession):
+    """An offer must not outlive the transaction that gives it meaning.
+
+    `generate_scholarship_offer` used to commit the ScholarshipOffer row on its
+    own, purely to obtain the id needed to build the offer-letter URL, and only
+    then set that URL, move the lead to OFFER_SENT and write the activity log
+    in a second commit.
+
+    An interruption in that window left a scholarship offer in the database
+    with a NULL letter URL, a lead still sitting in its previous stage, and no
+    activity entry -- an offer the CRM had no record of having made, while the
+    family had been told one was coming. Money and a promise, with no trail.
+
+    The first commit is now a flush, so the whole offer lands once or not at
+    all. This test fails if anyone reinstates that intermediate commit.
+    """
+    from src.db.sms_revops import ScholarshipOffer
+    from src.services.sms.revops import generate_scholarship_offer
+    from sqlmodel import select as sm_select
+
+    lead = await create_lead_endpoint(
+        payload=LeadCreate(
+            parent_name="Halfway Parent",
+            student_name="Halfway Student",
+            email="halfway@example.com",
+            phone="+1-555-0399",
+            grade_applying_for="Grade 8",
+            campus_id=2,
+            source=LeadSource.REFERRAL,
+        ),
+        session=db,
+        principal=SUPERADMIN,
+    )
+    stage_before = lead.stage
+
+    # Fail AFTER the offer row is staged, at the point the old code had
+    # already committed it.
+    import src.services.sms.revops as revops_mod
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("scoring failed after the offer row was staged")
+
+    original = revops_mod.calculate_lead_score
+    revops_mod.calculate_lead_score = _boom
+    try:
+        with pytest.raises(RuntimeError):
+            await generate_scholarship_offer(
+                db,
+                ScholarshipOfferCreate(
+                    lead_id=lead.id,
+                    campus_id=2,
+                    base_tuition_amount=10000.0,
+                    tuition_discount_percentage=25.0,
+                    valid_until=datetime.date(2026, 12, 31),
+                    status=OfferStatus.SENT,
+                ),
+            )
+    finally:
+        revops_mod.calculate_lead_score = original
+
+    await db.rollback()
+
+    offers = (
+        await db.exec(sm_select(ScholarshipOffer).where(ScholarshipOffer.lead_id == lead.id))
+    ).all()
+    assert offers == [], (
+        "A scholarship offer survived a failure partway through, so the CRM "
+        "holds an offer it has no record of making."
+    )
+
+    detail = await get_lead_detail_endpoint(lead_id=lead.id, session=db)
+    assert detail.stage == stage_before

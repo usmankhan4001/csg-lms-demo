@@ -30,40 +30,22 @@ This closes that loop. Three design rules, each driven by a real failure mode:
 """
 
 import logging
-import secrets
 from typing import Optional
-from uuid import uuid4
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.db.sms_campus import (
-    AcademicYear,
     Campus,
     ClassSection,
     StudentEnrollment,
-    get_utc_now_iso,
 )
-from src.db.sms_identity import SchoolRole, SMSUserRole
+from src.db.sms_identity import SchoolRole
 from src.db.sms_revops import AdmissionsLead
 from src.db.users import User
-from src.security.security import security_hash_password
 
 logger = logging.getLogger(__name__)
-
-
-def _unusable_password_hash() -> str:
-    """A valid Argon2 hash of a secret generated and immediately discarded.
-
-    Deliberately not an empty string: `pwdlib` raises `UnknownHashError` on a
-    hash it cannot identify and `authenticate_user` does not guard that call,
-    so a blank password would turn a login attempt against a newly enrolled
-    student into a 500 rather than a clean 401. The student gets a real
-    password later through the normal reset/invite flow; no plaintext for
-    this one exists anywhere. Mirrors `services/demo/sync.py`.
-    """
-    return security_hash_password(secrets.token_urlsafe(64))
 
 
 class EnrollmentProvisioningResult:
@@ -100,14 +82,35 @@ async def provision_learner_from_lead(
 ) -> EnrollmentProvisioningResult:
     """Turn a won lead into a real student: account -> STUDENT role -> enrollment.
 
-    Stages everything on `session` WITHOUT committing. The caller commits once,
-    so a later failure in the same request rolls the whole thing back and the
-    lead is never left half-enrolled.
+    DELEGATES to `people_provisioning.provision_person`. This function used to
+    carry its own copy of the create-account-grant-role-enrol sequence, and the
+    copy had drifted: it never wrote the `UserOrganization` membership row.
 
-    Raises 4xx with an actionable message when the school structure needed to
-    enrol into does not exist yet -- setup guidance, not a 500.
+    That omission was not cosmetic. A learner admitted through the admissions
+    funnel was:
+
+      * absent from the school's own People directory, which JOINs on
+        `UserOrganization` (`routers/sms_identity.py`), so an administrator
+        could not find the student they had just admitted; and
+      * refused with 403 on private course content, which checks the same
+        table (`routers/content_files.py`) -- the student could not open the
+        materials for the course they were enrolled in.
+
+    Their `SMSUserRole` grant worked, so the SMS modules behaved, which is
+    precisely what made it hard to notice.
+
+    There is now ONE provisioning path. `signup_method` keeps the provenance
+    distinction so an admissions-funnel learner is still distinguishable from
+    an administrator-created one.
+
+    Stages everything on `session` WITHOUT committing; the caller commits once.
     """
-    # --- Validate the target structure before creating anything ------------
+    from src.services.sms.people_provisioning import PersonSpec, provision_person
+
+    # org_id is required for the role grant and membership, and is not on the
+    # lead -- it hangs off the campus the section belongs to. Resolved here
+    # (rather than inside provision_person, which takes org_id as given)
+    # because the admissions funnel identifies a school by its section.
     section = await session.get(ClassSection, section_id)
     if section is None:
         raise HTTPException(
@@ -119,27 +122,6 @@ async def provision_learner_from_lead(
             ),
         )
 
-    year = await session.get(AcademicYear, academic_year_id)
-    if year is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                f"Academic year {academic_year_id} does not exist. Create one "
-                "for this campus before enrolling a lead."
-            ),
-        )
-
-    if year.campus_id != section.campus_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "The academic year and class section belong to different "
-                "campuses. A student cannot be enrolled across campuses."
-            ),
-        )
-
-    # org_id is required for the role grant and is not on the lead -- it hangs
-    # off the campus the section belongs to.
     campus = await session.get(Campus, section.campus_id)
     if campus is None:
         raise HTTPException(
@@ -147,88 +129,40 @@ async def provision_learner_from_lead(
             detail=f"Campus {section.campus_id} for this section no longer exists.",
         )
 
-    normalized_email = (student_email or "").strip().lower()
-    if not normalized_email or "@" not in normalized_email:
+    # The lead carries one free-text student name; split it the way this
+    # module always has. provision_person requires a first name and refuses
+    # an empty one, so fall back rather than letting a nameless lead 400.
+    name_parts = (lead.student_name or "").strip().split(" ", 1)
+    first_name = name_parts[0] if name_parts and name_parts[0] else "Student"
+    last_name = name_parts[1] if len(name_parts) > 1 else ""
+
+    result = await provision_person(
+        session,
+        PersonSpec(
+            role=SchoolRole.STUDENT,
+            email=student_email,
+            first_name=first_name,
+            last_name=last_name,
+            campus_id=campus.id,
+            section_id=section_id,
+            academic_year_id=academic_year_id,
+            roll_number=roll_number,
+        ),
+        org_id=campus.org_id,
+        actor_user_id=None,
+        signup_method="admissions_enrollment",
+    )
+
+    # The caller refreshes these objects after committing, so return the
+    # instances rather than ids.
+    user = await session.get(User, result.user_id)
+    if user is None:  # pragma: no cover - provision_person just flushed it
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "A student email is required to create the learner account. "
-                "The lead's email belongs to the parent, so it is not assumed "
-                "to be the student's."
-            ),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Learner account could not be read back after provisioning.",
         )
 
-    # --- 1. The learner account (idempotent on email) ----------------------
-    existing_user = (
-        await session.execute(select(User).where(User.email == normalized_email))
-    ).scalars().first()
-
-    created_user = False
-    if existing_user is not None:
-        user = existing_user
-    else:
-        # Username must be unique too; derive from the email local part and
-        # disambiguate rather than colliding.
-        base_username = normalized_email.split("@")[0][:40] or "student"
-        username = base_username
-        clash = (
-            await session.execute(select(User).where(User.username == username))
-        ).scalars().first()
-        if clash is not None:
-            username = f"{base_username}-{uuid4().hex[:6]}"
-
-        name_parts = (lead.student_name or "").strip().split(" ", 1)
-        user = User(
-            username=username,
-            first_name=name_parts[0] if name_parts and name_parts[0] else "Student",
-            last_name=name_parts[1] if len(name_parts) > 1 else "",
-            email=normalized_email,
-            password=_unusable_password_hash(),
-            user_uuid=f"user_{uuid4()}",
-            email_verified=False,
-            signup_method="admissions_enrollment",
-            creation_date=get_utc_now_iso(),
-            update_date=get_utc_now_iso(),
-        )
-        session.add(user)
-        # Flush (not commit) so the FKs below have a real user id while the
-        # whole thing stays inside the caller's transaction.
-        await session.flush()
-        created_user = True
-
-    # --- 2. The STUDENT role grant (idempotent on the unique constraint) ---
-    existing_role = (
-        await session.execute(
-            select(SMSUserRole).where(
-                SMSUserRole.user_id == user.id,
-                SMSUserRole.org_id == campus.org_id,
-                SMSUserRole.role == SchoolRole.STUDENT,
-            )
-        )
-    ).scalars().first()
-
-    created_role = False
-    if existing_role is None:
-        session.add(
-            SMSUserRole(
-                user_id=user.id,
-                org_id=campus.org_id,
-                campus_id=campus.id,
-                role=SchoolRole.STUDENT,
-                is_active=True,
-            )
-        )
-        created_role = True
-    elif not existing_role.is_active:
-        # A previously revoked student returning: reactivate rather than
-        # inserting a duplicate the unique constraint would reject anyway.
-        existing_role.is_active = True
-        existing_role.campus_id = campus.id
-        session.add(existing_role)
-        created_role = True
-
-    # --- 3. The enrollment (idempotent per academic year) ------------------
-    existing_enrollment = (
+    enrollment = (
         await session.execute(
             select(StudentEnrollment).where(
                 StudentEnrollment.student_id == user.id,
@@ -236,36 +170,25 @@ async def provision_learner_from_lead(
             )
         )
     ).scalars().first()
-
-    created_enrollment = False
-    if existing_enrollment is not None:
-        enrollment = existing_enrollment
-    else:
-        enrollment = StudentEnrollment(
-            student_id=user.id,
-            section_id=section_id,
-            academic_year_id=academic_year_id,
-            roll_number=roll_number,
-            status="active",
-            enrolled_at=get_utc_now_iso(),
+    if enrollment is None:  # pragma: no cover - provision_person just flushed it
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Enrollment could not be read back after provisioning.",
         )
-        session.add(enrollment)
-        await session.flush()
-        created_enrollment = True
 
     logger.info(
         "Provisioned learner from lead id=%s user_id=%s (new_user=%s new_role=%s new_enrollment=%s)",
         lead.id,
         user.id,
-        created_user,
-        created_role,
-        created_enrollment,
+        result.created_user,
+        result.created_role,
+        result.created_enrollment,
     )
 
     return EnrollmentProvisioningResult(
         user=user,
         enrollment=enrollment,
-        created_user=created_user,
-        created_role=created_role,
-        created_enrollment=created_enrollment,
+        created_user=result.created_user,
+        created_role=result.created_role,
+        created_enrollment=result.created_enrollment,
     )
