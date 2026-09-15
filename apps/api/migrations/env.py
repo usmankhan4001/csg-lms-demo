@@ -78,13 +78,16 @@ def _install_idempotent_guards():
 
     orig_add_column = Operations.add_column
     orig_drop_column = Operations.drop_column
+    orig_alter_column = Operations.alter_column
     orig_create_table = Operations.create_table
     orig_drop_table = Operations.drop_table
+    orig_rename_table = Operations.rename_table
     orig_create_index = Operations.create_index
     orig_drop_index = Operations.drop_index
     orig_create_foreign_key = Operations.create_foreign_key
     orig_drop_constraint = Operations.drop_constraint
     orig_create_unique_constraint = Operations.create_unique_constraint
+    orig_create_check_constraint = Operations.create_check_constraint
 
     def safe_add_column(self, table_name, column, **kw):
         bind = self.get_bind()
@@ -105,6 +108,16 @@ def _install_idempotent_guards():
             return None
         return orig_drop_column(self, table_name, column_name, **kw)
 
+    def safe_alter_column(self, table_name, column_name, **kw):
+        bind = self.get_bind()
+        insp = sa.inspect(bind)
+        if table_name not in insp.get_table_names():
+            return None
+        existing = {c["name"] for c in insp.get_columns(table_name)}
+        if column_name not in existing:
+            return None
+        return orig_alter_column(self, table_name, column_name, **kw)
+
     def safe_create_table(self, table_name, *columns, **kw):
         bind = self.get_bind()
         insp = sa.inspect(bind)
@@ -118,6 +131,16 @@ def _install_idempotent_guards():
         if table_name not in insp.get_table_names():
             return None
         return orig_drop_table(self, table_name, **kw)
+
+    def safe_rename_table(self, old_table_name, new_table_name, **kw):
+        bind = self.get_bind()
+        insp = sa.inspect(bind)
+        tables = insp.get_table_names()
+        if old_table_name not in tables:
+            return None
+        if new_table_name in tables:
+            return None
+        return orig_rename_table(self, old_table_name, new_table_name, **kw)
 
     def safe_create_index(self, index_name, table_name, columns, **kw):
         bind = self.get_bind()
@@ -140,10 +163,12 @@ def _install_idempotent_guards():
     def safe_create_foreign_key(self, constraint_name, source_table, referent_table, local_cols, remote_cols, **kw):
         bind = self.get_bind()
         insp = sa.inspect(bind)
-        if source_table in insp.get_table_names():
-            existing = {fk["name"] for fk in insp.get_foreign_keys(source_table) if fk.get("name")}
-            if constraint_name and constraint_name in existing:
-                return None
+        tables = insp.get_table_names()
+        if source_table not in tables or referent_table not in tables:
+            return None
+        existing = {fk["name"] for fk in insp.get_foreign_keys(source_table) if fk.get("name")}
+        if constraint_name and constraint_name in existing:
+            return None
         return orig_create_foreign_key(self, constraint_name, source_table, referent_table, local_cols, remote_cols, **kw)
 
     def safe_drop_constraint(self, constraint_name, table_name, type_=None, **kw):
@@ -162,21 +187,35 @@ def _install_idempotent_guards():
     def safe_create_unique_constraint(self, constraint_name, table_name, columns, **kw):
         bind = self.get_bind()
         insp = sa.inspect(bind)
-        if table_name in insp.get_table_names():
-            existing = {u["name"] for u in insp.get_unique_constraints(table_name) if u.get("name")}
-            if constraint_name and constraint_name in existing:
-                return None
+        if table_name not in insp.get_table_names():
+            return None
+        existing = {u["name"] for u in insp.get_unique_constraints(table_name) if u.get("name")}
+        if constraint_name and constraint_name in existing:
+            return None
         return orig_create_unique_constraint(self, constraint_name, table_name, columns, **kw)
+
+    def safe_create_check_constraint(self, constraint_name, table_name, condition, **kw):
+        bind = self.get_bind()
+        insp = sa.inspect(bind)
+        if table_name not in insp.get_table_names():
+            return None
+        checks = {c["name"] for c in insp.get_check_constraints(table_name) if c.get("name")}
+        if constraint_name and constraint_name in checks:
+            return None
+        return orig_create_check_constraint(self, constraint_name, table_name, condition, **kw)
 
     Operations.add_column = safe_add_column
     Operations.drop_column = safe_drop_column
+    Operations.alter_column = safe_alter_column
     Operations.create_table = safe_create_table
     Operations.drop_table = safe_drop_table
+    Operations.rename_table = safe_rename_table
     Operations.create_index = safe_create_index
     Operations.drop_index = safe_drop_index
     Operations.create_foreign_key = safe_create_foreign_key
     Operations.drop_constraint = safe_drop_constraint
     Operations.create_unique_constraint = safe_create_unique_constraint
+    Operations.create_check_constraint = safe_create_check_constraint
 
 
 _install_idempotent_guards()
