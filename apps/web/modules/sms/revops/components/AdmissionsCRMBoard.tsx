@@ -4,7 +4,14 @@ import React, { useState, useMemo, useEffect } from 'react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { useApiResource } from '@/lib/api/useApiResource'
-import { getLeadPipeline, updateLeadStage } from '@/modules/sms/revops/api'
+import {
+  getLeadPipeline,
+  updateLeadStage,
+  createLead,
+  logLeadActivity,
+  aiQualifyLead,
+  enrollLead,
+} from '@/modules/sms/revops/api'
 import { COLUMN_TO_STAGE, adaptLead, leadIdFromCardId } from '@/modules/sms/revops/adapt'
 import {
   Users,
@@ -320,15 +327,19 @@ export default function AdmissionsCRMBoard() {
   }
 
   // Quick Action: Add Activity to Selected Lead
-  const handleAddActivity = () => {
+  const handleAddActivity = async () => {
     if (!selectedLead || !newActivityNote.trim()) return
+    const numericId = leadIdFromCardId(selectedLead.id)
+    const noteText = newActivityNote.trim()
+    const logType = newActivityType
+
     const newLog: ActivityLog = {
       id: `act-${Date.now()}`,
-      type: newActivityType,
-      title: `${newActivityType.toUpperCase()} Logged`,
-      description: newActivityNote,
+      type: logType,
+      title: `${logType.toUpperCase()} Logged`,
+      description: noteText,
       timestamp: 'Just now',
-      agent: 'Admin User',
+      agent: 'Admissions Officer',
     }
     const updatedLead: Lead = {
       ...selectedLead,
@@ -338,64 +349,62 @@ export default function AdmissionsCRMBoard() {
     setLeads((prev) => prev.map((l) => (l.id === selectedLead.id ? updatedLead : l)))
     setSelectedLead(updatedLead)
     setNewActivityNote('')
+
+    if (numericId !== null) {
+      try {
+        const mappedType = logType.toUpperCase() as any
+        await logLeadActivity(numericId, {
+          activity_type: mappedType,
+          summary: noteText,
+        })
+        toast.success('Touchpoint logged to server.')
+      } catch (err) {
+        console.warn('Could not persist activity log remotely:', err)
+      }
+    }
   }
 
-  // Add New Lead Form Submission
-  const handleCreateNewLead = (e: React.FormEvent) => {
+  // Add New Lead Form Submission (Live Backend API)
+  const handleCreateNewLead = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newLeadForm.studentName || !newLeadForm.parentName) return
 
-    const newLead: Lead = {
-      id: `lead-${Date.now()}`,
-      studentName: newLeadForm.studentName,
-      parentName: newLeadForm.parentName,
-      parentPhone: newLeadForm.parentPhone || '+92 300 0000000',
-      parentEmail: newLeadForm.parentEmail || 'parent@example.com',
-      targetGrade: newLeadForm.targetGrade,
-      targetCampus: newLeadForm.targetCampus,
-      previousSchool: 'Local School System',
-      stage: 'inquiry',
-      source: newLeadForm.source,
-      score: 85,
-      estimatedTuitionPKR: 45000,
-      discountOffered: 0,
-      assignedSDR: 'Ayesha Malik',
-      lastContact: 'Just now',
-      createdAt: new Date().toISOString().split('T')[0],
-      notes: newLeadForm.notes || 'Created via Admissions CRM Quick Entry.',
-      tags: ['New Inquiry', 'Fast Track'],
-      aiScoreBreakdown: {
-        academicFit: 88,
-        budgetMatch: 85,
-        parentEngagement: 90,
-        decisionUrgency: 80,
-      },
-      aiRecommendedPitch: 'Schedule introductory discovery call within 15 minutes of inquiry.',
-      aiSdrSummary: 'Initial profile recorded. Qualified for standard admission assessment.',
-      activityTimeline: [
-        {
-          id: `act-${Date.now()}`,
-          type: 'note',
-          title: 'Lead Created in CRM',
-          description: 'Added manually to New Inquiries pipeline.',
-          timestamp: 'Just now',
-          agent: 'Admissions Admin',
-        },
-      ],
+    const sourceMap: Record<string, any> = {
+      whatsapp: 'WHATSAPP',
+      walk_in: 'WALK_IN',
+      meta: 'META_ADS',
+      google: 'GOOGLE_ADS',
+      referral: 'REFERRAL',
+      web: 'WEBSITE_FORM',
     }
 
-    setLeads((prev) => [newLead, ...prev])
-    setIsNewLeadModalOpen(false)
-    setNewLeadForm({
-      studentName: '',
-      parentName: '',
-      parentPhone: '',
-      parentEmail: '',
-      targetGrade: 'Grade 11 (Pre-Engineering)',
-      targetCampus: 'Islamabad Main Campus',
-      source: 'whatsapp',
-      notes: '',
-    })
+    try {
+      const created = await createLead({
+        parent_name: newLeadForm.parentName,
+        student_name: newLeadForm.studentName,
+        phone: newLeadForm.parentPhone || '+92 300 0000000',
+        email: newLeadForm.parentEmail || `${newLeadForm.parentName.toLowerCase().replace(/\s+/g, '')}@admissions.local`,
+        grade_applying_for: newLeadForm.targetGrade,
+        source: sourceMap[newLeadForm.source] || 'WALK_IN',
+        notes: newLeadForm.notes || 'Created via Admissions CRM Quick Entry.',
+      })
+
+      toast.success(`Prospect "${created.student_name || created.parent_name}" registered successfully!`)
+      setIsNewLeadModalOpen(false)
+      setNewLeadForm({
+        studentName: '',
+        parentName: '',
+        parentPhone: '',
+        parentEmail: '',
+        targetGrade: 'Grade 11 (Pre-Engineering)',
+        targetCampus: 'Islamabad Main Campus',
+        source: 'whatsapp',
+        notes: '',
+      })
+      pipeline.refetch()
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Could not register lead on server.')
+    }
   }
 
   // SDR Chat Simulator Handler
