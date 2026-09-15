@@ -23,6 +23,11 @@ import type {
   ResitStatus,
   SeatAllocationInput,
   SeatAllocationRead,
+  ExamIncidentCreate,
+  ExamIncidentRead,
+  ExamSectionScheduleCreate,
+  ExamSectionScheduleRead,
+  ExamSittingUpdate,
 } from './types'
 
 export function listExams(
@@ -137,4 +142,55 @@ export function scheduleResit(resitId: number, resitExamId: number): Promise<Res
  */
 export function listResitCandidates(examId: number): Promise<ResitCandidate[]> {
   return apiGet<ResitCandidate[]>(`/sms/exams/${examId}/resit-candidates`)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sittings (ExamSectionSchedule)
+//
+// These were the missing link in the seating screen: seats are allocated per
+// SITTING, but nothing listed the sittings, so an administrator had to type a
+// raw numeric schedule id they had no way to discover. `listExamSittings`
+// turns that field into a picker.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function listExamSittings(examId: number): Promise<ExamSectionScheduleRead[]> {
+  return apiGet<ExamSectionScheduleRead[]>(`/sms/exams/${examId}/sections`)
+}
+
+export function scheduleSection(
+  examId: number,
+  payload: ExamSectionScheduleCreate
+): Promise<ExamSectionScheduleRead> {
+  return apiPost<ExamSectionScheduleRead>(`/sms/exams/${examId}/sections`, payload)
+}
+
+/**
+ * The invigilator's record of when the room ACTUALLY started and finished.
+ * Both fields are optional and independently settable: a room that has begun
+ * but not finished records a start with no end, which is the normal state
+ * during an exam — not a half-filled record to be completed later.
+ */
+export function recordSittingTimes(
+  scheduleId: number,
+  payload: ExamSittingUpdate
+): Promise<ExamSectionScheduleRead> {
+  return apiPatch<ExamSectionScheduleRead>(`/sms/exams/sections/${scheduleId}/sitting`, payload)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Invigilation incidents
+//
+// A human's written record of something observed in the room. Not proctoring:
+// the API performs no monitoring, and this client adds none.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function listExamIncidents(examId: number): Promise<ExamIncidentRead[]> {
+  return apiGet<ExamIncidentRead[]>(`/sms/exams/${examId}/incidents`)
+}
+
+export function logExamIncident(
+  examId: number,
+  payload: ExamIncidentCreate
+): Promise<ExamIncidentRead> {
+  return apiPost<ExamIncidentRead>(`/sms/exams/${examId}/incidents`, payload)
 }

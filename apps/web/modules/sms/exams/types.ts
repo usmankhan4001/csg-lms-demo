@@ -156,3 +156,64 @@ export interface ResitCandidate {
   /** What the record actually shows. Never an inference. */
   evidence: string
 }
+
+/**
+ * A SITTING: one section sitting one exam, in one room, with one invigilator.
+ *
+ * One exam is sat by several sections, often in different rooms at different
+ * times — which is why seats and incidents hang off a sitting rather than off
+ * the exam. `actual_start_at` / `actual_end_at` are what the invigilator
+ * recorded on the day, and are frequently NOT the scheduled time; null means
+ * simply "not recorded", never "started at zero".
+ */
+export interface ExamSectionScheduleRead {
+  id: number
+  exam_id: number
+  section_id: number
+  room_number: string | null
+  invigilator_id: number | null
+  actual_start_at: string | null
+  actual_end_at: string | null
+}
+
+export interface ExamSectionScheduleCreate {
+  section_id: number
+  room_number?: string | null
+  invigilator_id?: number | null
+}
+
+export interface ExamSittingUpdate {
+  actual_start_at?: string | null
+  actual_end_at?: string | null
+}
+
+/**
+ * An invigilation incident: a human's written record of something seen in the
+ * exam room.
+ *
+ * This is NOT automated proctoring — the API docstring is explicit that no
+ * monitoring of any kind is performed, and nothing in this UI should imply
+ * otherwise. Severity is a free string at the API (default "INFO"); the fixed
+ * set below is a UI convention so a school's records stay sortable, not an
+ * enum the backend enforces.
+ */
+export const EXAM_INCIDENT_SEVERITIES = ['INFO', 'MINOR', 'MAJOR', 'CRITICAL'] as const
+export type ExamIncidentSeverity = (typeof EXAM_INCIDENT_SEVERITIES)[number]
+
+export interface ExamIncidentRead {
+  id: number
+  exam_id: number
+  section_id: number | null
+  student_id: number | null
+  severity: string
+  description: string
+  reported_by: number | null
+  reported_at: string
+}
+
+export interface ExamIncidentCreate {
+  section_id?: number | null
+  student_id?: number | null
+  severity?: ExamIncidentSeverity
+  description: string
+}

@@ -82,7 +82,13 @@ const MODULE_DEFS = {
     root: '/dash/exams',
     tabs: [
       { href: '/dash/exams', label: 'Exams' },
+      // Sittings sits before Seating deliberately: a seat is allocated per
+      // SITTING, so the sitting must exist (and be findable) first. Without
+      // this screen the seating page asked an administrator to type a raw
+      // numeric schedule id they had no way to look up.
+      { href: '/dash/exams/sittings', label: 'Sittings' },
       { href: '/dash/exams/seating', label: 'Seating' },
+      { href: '/dash/exams/incidents', label: 'Incidents' },
       { href: '/dash/exams/resits', label: 'Resits', access: 'administer' },
     ],
   },
@@ -106,11 +112,54 @@ const MODULE_DEFS = {
       { href: '/dash/fees/reminders', label: 'Reminders' },
     ],
   },
+  // M19 cross-module reporting. Every tab is `administer`: the router gates on
+  // [SUPER_ADMIN, SCHOOL_ADMIN] and deliberately NOT teacher-wide, because it
+  // puts fee collection and admissions next to academics -- principal/office
+  // data rather than something every class teacher should read.
+  //
+  // The per-domain tabs are not duplicates of Overview. Overview applies ONE
+  // date window across all four domains; each tab carries only the filters its
+  // own domain understands, so "grades for term 2" and "fees this month" can
+  // be asked separately -- which the single view cannot express.
+  reports: {
+    root: '/dash/reports',
+    tabs: [
+      { href: '/dash/reports', label: 'Overview', access: 'administer' },
+      { href: '/dash/reports/attendance', label: 'Attendance', access: 'administer' },
+      { href: '/dash/reports/grades', label: 'Grades', access: 'administer' },
+      { href: '/dash/reports/fees', label: 'Fees', access: 'administer' },
+      { href: '/dash/reports/admissions', label: 'Admissions', access: 'administer' },
+    ],
+  },
   counseling: {
     root: '/dash/counseling',
     tabs: [
       { href: '/dash/counseling', label: 'Sessions' },
       { href: '/dash/counseling/career', label: 'Career guidance' },
+    ],
+  },
+  // Its OWN module, deliberately not a tab under `counseling`, for two
+  // reasons. The sidebar already carries a separate `/dash/discipline` entry
+  // (DashLeftMenu.tsx:817, gated `canTeach`), and a module's `root` must match
+  // its sidebar entry or the tab strip highlights the wrong module. More
+  // importantly the two have opposite disclosure rules: a counselling record's
+  // EXISTENCE is confidential and its endpoints answer an unauthorised caller
+  // with an empty result, never a 403, while a disciplinary incident is
+  // ordinary school business visible to every teacher. Nesting a
+  // teacher-visible tab inside the psychologist-confidential module is exactly
+  // the conflation that rule exists to prevent.
+  discipline: {
+    root: '/dash/discipline',
+    tabs: [
+      { href: '/dash/discipline', label: 'Incidents', access: 'teach' },
+      // NO Suspensions tab, though the sidebar's shape invites one. The API
+      // has POST /suspensions and nothing else -- no list, no get, no update
+      // (sms_discipline.py:180 is the only suspension route, and
+      // DisciplineService has no read method for them). A tab could therefore
+      // create a suspension but never show one, and a write-only screen that
+      // cannot display what it recorded is worse than no screen: an admin
+      // cannot tell whether the last one saved. Restore the tab when a read
+      // endpoint exists.
     ],
   },
   revops: {

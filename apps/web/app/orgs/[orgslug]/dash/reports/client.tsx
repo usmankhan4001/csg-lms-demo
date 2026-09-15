@@ -64,6 +64,7 @@ export default function ReportsDashClient({ org_id }: ReportsDashClientProps) {
 
   return (
     <DashPageShell
+      module="reports"
       title="Reports"
       description="Attendance, grades, fees and admissions for the whole school, in one place."
     >
