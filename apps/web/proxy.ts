@@ -470,16 +470,7 @@ export default async function proxy(req: NextRequest) {
   // 5a. Role portal shortcuts and legacy redirects
   // -------------------------------------------------------------------------
   if (pathname === '/student') {
-    return NextResponse.redirect(new URL(`/my-school${search}`, req.url))
-  }
-  if (pathname === '/teacher' || pathname.startsWith('/teacher/')) {
-    return NextResponse.redirect(new URL(`/dash${search}`, req.url))
-  }
-  if (pathname === '/parent' || pathname.startsWith('/parent/')) {
-    return NextResponse.redirect(new URL(`/my-school${search}`, req.url))
-  }
-  if (pathname === '/admissions' || pathname.startsWith('/admissions/')) {
-    return NextResponse.redirect(new URL(`/dash/admissions${search}`, req.url))
+    return NextResponse.redirect(new URL(`/learner${search}`, req.url))
   }
 
   // -------------------------------------------------------------------------
@@ -633,12 +624,13 @@ export default async function proxy(req: NextRequest) {
   // -------------------------------------------------------------------------
   const resolved = await resolveTenant(req, instance)
   const requestHeaders = tenantRequestHeaders(req, resolved, instance)
-  // `${search}` is load-bearing: a rewrite destination built from an absolute
-  // path drops the base URL's query, and Next treats the destination's search
-  // as the request's. Every other branch above appends it; this one did not, so
-  // org-scoped pages lost their query string (?page, ?q, ?tab, …).
+  // If pathname already starts with /orgs/, do not double-prefix with /orgs/{slug}
+  const destPath = pathname.startsWith('/orgs/')
+    ? `${pathname}${search}`
+    : `/orgs/${resolved.slug}${pathname}${search}`
+
   const response = NextResponse.rewrite(
-    new URL(`/orgs/${resolved.slug}${pathname}${search}`, req.url),
+    new URL(destPath, req.url),
     { request: { headers: requestHeaders } },
   )
   setOrgCookies(response, resolved, instance)

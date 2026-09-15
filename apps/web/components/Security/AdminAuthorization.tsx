@@ -33,8 +33,12 @@ const AdminAuthorization: React.FC<AuthorizationProps> = ({ children, authorizat
 
   const isAdminPath = useMemo(() => {
     if (typeof pathname !== 'string') return false;
-    // The trailing check keeps a hypothetical sibling like /dashboard out.
-    return pathname === ADMIN_PATH_PREFIX || pathname.startsWith(`${ADMIN_PATH_PREFIX}/`);
+    // Match /dash as standalone or as /orgs/[slug]/dash
+    return (
+      pathname === ADMIN_PATH_PREFIX ||
+      pathname.startsWith(`${ADMIN_PATH_PREFIX}/`) ||
+      pathname.includes('/dash')
+    );
   }, [pathname]);
 
   const authorizeUser = useCallback(() => {
