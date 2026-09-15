@@ -142,14 +142,25 @@ class CurricularPathwayService:
             if not pathway:
                 continue
 
-            courses = (
-                await db.exec(select(PathwayCourse).where(PathwayCourse.pathway_id == pathway.id))
-            ).all()
             total_req = pathway.required_credits
-            # Assume progress based on active enrollment calculation
-            earned_credits = min(total_req, len(courses) * 3)
-            pct = round((earned_credits / total_req * 100), 1) if total_req > 0 else 100.0
 
+            # Credits earned are NOT tracked anywhere: StudentPathwayEnrollment
+            # records who enrolled and when, and nothing links it to completed
+            # work. This previously read
+            #
+            #     earned_credits = min(total_req, len(courses) * 3)
+            #
+            # where `courses` is the pathway's OWN curriculum -- the courses it
+            # is made of, not the ones the student finished. Every enrolled
+            # student was therefore credited with the whole syllabus, and the
+            # min() clamp meant any pathway with enough courses reported the
+            # student at 100% of their graduation requirements on the day they
+            # enrolled. A student could be told they had graduated a track they
+            # had not started.
+            #
+            # Reporting nothing is recoverable; reporting a fictional 100%
+            # against graduation requirements is not. Wiring this up needs a
+            # real earned-credit record, which is a schema change.
             output.append(
                 StudentPathwayProgressRead(
                     id=e.id,
@@ -159,8 +170,12 @@ class CurricularPathwayService:
                     pathway_name=pathway.name,
                     status=e.status,
                     total_required_credits=total_req,
-                    earned_credits=earned_credits,
-                    progress_percentage=pct,
+                    earned_credits=None,
+                    progress_percentage=None,
+                    detail=(
+                        "Credit progress is not tracked yet; this pathway shows "
+                        "enrolment status only."
+                    ),
                     enrolled_at=e.enrolled_at,
                 )
             )

@@ -269,7 +269,15 @@ async def get_recommended_next_concepts(
             if p_score < PASSING_PREREQUISITE_THRESHOLD:
                 prereqs_met = False
 
-        avg_prereq_score = (sum(prereq_scores) / len(prereq_scores)) if prereq_scores else 1.0
+        if prereq_scores:
+            avg_prereq_score = sum(prereq_scores) / len(prereq_scores)
+        else:
+            # A foundational concept has no prerequisites, so there is no
+            # barrier to clear -- 1.0 states "nothing blocking", it is not a
+            # claim that the student scored full marks on anything. This feeds
+            # the `priority` ranking below and is never shown to a user or
+            # reported as a mastery figure.
+            avg_prereq_score = 1.0
 
         if prereqs_met:
             status_str = "IN_PROGRESS" if current_score > 0.0 else "READY_TO_LEARN"
@@ -337,19 +345,33 @@ async def get_student_mastery_radar(
 
         for c in subj_concepts:
             m = mastery_map.get(c.id) if c.id else None
-            score = m.mastery_score if m else 0.0
-            subj_scores.append(score)
-            total_scores.append(score)
 
+            # A concept with no mastery record has NOT been assessed, and is
+            # therefore excluded from the average entirely. It previously
+            # contributed 0.0, which meant a student with no records at all
+            # averaged 0% and was labelled "Novice" in every subject -- a
+            # verdict on a child manufactured out of no evidence.
+            #
+            # The COUNTS below deliberately keep treating an unassessed concept
+            # as not-mastered and not-in-progress, because that is true: it is
+            # a tally of what has been achieved, not a measurement of ability.
+            if m is not None:
+                subj_scores.append(m.mastery_score)
+                total_scores.append(m.mastery_score)
+
+            score = m.mastery_score if m else 0.0
             if score >= MASTERY_THRESHOLD:
                 mastered_count += 1
                 total_mastered += 1
             elif score > 0.1:
                 in_progress_count += 1
 
-        avg_score = round(sum(subj_scores) / total_in_subj, 4) if total_in_subj > 0 else 0.0
+        # None, not 0.0: nothing in this subject has been measured yet.
+        avg_score = round(sum(subj_scores) / len(subj_scores), 4) if subj_scores else None
 
-        if avg_score >= 0.85:
+        if avg_score is None:
+            tier = None
+        elif avg_score >= 0.85:
             tier = "Mastery"
         elif avg_score >= 0.70:
             tier = "Proficient"
@@ -363,13 +385,14 @@ async def get_student_mastery_radar(
                 subject=subject,
                 average_mastery=avg_score,
                 total_concepts=total_in_subj,
+                assessed_concepts=len(subj_scores),
                 mastered_concepts=mastered_count,
                 in_progress_concepts=in_progress_count,
                 proficiency_tier=tier,
             )
         )
 
-    overall_avg = round(sum(total_scores) / len(total_scores), 4) if total_scores else 0.0
+    overall_avg = round(sum(total_scores) / len(total_scores), 4) if total_scores else None
 
     return StudentMasteryRadarResponse(
         student_id=student_id,
@@ -377,6 +400,7 @@ async def get_student_mastery_radar(
         overall_mastery_average=overall_avg,
         total_mastered_concepts=total_mastered,
         total_tracked_concepts=len(concepts),
+        total_assessed_concepts=len(total_scores),
     )
 
 

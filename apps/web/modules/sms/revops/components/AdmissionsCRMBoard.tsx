@@ -505,7 +505,12 @@ export default function AdmissionsCRMBoard() {
   const hotLeadsCount = leads.filter((l) => l.score >= 80).length
   const totalPipelineValuePKR = leads.reduce((acc, l) => acc + l.estimatedTuitionPKR * 12, 0)
   const enrolledCount = leads.filter((l) => l.stage === 'enrolled').length
-  const conversionRate = totalLeadsCount > 0 ? ((enrolledCount / totalLeadsCount) * 100).toFixed(1) : '0'
+  // null, not '0': with no leads there is no conversion rate to report. It
+  // previously rendered "0% Enrolled Conversion Rate", so a school that had
+  // just been set up was told its admissions funnel had converted nobody
+  // before it had entered a single enquiry.
+  const conversionRate =
+    totalLeadsCount > 0 ? ((enrolledCount / totalLeadsCount) * 100).toFixed(1) : null
 
   return (
     <div className="space-y-6 pb-20">
@@ -613,7 +618,9 @@ export default function AdmissionsCRMBoard() {
             PKR {(totalPipelineValuePKR / 1000000).toFixed(1)}M
           </div>
           <div className="text-[11px] text-emerald-600 font-medium mt-1">
-            {conversionRate}% Enrolled Conversion Rate
+            {conversionRate !== null
+              ? `${conversionRate}% Enrolled Conversion Rate`
+              : 'No leads yet — conversion rate not available'}
           </div>
         </div>
 

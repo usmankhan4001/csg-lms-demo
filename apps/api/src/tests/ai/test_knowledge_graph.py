@@ -232,6 +232,66 @@ class TestConceptRecommendationsAndLearningPath:
         assert math_item.proficiency_tier == "Mastery"
         assert math_item.mastered_concepts == 2
 
+    @pytest.mark.asyncio
+    async def test_unassessed_concepts_are_not_scored_zero(self):
+        """A student who has never been assessed has NO mastery figure.
+
+        Every unassessed concept used to contribute 0.0 to the average, so a
+        newly enrolled child averaged 0% across the whole curriculum and was
+        labelled "Novice" in every subject -- a verdict on a child derived
+        from the complete absence of evidence. The honest answer is None.
+        """
+        c1 = ConceptNode(id=1, subject="Math", topic_code="M1", title="Algebra", difficulty_level=1)
+        c2 = ConceptNode(id=2, subject="Math", topic_code="M2", title="Geometry", difficulty_level=2)
+
+        mock_session = AsyncMock()
+        res_concepts = MagicMock()
+        res_concepts.scalars.return_value.all.return_value = [c1, c2]
+        res_mastery = MagicMock()
+        res_mastery.scalars.return_value.all.return_value = []
+        mock_session.execute.side_effect = [res_concepts, res_mastery]
+
+        radar = await get_student_mastery_radar(student_id="new", db_session=mock_session)
+
+        assert radar.overall_mastery_average is None
+        assert radar.total_assessed_concepts == 0
+        # The curriculum is still reported -- the concepts exist, they just
+        # have not been measured for this student.
+        assert radar.total_tracked_concepts == 2
+
+        math_item = next(r for r in radar.radar_data if r.subject == "Math")
+        assert math_item.average_mastery is None
+        assert math_item.proficiency_tier is None, (
+            "An unassessed subject must not be tiered. 'Novice' here is a "
+            "judgement manufactured from no data."
+        )
+        assert math_item.total_concepts == 2
+        assert math_item.assessed_concepts == 0
+
+    @pytest.mark.asyncio
+    async def test_a_partially_assessed_subject_averages_only_marked_work(self):
+        """One assessed concept out of two averages over the one, not both."""
+        c1 = ConceptNode(id=1, subject="Math", topic_code="M1", title="Algebra", difficulty_level=1)
+        c2 = ConceptNode(id=2, subject="Math", topic_code="M2", title="Geometry", difficulty_level=2)
+        m1 = StudentConceptMastery(student_id="s1", concept_id=1, mastery_score=0.90, confidence_level=0.9)
+
+        mock_session = AsyncMock()
+        res_concepts = MagicMock()
+        res_concepts.scalars.return_value.all.return_value = [c1, c2]
+        res_mastery = MagicMock()
+        res_mastery.scalars.return_value.all.return_value = [m1]
+        mock_session.execute.side_effect = [res_concepts, res_mastery]
+
+        radar = await get_student_mastery_radar(student_id="s1", db_session=mock_session)
+
+        math_item = next(r for r in radar.radar_data if r.subject == "Math")
+        # 0.90 over one assessed concept -- NOT 0.45, which is what averaging
+        # the unmarked one in as a zero used to produce.
+        assert math_item.average_mastery == 0.9
+        assert math_item.assessed_concepts == 1
+        assert math_item.total_concepts == 2
+        assert math_item.proficiency_tier == "Mastery"
+
 
 # ---------------------------------------------------------------------------
 # 4. Live Class AI Q&A Copilot Tests

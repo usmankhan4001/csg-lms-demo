@@ -45,3 +45,24 @@ async def test_curricular_pathways_and_enrollment(db: AsyncSession):
     progress = await CurricularPathwayService.get_student_progress(db=db, student_id=501)
     assert len(progress) == 1
     assert progress[0].pathway_name == "Cambridge STEM Distinction Track"
+
+    # A student who has just enrolled has completed NOTHING. Credit progress is
+    # not tracked anywhere -- StudentPathwayEnrollment records who enrolled and
+    # when, with no link to completed work -- so it must report no figure.
+    #
+    # This previously computed earned credits as
+    # `min(required_credits, len(pathway_courses) * 3)`, counting the pathway's
+    # OWN syllabus as the student's completed work. This pathway has 4 courses,
+    # so it credited 12 and clamped to the requirement: a student who had done
+    # nothing was shown at 100% of their graduation requirements.
+    assert progress[0].earned_credits is None, (
+        "Earned credits must not be inferred from the pathway's own course list."
+    )
+    assert progress[0].progress_percentage is None, (
+        "A student who has completed nothing must not be shown a completion "
+        "percentage -- least of all against graduation requirements."
+    )
+    assert progress[0].detail is not None
+    # The requirement itself is real configuration and is still reported.
+    assert progress[0].total_required_credits == pathway.required_credits
+    assert progress[0].status == "in_progress"

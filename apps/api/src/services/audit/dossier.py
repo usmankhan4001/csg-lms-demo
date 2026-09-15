@@ -711,7 +711,11 @@ async def build_user_dossier(
         "summary": {
             "courses_enrolled": len(courses),
             "courses_completed": sum(1 for c in courses if c["status"] == "STATUS_COMPLETED"),
-            "avg_progress_pct": round(sum(c["progress_pct"] for c in courses) / len(courses), 1) if courses else 0.0,
+            # None rather than 0.0, matching avg_grade_pct above: a person with
+            # no enrolments has no average progress, and "0.0" in a subject
+            # access dossier reads as "made no progress" rather than "took no
+            # courses". courses_enrolled directly above gives the count.
+            "avg_progress_pct": round(sum(c["progress_pct"] for c in courses) / len(courses), 1) if courses else None,
             "assignments_submitted": len(assignments),
             "assignments_graded": len(graded),
             "tasks_answered": sum(a["tasks_submitted"] for a in assignments),

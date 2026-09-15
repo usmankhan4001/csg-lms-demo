@@ -150,20 +150,37 @@ class MasteryEvaluationInput(SQLModel):
 
 
 class MasteryRadarItem(SQLModel):
+    """One subject's row on the Student 360 mastery radar.
+
+    `average_mastery` and `proficiency_tier` are OPTIONAL and are None when no
+    concept in this subject has been assessed for this student yet.
+
+    WHY: they used to be plain floats/strings, and a concept the student had
+    never been assessed on contributed a score of 0.0 to the average. A newly
+    enrolled child therefore scored 0% in every subject and was labelled
+    "Novice" -- a confident judgement about their ability derived from the
+    complete absence of evidence. `assessed_concepts` is the denominator, so a
+    reader can always tell "scored zero" from "not measured".
+    """
+
     subject: str
-    average_mastery: float
+    average_mastery: Optional[float] = None
     total_concepts: int
+    assessed_concepts: int = 0
     mastered_concepts: int
     in_progress_concepts: int
-    proficiency_tier: str
+    proficiency_tier: Optional[str] = None
 
 
 class StudentMasteryRadarResponse(SQLModel):
     student_id: str
     radar_data: List[MasteryRadarItem]
-    overall_mastery_average: float
+    # None when the student has no mastery record at all -- NOT 0.0, which
+    # reads as total failure rather than "nothing tracked yet".
+    overall_mastery_average: Optional[float] = None
     total_mastered_concepts: int
     total_tracked_concepts: int
+    total_assessed_concepts: int = 0
 
 
 class LearningPathConceptItem(SQLModel):

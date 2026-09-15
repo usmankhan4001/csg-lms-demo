@@ -54,6 +54,13 @@ class StudentPathwayProgressRead(BaseModel):
     pathway_name: str
     status: str
     total_required_credits: int
-    earned_credits: int
-    progress_percentage: float
+    # Optional because credit tracking is NOT wired up. These were previously
+    # computed as `min(required, number_of_courses_in_the_pathway * 3)`, which
+    # counted the pathway's own curriculum as though the student had completed
+    # it -- so a student who enrolled and did nothing was frequently reported
+    # at 100% of their graduation requirements. There is no completed-credit
+    # record to read, so the honest answer is None until one exists.
+    earned_credits: Optional[int] = None
+    progress_percentage: Optional[float] = None
+    detail: Optional[str] = None
     enrolled_at: datetime
