@@ -16,33 +16,58 @@
  * kept that parallel shell alive; the shell is now retired.
  */
 
+import { useState } from 'react'
 import { LH_PAGE, ModuleTabs } from '@/components/widgets'
+import { AdmissionsKanbanStudio } from '@/modules/ems/admissions'
 import AdmissionsCRMBoard from '@/modules/sms/revops/components/AdmissionsCRMBoard'
+import { LayoutGrid, Layers } from 'lucide-react'
 
 interface AdmissionsDashClientProps {
   org_id: number
   orgslug: string
 }
 
-export default function AdmissionsDashClient(_props: AdmissionsDashClientProps) {
-  // The board resolves its own org scope server-side from the caller's
-  // principal (see sms_revops.py), so it takes no props today. org_id/orgslug
-  // are accepted to match the dash module signature and for when the board
-  // gains an explicit campus filter.
-  // Only the surround is set to the Learnhouse dash ground here. The board's
-  // own chrome (its gradient ribbon and breadcrumbs) still reads as the old
-  // standalone page -- worth a restyle pass, but it is presentation only and
-  // was deliberately left untouched while moving the file.
+export default function AdmissionsDashClient(props: AdmissionsDashClientProps) {
+  const [viewMode, setViewMode] = useState<'kanban_studio' | 'legacy_board'>('kanban_studio')
+
   return (
     <div className={LH_PAGE}>
       <div className="pt-6 pb-10">
-        {/* The board brings its own header, so the tab strip is mounted
-            directly rather than through DashPageShell -- without it this page
-            would be the one admissions screen with no way to reach the rest
-            of the module now that its siblings have left the sidebar. */}
-        <ModuleTabs module="admissions" className="mb-5 mt-0" />
-        <AdmissionsCRMBoard />
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 mt-0">
+          <ModuleTabs module="admissions" className="my-0" />
+          <div className="flex items-center gap-1 bg-slate-200/80 dark:bg-slate-800 p-1 rounded-xl self-start sm:self-auto">
+            <button
+              onClick={() => setViewMode('kanban_studio')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                viewMode === 'kanban_studio'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5 text-indigo-600" />
+              Kanban Studio
+            </button>
+            <button
+              onClick={() => setViewMode('legacy_board')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                viewMode === 'legacy_board'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5 text-slate-500" />
+              Table View
+            </button>
+          </div>
+        </div>
+
+        {viewMode === 'kanban_studio' ? (
+          <AdmissionsKanbanStudio orgslug={props.orgslug} orgId={props.org_id} />
+        ) : (
+          <AdmissionsCRMBoard />
+        )}
       </div>
     </div>
   )
 }
+

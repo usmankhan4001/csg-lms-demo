@@ -160,3 +160,91 @@ class CareerGuidancePlan(SQLModel, table=True):
         default_factory=_utcnow,
         sa_column=Column(DateTime(timezone=True), nullable=False, default=_utcnow),
     )
+
+
+class EncryptedClinicalCaseNote(SQLModel, table=True):
+    """AES-256-GCM encrypted therapeutic case note or diagnostic evaluation.
+    Confidentiality: strictly PSYCHOLOGIST-only, governed by 404-Never-403 rule."""
+    __tablename__ = "sms_clinical_case_notes"
+    __table_args__ = (
+        Index("ix_clinical_notes_student", "student_id"),
+        Index("ix_clinical_notes_psychologist", "psychologist_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    student_id: int = Field(sa_column=Column(Integer, nullable=False, index=True))
+    psychologist_id: str = Field(sa_column=Column(String(255), nullable=False, index=True))
+    psychologist_user_id: Optional[int] = Field(
+        default=None, sa_column=Column(Integer, nullable=True)
+    )
+    category: str = Field(default="therapeutic_note", sa_column=Column(String(50), nullable=False))
+    risk_level: str = Field(default="low", sa_column=Column(String(20), nullable=False))
+    
+    # Envelope encryption fields (AES-256-GCM)
+    envelope_ciphertext: str = Field(sa_column=Column(Text, nullable=False))
+    envelope_iv: str = Field(sa_column=Column(String(100), nullable=False))
+    envelope_tag: str = Field(sa_column=Column(String(100), nullable=False))
+    key_id: Optional[str] = Field(default=None, sa_column=Column(String(100), nullable=True))
+    algorithm: str = Field(default="AES-256-GCM", sa_column=Column(String(50), nullable=False))
+    envelope_version: str = Field(default="v1", sa_column=Column(String(20), nullable=False))
+
+    created_at: datetime.datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(DateTime(timezone=True), nullable=False, default=_utcnow),
+    )
+    updated_at: datetime.datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(DateTime(timezone=True), nullable=False, default=_utcnow),
+    )
+
+
+class PastoralEscalationAlert(SQLModel, table=True):
+    """Anonymized pastoral escalation alert dispatched to school leadership/principal.
+    CRITICAL: Contains ZERO clinical notes or diagnostic narratives to preserve client privilege."""
+    __tablename__ = "sms_pastoral_escalations"
+    __table_args__ = (
+        Index("ix_pastoral_escalation_org", "org_id"),
+        Index("ix_pastoral_escalation_token", "student_anon_token"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    org_id: int = Field(sa_column=Column(Integer, nullable=False, index=True))
+    campus_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
+    student_anon_token: str = Field(sa_column=Column(String(100), nullable=False, index=True))
+    student_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
+    risk_level: str = Field(sa_column=Column(String(20), nullable=False))
+    category: str = Field(sa_column=Column(String(100), nullable=False))
+    action_required: str = Field(sa_column=Column(Text, nullable=False))
+    status: str = Field(default="PENDING", sa_column=Column(String(30), nullable=False))
+    escalated_by_sub: str = Field(sa_column=Column(String(255), nullable=False))
+    created_at: datetime.datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(DateTime(timezone=True), nullable=False, default=_utcnow),
+    )
+    resolved_at: Optional[datetime.datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+
+
+class ClinicalCrisisTriageItem(SQLModel, table=True):
+    """Crisis triage queue item for immediate clinical intervention."""
+    __tablename__ = "sms_clinical_crisis_triage"
+    __table_args__ = (
+        Index("ix_crisis_triage_student", "student_id"),
+        Index("ix_crisis_triage_status", "status"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    student_id: int = Field(sa_column=Column(Integer, nullable=False, index=True))
+    psychologist_id: str = Field(sa_column=Column(String(255), nullable=False, index=True))
+    triage_level: str = Field(default="CRITICAL", sa_column=Column(String(20), nullable=False))
+    trigger_reason: str = Field(sa_column=Column(String(255), nullable=False))
+    status: str = Field(default="ACTIVE", sa_column=Column(String(30), nullable=False)) # ACTIVE | RESOLVED | ESCALATED
+    flagged_at: datetime.datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(DateTime(timezone=True), nullable=False, default=_utcnow),
+    )
+    resolved_at: Optional[datetime.datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+

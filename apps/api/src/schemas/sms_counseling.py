@@ -109,3 +109,95 @@ class CareerGuidancePlanRead(BaseModel):
     generated_at: datetime.datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ---------------------------------------------------------------------------
+# 4. Psychological Clinical Desk & Envelope Encryption (Phase 5)
+# ---------------------------------------------------------------------------
+
+class EncryptedEnvelope(BaseModel):
+    """Client-side AES-256-GCM encryption envelope."""
+    ciphertext: str = Field(..., description="Base64-encoded encrypted payload")
+    iv: str = Field(..., description="Base64-encoded 12-byte initialization vector / nonce")
+    tag: str = Field(..., description="Base64-encoded 16-byte authentication tag")
+    key_id: Optional[str] = Field(default=None, description="Key identifier or encrypted DEK reference")
+    algorithm: str = Field(default="AES-256-GCM", description="Cryptographic cipher used")
+    version: str = Field(default="v1", description="Envelope format version")
+
+
+class ClinicalCaseNoteCreate(BaseModel):
+    student_id: int
+    category: str = Field(default="therapeutic_note", description="therapeutic_note | diagnostic_assessment | risk_evaluation")
+    risk_level: str = Field(default="low", description="low | medium | high | critical")
+    envelope: EncryptedEnvelope
+
+
+class ClinicalCaseNoteRead(BaseModel):
+    id: int
+    student_id: int
+    psychologist_id: str
+    category: str
+    risk_level: str
+    envelope: EncryptedEnvelope
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DiagnosticAssessmentCreate(BaseModel):
+    student_id: int
+    assessment_tool: str = Field(..., description="e.g. PHQ-9, GAD-7, BASC-3, WISC-V, BRIEF-2")
+    envelope: EncryptedEnvelope
+    risk_level: str = Field(default="low")
+
+
+class PastoralEscalationCreate(BaseModel):
+    """Payload to trigger institutional pastoral escalation.
+    DO NOT include clinical case notes or diagnostic narratives."""
+    student_id: int
+    risk_level: str = Field(..., description="low | medium | high | critical")
+    category: str = Field(..., description="attendance_decline | pastoral_risk | crisis_triage | safety_alert")
+    action_required: str = Field(..., description="Immediate non-clinical protective action needed")
+
+
+class PastoralEscalationRead(BaseModel):
+    """Anonymized escalation visible to school leadership.
+    Zero clinical narratives or diagnosis information included."""
+    id: int
+    org_id: int
+    campus_id: Optional[int] = None
+    student_anon_token: str
+    risk_level: str
+    category: str
+    action_required: str
+    status: str
+    escalated_by_sub: str
+    created_at: datetime.datetime
+    resolved_at: Optional[datetime.datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CrisisTriageItemCreate(BaseModel):
+    student_id: int
+    triage_level: str = Field(default="CRITICAL", description="ELEVATED | HIGH | CRITICAL")
+    trigger_reason: str = Field(..., description="Operational non-clinical trigger code/reason")
+
+
+class CrisisTriageItemRead(BaseModel):
+    id: int
+    student_id: int
+    psychologist_id: str
+    triage_level: str
+    trigger_reason: str
+    status: str
+    flagged_at: datetime.datetime
+    resolved_at: Optional[datetime.datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CrisisTriageUpdate(BaseModel):
+    status: str = Field(..., description="ACTIVE | RESOLVED | ESCALATED")
+

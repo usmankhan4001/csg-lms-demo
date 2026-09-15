@@ -42,12 +42,15 @@ from src.schemas.sms_exam import (
     ExamRead,
     ExamResultRead,
     ExamResultSummary,
+    ExamPsychometricsReport,
     ExamSectionScheduleCreate,
     ExamSectionScheduleRead,
     ExamSittingUpdate,
     ExamUpdate,
     PostResultsResponse,
 )
+from src.services.sms.exam_psychometrics import get_exam_psychometrics
+
 from src.db.sms_exam_extended import ResitStatus
 from src.schemas.sms_exam_extended import (
     AllocateSeatsRequest,
@@ -661,3 +664,31 @@ async def suggest_exam_resit_candidates(
 ) -> List[ResitCandidate]:
     rows = await suggest_resit_candidates(session=session, exam_id=exam_id)
     return [ResitCandidate(**r) for r in rows]
+
+
+@router.get(
+    "/{exam_id}/psychometrics",
+    response_model=ExamPsychometricsReport,
+    summary="Get Exam Psychometrics (IRT 2PL & Reliability)",
+    description=(
+        "Item Response Theory (IRT 2-Parameter Logistic model) analysis: "
+        "calculates item discrimination (alpha), item difficulty (beta), "
+        "flags defective/low-discrimination items (alpha < 0.20) for teacher review, "
+        "and computes Cronbach's Alpha test reliability index."
+    ),
+)
+async def get_psychometrics(
+    exam_id: int,
+    num_items: int = Query(10, ge=2, le=100, description="Decomposed item count when analyzing exam marks"),
+    session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(require_roles(EXAM_STAFF_ROLES)),
+) -> ExamPsychometricsReport:
+    try:
+        return await get_exam_psychometrics(
+            session=session,
+            exam_id=exam_id,
+            num_items=num_items,
+        )
+    except ExamNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+

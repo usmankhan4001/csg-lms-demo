@@ -44,9 +44,12 @@ from src.routers import (
     sms_pathways,
     sms_hostel,
     sms_inventory,
+    sms_section_subjects,
+    sms_matriculation,
     live_classes,
     live_class_webhooks,
 )
+from src.routers import ems_roles
 from src.routers import mfa as mfa_router_module
 from src.routers import monitoring
 from src.routers import notifications as notifications_router_module
@@ -633,6 +636,12 @@ v1_router.include_router(
     prefix="/sms/exams",
     tags=["sms-exams"],
 )
+v1_router.include_router(
+    sms_exam.router,
+    prefix="/ems/academic/exams",
+    tags=["ems-academic-exams"],
+)
+
 
 v1_router.include_router(
     sms_fees.router,
@@ -713,6 +722,19 @@ v1_router.include_router(
     tags=["revops-agents"],
 )
 
+# Automated Matriculation Handshake, BANT Qualification & Curriculum RAG
+v1_router.include_router(
+    sms_matriculation.router,
+    prefix="/sms",
+    tags=["sms-matriculation"],
+)
+v1_router.include_router(
+    sms_matriculation.router,
+    prefix="/revops",
+    tags=["sms-matriculation"],
+)
+
+
 # Phase 4: Counseling / Wellbeing / Career Guidance (new module) and the
 # Teacher Module additions (lesson plans + coursework-hour allocation,
 # gated behind the existing sms_gradebook toggle). Mounted the same way as
@@ -789,5 +811,17 @@ v1_router.include_router(
     prefix="/sms/inventory",
     tags=["sms-inventory"],
 )
+
+# CSG-EMS Dynamic RBAC & Role Management
+v1_router.include_router(
+    ems_roles.router,
+)
+
+# CSG-EMS Academic Curricular Bridge & Section-Subject Mapping
+v1_router.include_router(
+    sms_section_subjects.router,
+)
+
+
 
 

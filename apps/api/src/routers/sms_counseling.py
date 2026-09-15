@@ -41,13 +41,23 @@ from src.schemas.sms_counseling import (
     ActivityLogRead,
     CareerGuidanceGenerateRequest,
     CareerGuidancePlanRead,
+    ClinicalCaseNoteCreate,
+    ClinicalCaseNoteRead,
     CounselingSessionCreate,
     CounselingSessionRead,
     CounselingSessionUpdate,
+    CrisisTriageItemCreate,
+    CrisisTriageItemRead,
+    CrisisTriageUpdate,
+    DiagnosticAssessmentCreate,
+    EncryptedEnvelope,
     ParentVisibleSessionSummary,
+    PastoralEscalationCreate,
+    PastoralEscalationRead,
 )
 from src.security.features_utils.dependencies import require_tutor_counseling_feature
 from src.services.ai.llm import AINotConfiguredError
+from src.services.sms import clinical_desk as clinical_desk_service
 from src.services.sms import counseling as counseling_service
 
 router = APIRouter(dependencies=[Depends(require_tutor_counseling_feature)])
@@ -275,3 +285,201 @@ async def list_career_guidance_endpoint(
 ) -> List[CareerGuidancePlanRead]:
     records = await counseling_service.list_career_plans(session, student_id)
     return [CareerGuidancePlanRead.model_validate(r) for r in records]
+
+
+# ---------------------------------------------------------------------------
+# 4. Psychological Clinical Desk (Phase 5)
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/clinical/notes",
+    response_model=ClinicalCaseNoteRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Store Encrypted Clinical Case Note",
+    description="PSYCHOLOGIST-only. Enforces 404-Never-403 for non-psychologists.",
+)
+async def create_encrypted_case_note_endpoint(
+    payload: ClinicalCaseNoteCreate,
+    session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+) -> ClinicalCaseNoteRead:
+    if not principal.has_role(PSYCHOLOGIST):
+        raise _confidential_not_found()
+    record = await clinical_desk_service.save_encrypted_case_note(session, principal, payload)
+    return ClinicalCaseNoteRead(
+        id=record.id,
+        student_id=record.student_id,
+        psychologist_id=record.psychologist_id,
+        category=record.category,
+        risk_level=record.risk_level,
+        envelope=EncryptedEnvelope(
+            ciphertext=record.envelope_ciphertext,
+            iv=record.envelope_iv,
+            tag=record.envelope_tag,
+            key_id=record.key_id,
+            algorithm=record.algorithm,
+            version=record.envelope_version,
+        ),
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
+
+
+@router.get(
+    "/clinical/notes/student/{student_id}",
+    response_model=List[ClinicalCaseNoteRead],
+    summary="List Student Encrypted Clinical Case Notes",
+    description="PSYCHOLOGIST-only (author). Every other role gets an empty list -- never a 403.",
+)
+async def list_encrypted_case_notes_endpoint(
+    student_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+) -> List[ClinicalCaseNoteRead]:
+    records = await clinical_desk_service.list_encrypted_case_notes_for_student(
+        session, principal, student_id
+    )
+    return [
+        ClinicalCaseNoteRead(
+            id=r.id,
+            student_id=r.student_id,
+            psychologist_id=r.psychologist_id,
+            category=r.category,
+            risk_level=r.risk_level,
+            envelope=EncryptedEnvelope(
+                ciphertext=r.envelope_ciphertext,
+                iv=r.envelope_iv,
+                tag=r.envelope_tag,
+                key_id=r.key_id,
+                algorithm=r.algorithm,
+                version=r.envelope_version,
+            ),
+            created_at=r.created_at,
+            updated_at=r.updated_at,
+        )
+        for r in records
+    ]
+
+
+@router.post(
+    "/clinical/diagnostic-assessments",
+    response_model=ClinicalCaseNoteRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Record Encrypted Diagnostic Assessment",
+    description="PSYCHOLOGIST-only. Enforces 404-Never-403.",
+)
+async def create_diagnostic_assessment_endpoint(
+    payload: DiagnosticAssessmentCreate,
+    session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+) -> ClinicalCaseNoteRead:
+    if not principal.has_role(PSYCHOLOGIST):
+        raise _confidential_not_found()
+    record = await clinical_desk_service.save_diagnostic_assessment(session, principal, payload)
+    return ClinicalCaseNoteRead(
+        id=record.id,
+        student_id=record.student_id,
+        psychologist_id=record.psychologist_id,
+        category=record.category,
+        risk_level=record.risk_level,
+        envelope=EncryptedEnvelope(
+            ciphertext=record.envelope_ciphertext,
+            iv=record.envelope_iv,
+            tag=record.envelope_tag,
+            key_id=record.key_id,
+            algorithm=record.algorithm,
+            version=record.envelope_version,
+        ),
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
+
+
+@router.post(
+    "/clinical/escalate",
+    response_model=PastoralEscalationRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Emit Anonymized Pastoral Escalation",
+    description=(
+        "Emits protective pastoral alert to school principal / leadership. "
+        "Zero clinical notes or diagnostic narratives are leaked."
+    ),
+)
+async def emit_pastoral_escalation_endpoint(
+    payload: PastoralEscalationCreate,
+    session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+) -> PastoralEscalationRead:
+    if not principal.has_role(PSYCHOLOGIST):
+        raise _confidential_not_found()
+    record = await clinical_desk_service.emit_pastoral_escalation(session, principal, payload)
+    return PastoralEscalationRead.model_validate(record)
+
+
+@router.get(
+    "/clinical/escalations",
+    response_model=List[PastoralEscalationRead],
+    summary="List Pastoral Escalation Alerts",
+    description="Accessible to school leadership (Principal/SuperAdmin) and psychologists. Stripped of clinical details.",
+)
+async def list_pastoral_escalations_endpoint(
+    session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+) -> List[PastoralEscalationRead]:
+    records = await clinical_desk_service.list_pastoral_escalations_for_leadership(session, principal)
+    return [PastoralEscalationRead.model_validate(r) for r in records]
+
+
+@router.post(
+    "/clinical/triage",
+    response_model=CrisisTriageItemRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Flag Crisis Triage Item",
+    description="PSYCHOLOGIST-only. Enforces 404-Never-403.",
+)
+async def create_crisis_triage_endpoint(
+    payload: CrisisTriageItemCreate,
+    session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+) -> CrisisTriageItemRead:
+    if not principal.has_role(PSYCHOLOGIST):
+        raise _confidential_not_found()
+    record = await clinical_desk_service.create_crisis_triage(session, principal, payload)
+    return CrisisTriageItemRead.model_validate(record)
+
+
+@router.get(
+    "/clinical/triage",
+    response_model=List[CrisisTriageItemRead],
+    summary="List Crisis Triage Queue",
+    description="PSYCHOLOGIST-only. Enforces 404-Never-403.",
+)
+async def list_crisis_triage_endpoint(
+    session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+) -> List[CrisisTriageItemRead]:
+    records = await clinical_desk_service.list_crisis_triage_queue(session, principal)
+    return [CrisisTriageItemRead.model_validate(r) for r in records]
+
+
+@router.patch(
+    "/clinical/triage/{triage_id}",
+    response_model=CrisisTriageItemRead,
+    summary="Update Crisis Triage Status",
+    description="PSYCHOLOGIST-only. Enforces 404-Never-403.",
+)
+async def update_crisis_triage_endpoint(
+    triage_id: int,
+    payload: CrisisTriageUpdate,
+    session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+) -> CrisisTriageItemRead:
+    if not principal.has_role(PSYCHOLOGIST):
+        raise _confidential_not_found()
+    record = await clinical_desk_service.update_crisis_triage_status(
+        session, principal, triage_id, payload.status
+    )
+    if record is None:
+        raise _confidential_not_found()
+    return CrisisTriageItemRead.model_validate(record)
+

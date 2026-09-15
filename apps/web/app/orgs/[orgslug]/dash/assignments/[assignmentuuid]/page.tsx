@@ -38,6 +38,7 @@ import { useMediaQuery } from 'usehooks-ts';
 import EditAssignmentModal from '@components/Objects/Modals/Activities/Assignments/EditAssignmentModal';
 import { useTranslation } from 'react-i18next';
 import { useLHAnalytics, AnalyticsEvent } from '@services/analytics';
+import { SpeedGraderStudio, RubricEditor } from '@/modules/ems/speedgrader';
 const AssignmentSubmissionsSubPage = dynamic(() => import('./subpages/AssignmentSubmissionsSubPage'))
 const AssignmentAnalyticsSubPage = dynamic(() => import('./subpages/AssignmentAnalyticsSubPage'))
 
@@ -126,12 +127,38 @@ function AssignmentEdit() {
                                 <div>{t('dashboard.assignments.detail.tabs.analytics')}</div>
                             </div>
                         </div>
+                        <div
+                            onClick={() => setSelectedSubPage('speedgrader')}
+                            className={`flex space-x-4 py-2 w-fit text-center border-black transition-all ease-linear ${selectedSubPage === 'speedgrader'
+                                ? 'border-b-4 text-black'
+                                : 'opacity-50'
+                                } cursor-pointer`}
+                        >
+                            <div className="flex items-center space-x-2.5 mx-2">
+                                <Zap size={16} className="text-amber-500" />
+                                <div>SpeedGrader</div>
+                            </div>
+                        </div>
+                        <div
+                            onClick={() => setSelectedSubPage('rubric')}
+                            className={`flex space-x-4 py-2 w-fit text-center border-black transition-all ease-linear ${selectedSubPage === 'rubric'
+                                ? 'border-b-4 text-black'
+                                : 'opacity-50'
+                                } cursor-pointer`}
+                        >
+                            <div className="flex items-center space-x-2.5 mx-2">
+                                <ClipboardCheck size={16} className="text-emerald-600" />
+                                <div>Rubric Studio</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div className="flex flex-1 min-h-0 w-full">
                     {selectedSubPage === 'editor' && <AssignmentEditorSubPage assignmentuuid={params.assignmentuuid} />}
                     {selectedSubPage === 'submissions' && <AssignmentSubmissionsSubPage assignment_uuid={params.assignmentuuid} />}
                     {selectedSubPage === 'analytics' && <AssignmentAnalyticsSubPage assignment_uuid={params.assignmentuuid} />}
+                    {selectedSubPage === 'speedgrader' && <SpeedGraderStudio />}
+                    {selectedSubPage === 'rubric' && <RubricEditor />}
                 </div>
             </AssignmentProvider>
         </div>

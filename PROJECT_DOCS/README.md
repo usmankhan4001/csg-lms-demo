@@ -6,12 +6,13 @@ The verified, structured documentation for the LMS & School Management System co
 
 ## 🧭 Core Documentation (Read in this order)
 
-1. **[SYSTEM_DIAGRAMS_AND_FEATURES.md](./SYSTEM_DIAGRAMS_AND_FEATURES.md)** — **Master Visual & Technical Reference**: High-level topology diagram, dual-shell frontend layout, security & auth sequence flow, complete database Entity-Relationship Diagram (ERD), and full feature matrix.
-2. **[KNOWN_GAPS.md](./KNOWN_GAPS.md)** — Honest record of what is **not** done or currently mocked.
-3. **[MODULES.md](./MODULES.md)** — Module-by-module documentation: routes, API prefixes, role gating, and technical completeness.
-4. **[ARCHITECTURE.md](./ARCHITECTURE.md)** — Deep-dive on the two frontend shells, identity resolution, 3-layer authorization, feature toggles, background workers, and schema migration strategies.
-5. **[DECISIONS.md](./DECISIONS.md)** — Architectural Decision Records (ADRs) and domain reasoning for critical design choices.
-6. **[WORK_LOG.md](./WORK_LOG.md)** — Chronological engineering log of changes and commit hashes.
+1. **[MASTER_IMPLEMENTATION_PLAN.md](./MASTER_IMPLEMENTATION_PLAN.md)** — **Authoritative Phased Engineering Roadmap**: 6-phase sequence from dynamic RBAC and academic backbone to AI Socratic companions and Cognia evidence lockers.
+2. **[SYSTEM_DIAGRAMS_AND_FEATURES.md](./SYSTEM_DIAGRAMS_AND_FEATURES.md)** — **Master Visual & Technical Reference**: High-level topology diagram, dual-shell frontend layout, security & auth sequence flow, complete database Entity-Relationship Diagram (ERD), and full feature matrix.
+3. **[KNOWN_GAPS.md](./KNOWN_GAPS.md)** — Honest record of what is **not** done or currently mocked.
+4. **[MODULES.md](./MODULES.md)** — Module-by-module documentation: routes, API prefixes, role gating, and technical completeness.
+5. **[ARCHITECTURE.md](./ARCHITECTURE.md)** — Deep-dive on the two frontend shells, identity resolution, 3-layer authorization, feature toggles, background workers, and schema migration strategies.
+6. **[DECISIONS.md](./DECISIONS.md)** — Architectural Decision Records (ADRs) and domain reasoning for critical design choices.
+7. **[WORK_LOG.md](./WORK_LOG.md)** — Chronological engineering log of changes and commit hashes.
 
 ---
 

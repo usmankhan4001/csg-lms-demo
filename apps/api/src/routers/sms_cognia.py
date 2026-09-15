@@ -476,3 +476,120 @@ async def export_cognia_binder(
             "verified or endorsed by Cognia / AdvancED Global."
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# Cognia Evidence Engine & Real-Time AMI (Phase 5)
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/harvest/lesson-plan",
+    response_model=EvidenceItemResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Harvest Lesson Plan Evidence with SHA-256 Dual Checksum",
+)
+async def harvest_lesson_plan_endpoint(
+    payload: Dict[str, Any],
+    academic_year: str = Query("2025-2026"),
+    principal: KeycloakUserPrincipal = Depends(require_roles(_EVIDENCE_AUTHORS)),
+    session: AsyncSession = Depends(get_db_session),
+) -> EvidenceItemResponse:
+    from src.services.sms import cognia_engine
+    row = await cognia_engine.harvest_lesson_plan(session, principal, payload, academic_year)
+    return EvidenceItemResponse.from_row(row)
+
+
+@router.post(
+    "/harvest/rubric",
+    response_model=EvidenceItemResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Harvest Assessment Rubric Evidence with SHA-256 Dual Checksum",
+)
+async def harvest_rubric_endpoint(
+    payload: Dict[str, Any],
+    academic_year: str = Query("2025-2026"),
+    principal: KeycloakUserPrincipal = Depends(require_roles(_EVIDENCE_AUTHORS)),
+    session: AsyncSession = Depends(get_db_session),
+) -> EvidenceItemResponse:
+    from src.services.sms import cognia_engine
+    row = await cognia_engine.harvest_rubric(session, principal, payload, academic_year)
+    return EvidenceItemResponse.from_row(row)
+
+
+@router.post(
+    "/harvest/psychometrics",
+    response_model=EvidenceItemResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Harvest Exam Psychometrics with SHA-256 Dual Checksum",
+)
+async def harvest_psychometrics_endpoint(
+    payload: Dict[str, Any],
+    academic_year: str = Query("2025-2026"),
+    principal: KeycloakUserPrincipal = Depends(require_roles(_EVIDENCE_AUTHORS)),
+    session: AsyncSession = Depends(get_db_session),
+) -> EvidenceItemResponse:
+    from src.services.sms import cognia_engine
+    row = await cognia_engine.harvest_exam_psychometrics(session, principal, payload, academic_year)
+    return EvidenceItemResponse.from_row(row)
+
+
+@router.post(
+    "/harvest/attendance",
+    response_model=EvidenceItemResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Harvest Attendance Log Evidence with SHA-256 Dual Checksum",
+)
+async def harvest_attendance_endpoint(
+    payload: Dict[str, Any],
+    academic_year: str = Query("2025-2026"),
+    principal: KeycloakUserPrincipal = Depends(require_roles(_EVIDENCE_AUTHORS)),
+    session: AsyncSession = Depends(get_db_session),
+) -> EvidenceItemResponse:
+    from src.services.sms import cognia_engine
+    row = await cognia_engine.harvest_attendance_logs(session, principal, payload, academic_year)
+    return EvidenceItemResponse.from_row(row)
+
+
+@router.post(
+    "/harvest/policy",
+    response_model=EvidenceItemResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Harvest Governance Policy Evidence with SHA-256 Dual Checksum",
+)
+async def harvest_policy_endpoint(
+    payload: Dict[str, Any],
+    academic_year: str = Query("2025-2026"),
+    principal: KeycloakUserPrincipal = Depends(require_roles(_EVIDENCE_AUTHORS)),
+    session: AsyncSession = Depends(get_db_session),
+) -> EvidenceItemResponse:
+    from src.services.sms import cognia_engine
+    row = await cognia_engine.harvest_governance_policy(session, principal, payload, academic_year)
+    return EvidenceItemResponse.from_row(row)
+
+
+@router.get(
+    "/ami",
+    summary="Get Real-Time Accreditation Maturity Index (AMI)",
+)
+async def get_realtime_ami_endpoint(
+    academic_year: str = Query("2025-2026"),
+    principal: KeycloakUserPrincipal = Depends(require_roles(_SUMMARY_READERS)),
+    session: AsyncSession = Depends(get_db_session),
+) -> Dict[str, Any]:
+    from src.services.sms import cognia_engine
+    org_id = require_org_id(principal)
+    return await cognia_engine.calculate_realtime_ami(session, org_id, academic_year)
+
+
+@router.get(
+    "/dossier/export",
+    summary="One-Click Export of Cognia Self-Study Dossier",
+)
+async def export_self_study_dossier_endpoint(
+    academic_year: str = Query("2025-2026"),
+    principal: KeycloakUserPrincipal = Depends(require_roles(_BINDER_EXPORTERS)),
+    session: AsyncSession = Depends(get_db_session),
+) -> Dict[str, Any]:
+    from src.services.sms import cognia_engine
+    return await cognia_engine.generate_self_study_dossier(session, principal, academic_year)
+

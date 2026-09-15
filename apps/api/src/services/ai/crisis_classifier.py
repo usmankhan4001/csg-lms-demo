@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # Pre-compiled safety regex patterns for fast synchronous screening
 SELF_HARM_PATTERNS = [
-    r"\b(suicide|suicidal|kill myself|want to die|end my life|ending it all|hang myself|slit my wrist|overdose|swallow pills|take my own life)\b",
+    r"\b(suicide|suicidal|kill myself|want to die|end(ing)? my life|end(ing)? it all|hang myself|slit my wrist|overdose|swallow pills|take my own life)\b",
     r"\b(cutting myself|burn myself|harm myself|hurting myself|self[-\s]?harm|bleed to death|jump off (a bridge|a roof|the building))\b",
     r"\b(better off dead|no reason to live|don't want to live anymore|wish i were dead|goodbye world)\b",
 ]
@@ -32,7 +32,7 @@ SEVERE_DISTRESS_PATTERNS = [
 ]
 
 VIOLENCE_WEAPONS_PATTERNS = [
-    r"\b(shoot up the school|bring a gun to school|bomb the school|kill (everyone|the teacher|them all|my classmates))\b",
+    r"\b(shoot(ing)? up the school|bring(ing)? a gun to school|bomb(ing)? the school|kill (everyone|the teacher|them all|my classmates))\b",
     r"\b(pipe bomb|mass shooting|stab someone|murder|homemade explosive|attack the campus)\b",
 ]
 

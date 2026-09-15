@@ -21,9 +21,11 @@ import {
     SendHorizonal,
     Users,
     X,
+    Zap,
 } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 import EvaluateAssignment from './Modals/EvaluateAssignment';
+import { SpeedGraderStudio } from '@/modules/ems/speedgrader';
 import { AssignmentProvider } from '@components/Contexts/Assignments/AssignmentContext';
 import { AssignmentsTaskProvider } from '@components/Contexts/Assignments/AssignmentsTaskContext';
 import AssignmentSubmissionProvider from '@components/Contexts/Assignments/AssignmentSubmissionContext';
@@ -89,6 +91,7 @@ function AssignmentSubmissionsSubPage({ assignment_uuid }: { assignment_uuid: st
     const [sortField, setSortField] = useState<SortField>('date');
     const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
     const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
+    const [isSpeedGraderOpen, setIsSpeedGraderOpen] = useState(false);
 
     const { data: assignmentSubmissions } = useQuery({
         queryKey: queryKeys.assignments.allSubmissions(assignment_uuid),
@@ -274,8 +277,28 @@ function AssignmentSubmissionsSubPage({ assignment_uuid }: { assignment_uuid: st
                             </>
                         )}
                     </div>
+
+                    {/* SpeedGrader Launch Button */}
+                    <button
+                        onClick={() => setIsSpeedGraderOpen(true)}
+                        className="flex items-center space-x-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-black hover:bg-gray-800 nice-shadow rounded-full transition-all hover:scale-105 shrink-0"
+                        title="Launch SpeedGrader 2.0 Split-Screen Studio"
+                    >
+                        <Zap size={12} className="text-amber-400" />
+                        <span>SpeedGrader</span>
+                    </button>
                 </div>
             </div>
+
+            {/* SpeedGrader Full-Screen Studio Overlay */}
+            {isSpeedGraderOpen && (
+                <div className="fixed inset-0 z-50 bg-white flex flex-col">
+                    <SpeedGraderStudio
+                        assignmentTitle={t('common.assignments')}
+                        onClose={() => setIsSpeedGraderOpen(false)}
+                    />
+                </div>
+            )}
 
             {/* Submissions list */}
             <div className="flex-1 overflow-y-auto px-10 pb-6">

@@ -3871,6 +3871,25 @@ async def _apply_grade_and_finalize(
         },
     )
 
+    # Curricular Bridge Auto-Sync: Automatically record entry into SMS Gradebook
+    try:
+        from src.services.sms.section_subjects import sync_course_activity_grade_to_sms
+        await sync_course_activity_grade_to_sms(
+            db_session=db_session,
+            student_id=user_id,
+            course_id=course.id,
+            raw_score=float(computed["grade"]),
+            max_score=float(computed["max_grade"]) if computed["max_grade"] > 0 else 100.0,
+            activity_title=assignment.title,
+            remarks=f"Learnhouse Assignment: {assignment.title}",
+            graded_by=None,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Auto-sync of assignment grade to SMS gradebook failed (non-fatal): %s",
+            exc,
+        )
+
     if dispatch_webhook:
         await dispatch_webhooks(
             event_name="assignment_graded",

@@ -156,3 +156,41 @@ class HintUsageRead(BaseModel):
     max_hint_level: int
     deduction_percentage: float
     deduction_applied_at: Optional[datetime.datetime] = None
+
+
+class ItemCCPoint(BaseModel):
+    theta: float
+    probability: float
+
+
+class ItemPsychometrics(BaseModel):
+    item_id: str
+    item_index: int
+    item_title: Optional[str] = None
+    discrimination_alpha: float = Field(..., description="Item discrimination parameter (alpha / a)")
+    difficulty_beta: float = Field(..., description="Item difficulty parameter (beta / b)")
+    discrimination_category: str
+    difficulty_category: str
+    is_low_discrimination: bool = Field(..., description="True if alpha < 0.2")
+    flag_reason: Optional[str] = None
+    pass_rate: float = Field(..., description="Classical item difficulty p-value")
+    point_biserial_r: Optional[float] = None
+    icc_curve: List[ItemCCPoint] = Field(default_factory=list)
+
+
+class ExamPsychometricsReport(BaseModel):
+    """IRT 2-Parameter Logistic model report and Cronbach's Alpha test reliability."""
+    exam_id: int
+    exam_title: Optional[str] = None
+    total_examinees: int
+    total_items: int
+    cronbach_alpha: float
+    reliability_interpretation: str
+    mean_score: float
+    score_variance: float
+    score_std_dev: float
+    items_flagged_count: int
+    items: List[ItemPsychometrics] = Field(default_factory=list)
+    generated_at: datetime.datetime
+    recommendations: List[str] = Field(default_factory=list)
+
