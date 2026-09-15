@@ -37,7 +37,6 @@ from src.db.sms_gradebook import (
     AssessmentPlan,
     GradebookEntry,
     GradingScale,
-    GradingScaleInterval,
     ReportCard,
 )
 from src.db.users import User

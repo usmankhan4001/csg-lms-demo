@@ -43,7 +43,7 @@ from src.db.sms_campus import (
     ClassSection,
     StudentEnrollment,
 )
-from src.db.sms_gradebook import GradingScale, GradingScaleInterval, AssessmentPlan
+from src.db.sms_gradebook import GradingScale, AssessmentPlan
 from src.db.sms_fees import FeeStructure
 from app import app
 from src.services.database.database import get_session
