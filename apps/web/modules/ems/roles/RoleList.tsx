@@ -51,6 +51,46 @@ export interface RoleListProps {
   onAssignmentCreated?: (assignment: EMSUserRoleAssignment) => void
 }
 
+function normalizeRole(r: any): EMSRole {
+  if (!r) {
+    return {
+      id: '0',
+      name: 'Unknown Role',
+      code: 'UNKNOWN',
+      description: '',
+      isSystem: false,
+      permissions: [],
+    }
+  }
+  return {
+    id: String(r.id),
+    name: r.name || 'Unnamed Role',
+    code: r.code || r.slug || 'CUSTOM',
+    slug: r.slug || r.code,
+    description: r.description || '',
+    isSystem: Boolean(r.isSystem ?? r.is_system_template),
+    is_system_template: Boolean(r.is_system_template ?? r.isSystem),
+    is_clinical_specialist: Boolean(r.is_clinical_specialist),
+    inheritsFrom: r.inheritsFrom || '',
+    permissions: Array.isArray(r.permissions)
+      ? r.permissions
+      : Array.isArray(r.rules)
+      ? r.rules.map((rule: any) => ({
+          resource: rule.resource_key || rule.resource || 'academic.courses',
+          actions: {
+            read: Boolean(rule.can_read ?? rule.actions?.read),
+            create: Boolean(rule.can_create ?? rule.actions?.create),
+            update: Boolean(rule.can_update ?? rule.actions?.update),
+            delete: Boolean(rule.can_delete ?? rule.actions?.delete),
+            approve: Boolean(rule.can_approve ?? rule.actions?.approve),
+            export: Boolean(rule.can_export ?? rule.actions?.export),
+          },
+          scope: (rule.scope_level || rule.scope || 'campus').toLowerCase(),
+        }))
+      : [],
+  }
+}
+
 export function RoleList({
   orgId,
   initialCustomRoles = [],
@@ -63,15 +103,17 @@ export function RoleList({
   })
 
   // Local state initialized with fetched or initial roles
-  const [customRoles, setCustomRoles] = useState<EMSRole[]>(initialCustomRoles)
+  const [customRoles, setCustomRoles] = useState<EMSRole[]>(() =>
+    (initialCustomRoles || []).map(normalizeRole)
+  )
   const [searchQuery, setSearchQuery] = useState('')
   const [tabFilter, setTabFilter] = useState<'all' | 'custom' | 'system'>('all')
 
   // Sync with API when loaded
   useEffect(() => {
     if (rolesResource.data && Array.isArray(rolesResource.data)) {
-      // Filter out system roles if returned in list, or keep custom roles
-      const apiCustom = rolesResource.data.filter((r) => !r.isSystem)
+      const normalizedApiRoles = rolesResource.data.map(normalizeRole)
+      const apiCustom = normalizedApiRoles.filter((r) => !r.isSystem)
       if (apiCustom.length > 0) {
         setCustomRoles(apiCustom)
       }
@@ -91,16 +133,18 @@ export function RoleList({
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   const allRoles = useMemo(() => {
-    return [...SYSTEM_ROLE_TEMPLATES, ...customRoles]
+    return [...SYSTEM_ROLE_TEMPLATES, ...customRoles].map(normalizeRole)
   }, [customRoles])
 
   // Filtered roles based on search and tab filter
   const filteredRoles = useMemo(() => {
     return allRoles.filter((r) => {
-      const matchesSearch =
-        r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.description.toLowerCase().includes(searchQuery.toLowerCase())
+      const name = (r.name || '').toLowerCase()
+      const code = (r.code || r.slug || '').toLowerCase()
+      const desc = (r.description || '').toLowerCase()
+      const q = (searchQuery || '').toLowerCase()
+
+      const matchesSearch = !q || name.includes(q) || code.includes(q) || desc.includes(q)
 
       if (!matchesSearch) return false
 
@@ -109,6 +153,7 @@ export function RoleList({
       return true
     })
   }, [allRoles, searchQuery, tabFilter])
+
 
   // Save Role handler (Create, Edit, Clone) with backend API sync
   const handleSaveRole = async (savedRole: EMSRole) => {
@@ -306,8 +351,8 @@ export function RoleList({
       {/* Role Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredRoles.map((role) => {
-          const enabledDomainsCount = role.permissions.filter((p) =>
-            Object.values(p.actions).some(Boolean)
+          const enabledDomainsCount = (role.permissions || []).filter((p) =>
+            p?.actions && Object.values(p.actions).some(Boolean)
           ).length
 
           return (

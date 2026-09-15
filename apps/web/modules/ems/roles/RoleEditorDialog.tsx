@@ -83,16 +83,16 @@ export function RoleEditorDialog({
     if (open) {
       setError(null)
       if (role) {
-        setName(isClone ? `${role.name} (Copy)` : role.name)
-        setCode(isClone ? `${role.code}_COPY` : role.code)
-        setDescription(role.description)
+        setName(isClone ? `${role.name || ''} (Copy)` : (role.name || ''))
+        setCode(isClone ? `${role.code || role.slug || 'CUSTOM'}_COPY` : (role.code || role.slug || 'CUSTOM'))
+        setDescription(role.description || '')
         setInheritsFrom(role.inheritsFrom || '')
 
         // Populate rules map
         const initialRules: Record<string, EMSPermissionRule> = {}
         // Default all resource domains
         RESOURCE_DOMAINS.forEach((domain) => {
-          const existing = role.permissions.find((p) => p.resource === domain.key)
+          const existing = (role.permissions || []).find((p) => p.resource === domain.key)
           if (existing) {
             initialRules[domain.key] = {
               resource: domain.key,
