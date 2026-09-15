@@ -4,7 +4,7 @@
 # ==============================================================================
 services:
   # ── PostgreSQL 16 with PGVector ─────────────────────────────────────────────
-  postgres:
+  csg-postgres:
     image: pgvector/pgvector:pg16
     restart: always
     environment:
@@ -30,7 +30,7 @@ services:
           memory: 512M
 
   # ── Redis 7.2 Alpine ────────────────────────────────────────────────────────
-  redis:
+  csg-redis:
     image: redis:7.2-alpine
     restart: always
     command: >
@@ -73,9 +73,9 @@ services:
       LEARNHOUSE_ENV: production
       LEARNHOUSE_PORT: 9000
       WORKERS: ${WORKERS:-4}
-      LEARNHOUSE_SQL_CONNECTION_STRING: postgresql+asyncpg://${POSTGRES_USER:-learnhouse}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-learnhouse}
-      LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      LEARNHOUSE_REDIS_CONNECTION_STRING: redis://:${REDIS_PASSWORD}@redis:6379/0
+      LEARNHOUSE_SQL_CONNECTION_STRING: postgresql+asyncpg://${POSTGRES_USER:-learnhouse}:${POSTGRES_PASSWORD}@csg-postgres:5432/${POSTGRES_DB:-learnhouse}
+      LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD}@csg-redis:6379/0
+      LEARNHOUSE_REDIS_CONNECTION_STRING: redis://:${REDIS_PASSWORD}@csg-redis:6379/0
       LEARNHOUSE_DOMAIN: ${DOMAIN:-csginfotech.co}
       LEARNHOUSE_FRONTEND_DOMAIN: ${APP_DOMAIN:-lms-demo.csginfotech.co}
       LEARNHOUSE_ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://lms-demo.csginfotech.co,https://demo-lms.csginfotech.co,https://learnhouse.csginfotech.co,https://api-demo.csginfotech.co,https://collab-demo.csginfotech.co,https://livekit-demo.csginfotech.co,http://localhost:3000}
@@ -136,9 +136,9 @@ services:
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
     depends_on:
-      postgres:
+      csg-postgres:
         condition: service_healthy
-      redis:
+      csg-redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:9000/api/v1/health || exit 1"]
@@ -200,12 +200,12 @@ services:
       LEARNHOUSE_API_URL: http://api:9000
       LEARNHOUSE_AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY}
       COLLAB_INTERNAL_KEY: ${COLLAB_INTERNAL_KEY}
-      LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD}@csg-redis:6379/0
       COLLAB_TRUST_PROXY: "true"
     depends_on:
       api:
         condition: service_healthy
-      redis:
+      csg-redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
