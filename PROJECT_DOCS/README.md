@@ -1,59 +1,36 @@
-# Project docs — index
+# Project Documentation Index
 
-The verified account of this project. Separate from `docs/`, which is
-Learnhouse's own upstream documentation site.
+The verified, structured documentation for the LMS & School Management System codebase (`learnhouse-dev`).
 
-Everything here was checked against the code. Where a claim could not be
-verified, it says so.
+---
 
-## Read in this order
+## 🧭 Core Documentation (Read in this order)
 
-1. **[KNOWN_GAPS.md](./KNOWN_GAPS.md)** — what is **not** done. Read this first.
-   This project has a documented history of overstating completeness; this file
-   exists to counter it.
-2. **[MODULES.md](./MODULES.md)** — every module: what it does, its routes, its
-   API prefix, its role gating, and its honest completeness.
-3. **[ARCHITECTURE.md](./ARCHITECTURE.md)** — the two frontend shells, the
-   identity model, the three authorization layers, feature toggles, and the
-   schema strategy (**new columns require an Alembic migration** — this has
-   bitten repeatedly).
-4. **[DECISIONS.md](./DECISIONS.md)** — why things are built the way they are.
-   Eighteen decisions with their reasoning, mostly cases where the obvious choice
-   was wrong for a reason only visible in a real school.
-5. **[WORK_LOG.md](./WORK_LOG.md)** — what was built, in order, with commit
-   hashes.
+1. **[SYSTEM_DIAGRAMS_AND_FEATURES.md](./SYSTEM_DIAGRAMS_AND_FEATURES.md)** — **Master Visual & Technical Reference**: High-level topology diagram, dual-shell frontend layout, security & auth sequence flow, complete database Entity-Relationship Diagram (ERD), and full feature matrix.
+2. **[KNOWN_GAPS.md](./KNOWN_GAPS.md)** — Honest record of what is **not** done or currently mocked.
+3. **[MODULES.md](./MODULES.md)** — Module-by-module documentation: routes, API prefixes, role gating, and technical completeness.
+4. **[ARCHITECTURE.md](./ARCHITECTURE.md)** — Deep-dive on the two frontend shells, identity resolution, 3-layer authorization, feature toggles, background workers, and schema migration strategies.
+5. **[DECISIONS.md](./DECISIONS.md)** — Architectural Decision Records (ADRs) and domain reasoning for critical design choices.
+6. **[WORK_LOG.md](./WORK_LOG.md)** — Chronological engineering log of changes and commit hashes.
 
-## Reference
+---
 
-- **[LOCAL_SETUP.md](./LOCAL_SETUP.md)** — the runbook to get it running locally.
-- **[BACKUP_RESTORE.md](./BACKUP_RESTORE.md)** — backup and restore procedure.
-  The restore path has genuinely been tested.
-- **[OBJECT_STORAGE.md](./OBJECT_STORAGE.md)** — R2, AWS S3 and MinIO. Storage
-  was wired to env var names the code never read; this explains the fix and how
-  to verify a real upload rather than assume one.
-- **[BUGFIXES_LOG.md](./BUGFIXES_LOG.md)** — earlier bug history with root
-  causes. Worth checking before assuming something is broken.
-- **[STATUS.md](./STATUS.md)** — an earlier point-in-time status snapshot.
-  Superseded by KNOWN_GAPS.md and MODULES.md, kept for history.
-- `../context.md` — the 2026-09-11 audit that first corrected a fabricated
-  "100% complete" report from an earlier session. Historical.
+## 🛠️ Operations & Infrastructure Reference
 
-## On the commit history
+- **[LOCAL_SETUP.md](./LOCAL_SETUP.md)** — Local development environment runbook.
+- **[DEPLOYMENT.md](./DEPLOYMENT.md)** — Dokploy and Docker Swarm production deployment guide.
+- **[DEMO_STACK.md](./DEMO_STACK.md)** — Demo instance setup, seeding, and teardown instructions.
+- **[BACKUP_RESTORE.md](./BACKUP_RESTORE.md)** — Tested database backup and restore runbook.
+- **[OBJECT_STORAGE.md](./OBJECT_STORAGE.md)** — Cloudflare R2, AWS S3, and MinIO storage configuration.
+- **[360_AUDIT_REPORT.md](./360_AUDIT_REPORT.md)** — Code-level 360° production readiness audit report.
+- **[BUGFIXES_LOG.md](./BUGFIXES_LOG.md)** — Bug history, root causes, and regressions prevented.
+- **[STATUS.md](./STATUS.md)** — Historical point-in-time status snapshot.
+- **[CONTEXT_HISTORICAL.md](./CONTEXT_HISTORICAL.md)** — Historical context log from early codebase audit.
 
-Commit messages in this repository are long and carry the real reasoning —
-including corrections, things deliberately not built, and cases where an
-instruction turned out to be wrong. They are the primary source for
-DECISIONS.md and WORK_LOG.md, and are worth reading directly:
+---
 
-```bash
-git log --format='%h %s%n%b' | less
-```
+## 📜 Standing Rules & Guidelines
 
-## The standing rule
-
-**Absence of data is never rendered as a value.** A rate with no data is
-`null` with a stated reason, not `0%`. A student with no grades has no GPA, not
-`4.0` and not `"F"`. A count of zero is a real answer and is not nulled.
-
-Eight violations of this were found and removed during the build. If you are
-adding a screen, this is the rule most likely to catch you.
+- **Absence of data is never rendered as a value.** A metric without data is `null` with a clear explanation, never `0%`. A student with no grades has `null` GPA, not `0.0` or `"F"`.
+- **New database columns require an Alembic migration.** `SQLModel.metadata.create_all` creates new tables on startup, but will **never ALTER existing tables**.
+- **Confidential records enforce 404-never-403.** For safeguarding (Counselling, Child Protection), unauthorised queries return empty results or 404 to avoid confirming record existence.

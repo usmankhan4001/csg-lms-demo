@@ -75,3 +75,7 @@ apps/api/ee
 # Playwright MCP session artifacts
 .playwright-mcp/
 .demo-secrets
+
+# Session logs and transcripts
+PROJECT_DOCS/archive/*.txt
+
