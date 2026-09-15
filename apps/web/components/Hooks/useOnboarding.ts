@@ -31,58 +31,81 @@ type OnboardingState = {
 
 const STORAGE_KEY = 'lh_onboarding'
 
-// Outcome-framed onboarding: 6 milestones that ladder toward the north-star —
-// your first enrolled learner — then retention. Each title is the WIN; the
-// action is just the means. Every step delivers value on the free plan.
+// Outcome-framed onboarding for a SCHOOL, not a solo course creator.
+//
+// The previous six steps were Learnhouse's own: create a course, add a lesson,
+// brand it, share the link, invite learners, open a community. Sound advice for
+// one person selling a course; close to useless for an administrator standing
+// up a school, who cannot take a register, bill a family or admit a pupil until
+// a campus, an academic year and a roll of people exist.
+//
+// These seven ladder across all four pillars of this platform -- school
+// management, learning, admissions, and the AI tutor -- in dependency order:
+// nothing here asks for something the previous step has not already created.
+// Each title is the WIN; the action is only the means.
 const DEFAULT_STEPS: Omit<OnboardingStep, 'completed'>[] = [
   {
-    id: 'create_course',
-    title: 'Your first course is live',
-    description: 'Publish a course so there’s something real for learners to enroll in.',
+    id: 'school_structure',
+    title: 'Your school exists',
+    description:
+      'Create your campus, academic year and terms. Every register, report card and invoice hangs off these — nothing else works until they do.',
+    action: 'Set up the school',
+    href: '/dash/school-settings/setup',
+    completePath: '/dash/school-settings/setup',
+  },
+  {
+    id: 'invite_people',
+    title: 'Staff and families can sign in',
+    description:
+      'Add teachers, students and parents — one at a time or by pasting a spreadsheet. Everyone is emailed an invite and chooses their own password.',
+    action: 'Add people',
+    href: '/dash/school-settings/people',
+    completePath: '/dash/school-settings/people',
+  },
+  {
+    id: 'class_timetable',
+    title: 'Every class knows where to be',
+    description:
+      'Build the timetable and assign teachers to sections, so lessons, cover and live classes all have a schedule behind them.',
+    action: 'Build the timetable',
+    href: '/dash/timetable',
+    completePath: '/dash/timetable',
+  },
+  {
+    id: 'first_register',
+    title: 'Attendance is running',
+    description:
+      'Take a roll call. From the first register, absences reach parents and persistent patterns surface to your pastoral team.',
+    action: 'Take a register',
+    href: '/dash/attendance',
+    completePath: '/dash/attendance',
+  },
+  {
+    id: 'publish_course',
+    title: 'There is something to learn',
+    description:
+      'Publish a course with real material. This is what students open, what the gradebook marks, and what the AI tutor is allowed to teach from.',
     action: 'Create a course',
     href: '/dash/courses?new=true',
-    completePath: '/dash/courses/course/[^/]+/general',
+    completePath: '/dash/courses/course/[^/]+/(general|content)',
   },
   {
-    id: 'add_content',
-    title: 'A lesson worth showing up for',
-    description: 'Add a video, page or quiz — give learners a real reason to enroll.',
-    action: 'Add content',
-    href: '/dash/courses',
-    completePath: '/dash/courses/course/[^/]+/content',
+    id: 'admissions_open',
+    title: 'Enquiries become enrolments',
+    description:
+      'Open your admissions pipeline so a new family can be captured, followed up and enrolled — turning into a real student account at the end.',
+    action: 'Open admissions',
+    href: '/dash/admissions',
+    completePath: '/dash/admissions',
   },
   {
-    id: 'brand_school',
-    title: 'A school learners trust',
-    description: 'Add your logo and colors so it looks like a credible, professional school.',
-    action: 'Brand it',
-    href: '/dash/org/settings/general',
-    completePath: '/dash/org/settings/(general|branding)',
-  },
-  {
-    id: 'share_grow',
-    title: 'Your school’s front door',
-    description: 'Go live and grab your shareable link — the place you’ll send every learner.',
-    action: 'Open my school',
-    href: '/',
-    hrefType: 'root',
-    completeOnClick: true,
-  },
-  {
-    id: 'invite_learners',
-    title: 'Welcome your first learner',
-    description: 'Share your join link or invite people — get that first learner through the door.',
-    action: 'Invite learners',
-    href: '/dash/users/settings/add',
-    completePath: '/dash/users/settings/add',
-  },
-  {
-    id: 'build_community',
-    title: 'Keep learners coming back',
-    description: 'Open a community space so your learners stay active — and bring their friends.',
-    action: 'Open community',
-    href: '/dash/communities',
-    completePath: '/dash/communities',
+    id: 'tutor_and_safeguarding',
+    title: 'The AI tutor is on — and safe',
+    description:
+      'Switch on the tutor and record your school’s own crisis helpline numbers. Until you do, a student who discloses self-harm is told their school has not added any — so this step is not optional.',
+    action: 'Configure the tutor',
+    href: '/dash/ai-tutor',
+    completePath: '/dash/(ai-tutor|school-settings)$',
   },
 ]
 
