@@ -21,7 +21,6 @@ services:
       retries: 5
       start_period: 15s
     networks:
-      - dokploy-network
       - csg-internal
     deploy:
       resources:
@@ -56,7 +55,6 @@ services:
       retries: 5
       start_period: 5s
     networks:
-      - dokploy-network
       - csg-internal
     deploy:
       resources:
@@ -240,7 +238,6 @@ services:
       retries: 4
       start_period: 10s
     networks:
-      - dokploy-network
       - csg-internal
     deploy:
       resources:
