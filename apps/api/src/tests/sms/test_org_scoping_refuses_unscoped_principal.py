@@ -67,12 +67,22 @@ class TestHelper:
 
 
 class TestCognia:
-    """Reachable by any authenticated user -- these four were live."""
+    """Reachable by any authenticated user -- these four were live.
+
+    Since `c4f81a7d2e93` these endpoints ALSO carry `require_roles`, so a
+    STUDENT is now refused by the role gate before org scoping is reached.
+    Both refusals are 403 and both are wanted; these tests still pin that an
+    unscoped principal never reaches organisation 1, which is the regression
+    they exist for.
+    """
 
     @pytest.mark.asyncio
     async def test_logging_evidence_is_refused(self, db):
+        # performance_score is required: it used to default to 3.0, so an
+        # artifact submitted without one silently asserted "Effective" on the
+        # submitter's behalf.
         payload = EvidenceItemCreate(
-            standard_code="1.1", title="Policy", description="x"
+            standard_code="1.1", title="Policy", description="x", performance_score=3.0
         )
         with pytest.raises(HTTPException) as exc:
             await log_cognia_evidence(
