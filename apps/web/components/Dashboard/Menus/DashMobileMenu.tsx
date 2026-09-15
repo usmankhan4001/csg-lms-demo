@@ -136,7 +136,14 @@ function DashMobileMenu() {
   // No feature flag on purpose -- see DashLeftMenu.
   const showSchoolSettings = canAdminister
   const showRoles = canAdminister
-  const showFacilities = canAdminister
+  // Facilities is physical-campus room booking -- FacilityTypeEnum is
+  // AUDITORIUM, SPORTS_GROUND, SCIENCE_LAB, COMPUTER_LAB, LIBRARY_HALL,
+  // CONFERENCE_ROOM, CLASSROOM, with capacity and "Projector, PA System,
+  // Lab Benches". An online-first school has none of those, so this sits
+  // with sms_library / sms_inventory / sms_hostel in DEFAULT_DISABLED_FEATURES.
+  // Hidden rather than routed: the link 404'd because no route was ever
+  // built. Set back to canAdminister for a campus-based school.
+  const showFacilities = false
   const showAlumni = canAdminister
   const showLiveClasses = canTeach
   const showPathways = canTeach

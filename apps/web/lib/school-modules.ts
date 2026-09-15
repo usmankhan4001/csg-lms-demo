@@ -148,6 +148,37 @@ const MODULE_DEFS = {
   // ordinary school business visible to every teacher. Nesting a
   // teacher-visible tab inside the psychologist-confidential module is exactly
   // the conflation that rule exists to prevent.
+  // Three SEPARATE module keys, not one merged "Recognition" surface.
+  //
+  // Each has its own sidebar entry behind its own feature toggle
+  // (`showPathways` / `showGamification` / `showCertificates`,
+  // DashLeftMenu.tsx:319-321), and a module's `root` MUST match its sidebar
+  // entry or the tab strip highlights the wrong module. Merging them would
+  // also show a school that enabled only one of the three a surface containing
+  // two tabs it cannot use. They are not one domain either: a pathway is
+  // curriculum planning, a certificate is a credential, and points are
+  // engagement -- filing them together would be a cabinet, not a workflow.
+  gamification: {
+    root: '/dash/gamification',
+    tabs: [
+      { href: '/dash/gamification', label: 'Badges', access: 'teach' },
+      { href: '/dash/gamification/leaderboard', label: 'Leaderboard', access: 'teach' },
+    ],
+  },
+  certificates: {
+    root: '/dash/certificates-manager',
+    tabs: [
+      { href: '/dash/certificates-manager', label: 'Templates', access: 'teach' },
+      { href: '/dash/certificates-manager/issued', label: 'Issued', access: 'teach' },
+    ],
+  },
+  pathways: {
+    root: '/dash/pathways',
+    tabs: [
+      { href: '/dash/pathways', label: 'Pathways', access: 'teach' },
+      { href: '/dash/pathways/progress', label: 'Enrolments', access: 'teach' },
+    ],
+  },
   discipline: {
     root: '/dash/discipline',
     tabs: [
@@ -160,6 +191,18 @@ const MODULE_DEFS = {
       // cannot display what it recorded is worse than no screen: an admin
       // cannot tell whether the last one saved. Restore the tab when a read
       // endpoint exists.
+    ],
+  },
+  alumni: {
+    root: '/dash/alumni',
+    tabs: [
+      { href: '/dash/alumni', label: 'Register', access: 'administer' },
+      // One tab only, and that is the API's doing rather than a design
+      // choice. sms_alumni.py exposes exactly three routes -- list profiles,
+      // create a profile, add a milestone -- and milestones come back NESTED
+      // on the list, so they belong inside a profile rather than on a tab of
+      // their own. There is no PATCH and no DELETE, so there is nothing to
+      // build an "edit" surface against either.
     ],
   },
   revops: {
