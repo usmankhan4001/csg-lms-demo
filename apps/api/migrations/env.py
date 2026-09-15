@@ -89,6 +89,31 @@ def _install_idempotent_guards():
     orig_create_unique_constraint = Operations.create_unique_constraint
     orig_create_check_constraint = Operations.create_check_constraint
 
+    def _ensure_enum_type(bind, col_type):
+        if col_type is None:
+            return
+        enum_name = getattr(col_type, "name", None)
+        enums = getattr(col_type, "enums", None)
+        if enum_name and enums:
+            try:
+                res = bind.execute(
+                    sa.text("SELECT 1 FROM pg_type WHERE typname = :name"),
+                    {"name": enum_name},
+                ).scalar()
+                if not res:
+                    vals = ", ".join("'" + str(v).replace("'", "''") + "'" for v in enums)
+                    bind.execute(sa.text(f"CREATE TYPE {enum_name} AS ENUM ({vals})"))
+            except Exception:
+                pass
+
+    def _ensure_enums_in_args(bind, *args):
+        for arg in args:
+            if isinstance(arg, sa.Column):
+                _ensure_enum_type(bind, getattr(arg, "type", None))
+            elif hasattr(arg, "columns"):
+                for col in arg.columns:
+                    _ensure_enum_type(bind, getattr(col, "type", None))
+
     def safe_add_column(self, table_name, column, **kw):
         bind = self.get_bind()
         insp = sa.inspect(bind)
@@ -96,6 +121,7 @@ def _install_idempotent_guards():
             existing = {c["name"] for c in insp.get_columns(table_name)}
             if column.name in existing:
                 return None
+        _ensure_enums_in_args(bind, column)
         return orig_add_column(self, table_name, column, **kw)
 
     def safe_drop_column(self, table_name, column_name, **kw):
@@ -123,6 +149,7 @@ def _install_idempotent_guards():
         insp = sa.inspect(bind)
         if table_name in insp.get_table_names():
             return None
+        _ensure_enums_in_args(bind, *columns)
         return orig_create_table(self, table_name, *columns, **kw)
 
     def safe_drop_table(self, table_name, **kw):
@@ -259,6 +286,11 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        try:
+            SQLModel.metadata.create_all(connection)
+        except Exception:
+            pass
+
         context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
