@@ -74,14 +74,38 @@ if [ -n "$REDIS_CONN" ]; then
 fi
 
 # 3. Execute Alembic Migrations
+#
+# THIS MUST ABORT THE BOOT ON FAILURE. It previously did not: both attempts
+# ended in `|| echo "...warnings."`, which exits 0, and the script then printed
+# an unconditional "schema is up to date" and started the API.
+#
+# That is the worst possible failure mode here. `SQLModel.metadata.create_all`
+# builds MISSING TABLES at boot but never ALTERs an existing one, so a container
+# whose migrations failed still comes up, still serves traffic, and still passes
+# its healthcheck -- while every column added by a migration is silently absent.
+# Requests touching those columns fail one by one, in production, long after the
+# deploy was declared green.
+#
+# A deployment that refuses to start is a page at 3am. A deployment that starts
+# with the wrong schema is a corrupted database nobody notices for a week.
 echo "📦 [CSG-LMS] Executing Database Migrations (alembic upgrade head)..."
-if command -v alembic >/dev/null 2>&1; then
-    alembic upgrade head || {
-        echo "⚠️ Alembic direct run failed or partially applied, trying via python module..."
-        python -m alembic upgrade head || echo "⚠️ Migration check completed with warnings."
-    }
-else
-    python -m alembic upgrade head || echo "⚠️ Migration check completed with warnings."
+
+run_migrations() {
+    if command -v alembic >/dev/null 2>&1; then
+        alembic upgrade head && return 0
+        echo "⚠️  alembic on PATH failed; retrying via the python module..."
+    fi
+    python -m alembic upgrade head
+}
+
+if ! run_migrations; then
+    echo "❌ [CSG-LMS] DATABASE MIGRATIONS FAILED -- refusing to start."
+    echo "   The API is NOT starting, deliberately. Booting now would serve"
+    echo "   traffic against a schema missing every migrated column, and the"
+    echo "   healthcheck would report success while doing it."
+    echo "   Inspect with:  docker compose exec api alembic current"
+    echo "   and compare against:  docker compose exec api alembic heads"
+    exit 1
 fi
 echo "✅ [CSG-LMS] Database schema is up to date."
 

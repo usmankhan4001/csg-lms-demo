@@ -1,6 +1,7 @@
 from unittest.mock import Mock, patch
 
 from src.security.features_utils.resolve import (
+    ALL_FEATURES,
     _fetch_purchased_extras,
     _get_admin_toggle,
     _get_overrides,
@@ -333,7 +334,13 @@ class TestFeatureResolve:
         ):
             result = resolve_all_features({"config_version": "2.0"}, org_id=0)
         mock_fetch.assert_not_called()
-        assert len(result) == 30
+        # Derived, not hardcoded. This previously asserted 30 and went stale the
+        # moment sms_inventory and sms_hostel were registered -- they had been
+        # gated by require_sms_{inventory,hostel}_feature but never added to
+        # ALL_FEATURES, so resolve_feature failed open and both gates were
+        # decorative. The invariant worth pinning is "every registered feature
+        # is resolved", not any particular count.
+        assert len(result) == len(ALL_FEATURES)
 
     def test_resolve_all_features_uses_resolve_feature_for_every_entry(self):
         calls = []
@@ -345,37 +352,12 @@ class TestFeatureResolve:
         with patch("src.security.features_utils.resolve.resolve_feature", side_effect=_fake_resolve):
             result = resolve_all_features({"config_version": "2.0"}, org_id=9)
 
-        assert list(result) == [
-            "ai",
-            "analytics",
-            "api",
-            "assignments",
-            "audit_logs",
-            "boards",
-            "collaboration",
-            "folders",
-            "communities",
-            "courses",
-            "members",
-            "payments",
-            "playgrounds",
-            "podcasts",
-            "roles",
-            "scorm",
-            "sso",
-            "usergroups",
-            "versioning",
-            "sms_attendance",
-            "sms_timetable",
-            "sms_gradebook",
-            "sms_fees",
-            "sms_financials",
-            "sms_hr_payroll",
-            "sms_library",
-            "sms_exam",
-            "revops",
-            "sms_reports",
-            "tutor_counseling",
-        ]
-        assert len(calls) == 30
+        # Derived from ALL_FEATURES rather than a hardcoded literal list. The
+        # previous copy enumerated 30 names and broke the moment sms_inventory
+        # and sms_hostel were registered. What this test is actually for is
+        # proving resolve_all_features delegates to resolve_feature for EVERY
+        # registered feature and preserves order -- restating the list only
+        # duplicates ALL_FEATURES and rots.
+        assert list(result) == list(ALL_FEATURES)
+        assert len(calls) == len(ALL_FEATURES)
         assert calls[0] == ("ai", {"config_version": "2.0"}, 9)

@@ -96,15 +96,23 @@ services:
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       # Storage
-      LEARNHOUSE_STORAGE_TYPE: ${LEARNHOUSE_STORAGE_TYPE:-local}
+      # Defaults to s3api, NOT local. The previous `local` default combined with
+      # an api service that mounts no volume meant every uploaded file -- course
+      # media, submissions, avatars -- was destroyed on each redeploy, silently.
+      LEARNHOUSE_STORAGE_TYPE: ${LEARNHOUSE_STORAGE_TYPE:-s3api}
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
       S3_BUCKET_NAME: ${S3_BUCKET_NAME:-}
       S3_PUBLIC_DOMAIN: ${S3_PUBLIC_DOMAIN:-}
+      # Cloudflare R2 wants "auto"; MinIO requires path-style addressing.
+      S3_REGION: ${S3_REGION:-auto}
+      S3_ADDRESSING_STYLE: ${S3_ADDRESSING_STYLE:-}
       # Resend / Email
       RESEND_API_KEY: ${RESEND_API_KEY:-}
-      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-notifications@csginfotech.com}
+      # .co, matching every other domain here. The .com default would not align
+      # with SPF/DKIM for csginfotech.co and mail would fail authentication.
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-notifications@csginfotech.co}
       EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-CSG-LMS}
       # Sentry
       SENTRY_DSN: ${SENTRY_DSN:-}
@@ -115,8 +123,20 @@ services:
       # LiveKit Real-Time Video
       LIVEKIT_URL: ${LIVEKIT_URL:-wss://${LIVEKIT_DOMAIN:-${LIVEKIT_HOSTNAME:-livekit-demo.csginfotech.co}}}
       LIVEKIT_INTERNAL_URL: ws://livekit:7880
-      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-csg_livekit_key}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-csg_livekit_secret_minimum_32_chars_2026}
+      # NO DEFAULT VALUE -- deliberately empty when unset.
+      #
+      # These previously fell back to credentials committed in this repository,
+      # so anyone with read access could mint LiveKit room tokens. That is the
+      # thing being fixed. An empty value is strictly safer than a published
+      # one: live classes fail closed and visibly, rather than appearing to
+      # work while anyone on GitHub can forge a join token.
+      #
+      # Bare ${VAR} rather than ${VAR:?...}: a hard compose failure would take
+      # the WHOLE stack down -- including attendance, fees and gradebook -- over
+      # one optional subsystem. Set both in the Dokploy environment to enable
+      # live classes; the API logs their absence at boot.
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
     depends_on:
       postgres:
         condition: service_healthy
@@ -127,7 +147,13 @@ services:
       interval: 15s
       timeout: 5s
       retries: 4
-      start_period: 30s
+      # 30s was not enough and it cost a deploy. This container runs Alembic
+      # migrations BEFORE uvicorn binds a port, so the old budget (30s grace +
+      # 4x15s = ~90s) could mark a container unhealthy while it was correctly
+      # migrating -- and web/collab then refuse to start, because they depend on
+      # api being healthy. That is exactly how the 2026-09-14 12:29 deploy left
+      # the frontend down while the API itself was fine.
+      start_period: 180s
     networks:
       - dokploy-network
       - csg-internal
@@ -143,7 +169,8 @@ services:
     image: livekit/livekit-server:v1.9.1
     restart: always
     environment:
-      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-csg_livekit_key}: ${LIVEKIT_API_SECRET:-csg_livekit_secret_minimum_32_chars_2026}"
+      # Same reasoning as the api service above: no committed fallback.
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
     ports:
       - "7883:7880"
       - "50200-50250:50200-50250/udp"
