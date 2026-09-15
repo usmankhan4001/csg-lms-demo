@@ -94,6 +94,7 @@
     "dayjs": "^1.11.19",
     "dompurify": "^3.3.1",
     "emblor": "^1.4.8",
+    "emoji-mart": "^5.6.0",
     "formik": "^2.4.6",
     "get-youtube-id": "^1.0.1",
     "github-markdown-css": "^5.9.0",
@@ -150,6 +151,7 @@
     "videojs-sprite-thumbnails": "^2",
     "wavesurfer.js": "^7.12.1",
     "y-prosemirror": "^1.2.12",
+    "y-protocols": "^1.0.6",
     "yjs": "^13.6.20",
     "yup": "^1.7.1"
   },
