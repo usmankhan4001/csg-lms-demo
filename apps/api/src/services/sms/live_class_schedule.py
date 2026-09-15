@@ -122,8 +122,13 @@ async def schedule_class(
         is_active=True,
     )
     session.add(live)
-    await session.commit()
-    await session.refresh(live)
+    # Flush, not commit. The id is needed for the detail row below, but
+    # committing here published the class separately from the row carrying its
+    # status, description and recording state. An interruption in that window
+    # left a scheduled live class with no detail at all -- it appears on the
+    # timetable with no status and no indication whether it is being recorded,
+    # and nothing later fills that in.
+    await session.flush()
 
     # Requesting a recording on a deployment with no storage is recorded as
     # UNAVAILABLE with the reason, not quietly accepted. The teacher finds out

@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.events.database import get_db_session
+from src.security.school_ownership import get_user_id
 from src.core.keycloak_auth import (
     KeycloakUserPrincipal,
     SCHOOL_ADMIN,
@@ -77,11 +78,16 @@ async def generate_lesson_plan_endpoint(
     principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> LessonPlanRead:
     _require_staff(principal)
+    # Resolved before the try: this is identity, not generation. Raising inside
+    # would be swallowed by the broad `except Exception` below and reported to
+    # the teacher as "lesson plan generation failed", which is untrue.
+    author_user_id = get_user_id(principal)
     try:
         record = await generate_lesson_plan(
             session=session,
             request=payload,
             teacher_id=principal.sub,
+            teacher_user_id=author_user_id,
         )
     except AINotConfiguredError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
@@ -104,8 +110,17 @@ async def list_lesson_plans_endpoint(
     session: AsyncSession = Depends(get_db_session),
     principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[LessonPlanRead]:
+    # Both identities, because a teacher's own plans may predate migration
+    # b7e2d41a9c38 (string only) or postdate it (both). Passing one alone would
+    # silently drop half of their own list.
     teacher_id = principal.sub if mine_only else None
-    records = await list_lesson_plans(session, teacher_id=teacher_id, course_id=course_id)
+    teacher_user_id = get_user_id(principal) if mine_only else None
+    records = await list_lesson_plans(
+        session,
+        teacher_id=teacher_id,
+        course_id=course_id,
+        teacher_user_id=teacher_user_id,
+    )
     return [LessonPlanRead.model_validate(r) for r in records]
 
 

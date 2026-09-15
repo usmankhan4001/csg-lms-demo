@@ -12,6 +12,7 @@ output type (GeneratedLessonPlan), not freeform chat.
 import logging
 from typing import List, Optional
 
+from sqlalchemy import and_, or_
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -45,6 +46,7 @@ async def generate_lesson_plan(
     session: AsyncSession,
     request: LessonPlanGenerateRequest,
     teacher_id: Optional[str] = None,
+    teacher_user_id: Optional[int] = None,
     model_name: Optional[str] = None,
 ) -> LessonPlan:
     """Generate a structured lesson plan from a teacher's prompt and persist it."""
@@ -66,6 +68,10 @@ async def generate_lesson_plan(
 
     record = LessonPlan(
         teacher_id=teacher_id,
+        # Canonical identity (migration b7e2d41a9c38). Written alongside the
+        # legacy user_uuid string so a plan authored now can be joined to its
+        # author's timetable -- which the string alone never could.
+        teacher_user_id=teacher_user_id,
         course_id=request.course_id,
         subject=plan.subject or request.subject,
         topic=plan.topic or request.topic,
@@ -91,10 +97,25 @@ async def list_lesson_plans(
     session: AsyncSession,
     teacher_id: Optional[str] = None,
     course_id: Optional[int] = None,
+    teacher_user_id: Optional[int] = None,
 ) -> List[LessonPlan]:
     stmt = select(LessonPlan)
-    if teacher_id is not None:
-        stmt = stmt.where(LessonPlan.teacher_id == teacher_id)
+    if teacher_id is not None or teacher_user_id is not None:
+        # Either identity names the same teacher. Plans written before
+        # migration b7e2d41a9c38 carry only the user_uuid string; plans written
+        # since carry both. Matching one alone would hide a teacher's own older
+        # plans from their "my plans" list.
+        arms = []
+        if teacher_id is not None:
+            arms.append(LessonPlan.teacher_id == teacher_id)
+        if teacher_user_id is not None:
+            arms.append(
+                and_(
+                    LessonPlan.teacher_user_id.is_not(None),
+                    LessonPlan.teacher_user_id == teacher_user_id,
+                )
+            )
+        stmt = stmt.where(or_(*arms) if len(arms) > 1 else arms[0])
     if course_id is not None:
         stmt = stmt.where(LessonPlan.course_id == course_id)
     stmt = stmt.order_by(LessonPlan.created_at.desc())

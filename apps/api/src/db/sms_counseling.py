@@ -41,6 +41,12 @@ class CounselingActivityLog(SQLModel, table=True):
     __table_args__ = (
         Index("ix_counseling_activity_student", "student_id"),
         Index("ix_counseling_activity_psychologist", "psychologist_id"),
+        # Same NAME the migration uses. On an existing database migration
+        # b7e2d41a9c38 creates it and `create_all` skips the whole table; on a
+        # FRESH database the migration skips (the table does not exist yet) and
+        # `create_all` builds the table from here -- without this line the new
+        # column would be unindexed on every new deployment.
+        Index("ix_counseling_activity_psych_user_id", "psychologist_user_id"),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -50,6 +56,23 @@ class CounselingActivityLog(SQLModel, table=True):
     # body, so read-scoping by this column is a real authorization boundary,
     # not a client-declared identity.
     psychologist_id: str = Field(sa_column=Column(String(255), nullable=False, index=True))
+
+    # Canonical clinician identity: integer `user.id`, matching timetable,
+    # live classes and section ownership. `psychologist_id` above is the legacy
+    # user_uuid STRING -- see migration b7e2d41a9c38. Both are written during
+    # the transition; the string is dropped by a later migration once its
+    # backfill is confirmed.
+    #
+    # Nullable even though `psychologist_id` is NOT NULL: a row written before
+    # this column existed, or whose string matched no user, has no integer to
+    # carry. NULL here means "not yet resolved", never "no clinician".
+    #
+    # No `index=True`: migration b7e2d41a9c38 creates the index. Declaring both
+    # an explicit Index and index=True on one column makes `create_all` emit
+    # CREATE INDEX twice, which stops the API booting.
+    psychologist_user_id: Optional[int] = Field(
+        default=None, sa_column=Column(Integer, nullable=True)
+    )
     signal_type: str = Field(sa_column=Column(String(50), nullable=False))
     description: str = Field(sa_column=Column(Text, nullable=False))
     severity: str = Field(default="low", sa_column=Column(String(20), nullable=False))
@@ -71,11 +94,34 @@ class CounselingSession(SQLModel, table=True):
     __table_args__ = (
         Index("ix_counseling_session_student", "student_id"),
         Index("ix_counseling_session_psychologist", "psychologist_id"),
+        # Same NAME the migration uses. On an existing database migration
+        # b7e2d41a9c38 creates it and `create_all` skips the whole table; on a
+        # FRESH database the migration skips (the table does not exist yet) and
+        # `create_all` builds the table from here -- without this line the new
+        # column would be unindexed on every new deployment.
+        Index("ix_counseling_session_psych_user_id", "psychologist_user_id"),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     student_id: int = Field(sa_column=Column(Integer, nullable=False, index=True))
     psychologist_id: str = Field(sa_column=Column(String(255), nullable=False, index=True))
+
+    # Canonical clinician identity: integer `user.id`, matching timetable,
+    # live classes and section ownership. `psychologist_id` above is the legacy
+    # user_uuid STRING -- see migration b7e2d41a9c38. Both are written during
+    # the transition; the string is dropped by a later migration once its
+    # backfill is confirmed.
+    #
+    # Nullable even though `psychologist_id` is NOT NULL: a row written before
+    # this column existed, or whose string matched no user, has no integer to
+    # carry. NULL here means "not yet resolved", never "no clinician".
+    #
+    # No `index=True`: migration b7e2d41a9c38 creates the index. Declaring both
+    # an explicit Index and index=True on one column makes `create_all` emit
+    # CREATE INDEX twice, which stops the API booting.
+    psychologist_user_id: Optional[int] = Field(
+        default=None, sa_column=Column(Integer, nullable=True)
+    )
     session_date: datetime.datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
     duration_minutes: int = Field(sa_column=Column(Integer, nullable=False))
     notes: str = Field(sa_column=Column(Text, nullable=False))

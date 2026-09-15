@@ -31,6 +31,12 @@ class LessonPlan(SQLModel, table=True):
     __tablename__ = "sms_lesson_plan"
     __table_args__ = (
         Index("ix_sms_lesson_plan_teacher", "teacher_id"),
+        # Same NAME the migration uses. On an existing database migration
+        # b7e2d41a9c38 creates it and `create_all` skips the whole table; on a
+        # FRESH database the migration skips (the table does not exist yet) and
+        # `create_all` builds the table from here -- without this line the new
+        # column would be unindexed on every new deployment.
+        Index("ix_sms_lesson_plan_teacher_user_id", "teacher_user_id"),
         Index("ix_sms_lesson_plan_course", "course_id"),
     )
 
@@ -38,6 +44,18 @@ class LessonPlan(SQLModel, table=True):
     # Keycloak `sub` of the authoring TEACHER (string identity, matching the
     # principal -- see src/core/keycloak_auth.py).
     teacher_id: Optional[str] = Field(default=None, sa_column=Column(String(255), nullable=True, index=True))
+    # The canonical author identity: integer `user.id`, matching timetable,
+    # live classes and section ownership. `teacher_id` above is the legacy
+    # user_uuid STRING and could not be joined to any of them -- see migration
+    # b7e2d41a9c38. Both are written during the transition; the string column
+    # is dropped by a later migration once its backfill has been confirmed.
+    #
+    # No `index=True` here: migration b7e2d41a9c38 creates
+    # `ix_sms_lesson_plan_teacher_user_id`. Declaring both an explicit Index and
+    # index=True on one column makes `create_all` emit CREATE INDEX twice.
+    teacher_user_id: Optional[int] = Field(
+        default=None, sa_column=Column(Integer, nullable=True)
+    )
     course_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True, index=True))
     subject: str = Field(sa_column=Column(String(150), nullable=False))
     topic: str = Field(sa_column=Column(String(255), nullable=False))

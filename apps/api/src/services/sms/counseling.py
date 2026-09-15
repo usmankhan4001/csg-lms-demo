@@ -30,11 +30,12 @@ import datetime
 import logging
 from typing import List, Optional
 
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.keycloak_auth import KeycloakUserPrincipal, PARENT, PSYCHOLOGIST, STUDENT
+from src.security.school_ownership import get_user_id
 from src.db.sms_counseling import CareerGuidancePlan, CounselingActivityLog, CounselingSession
 from src.schemas.sms_counseling import (
     ActivityLogCreate,
@@ -56,6 +57,52 @@ def _utcnow() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)
 
 
+def _authored_by(model, principal: KeycloakUserPrincipal):
+    """Rows authored by THIS clinician, under either identity.
+
+    The integer `user.id` is canonical (migration b7e2d41a9c38), but rows
+    written before it existed carry only the legacy `user_uuid` string. Both
+    name the same person, so matching either is the same clinician -- this
+    widens nothing. Dropping the string arm here would silently hide a
+    psychologist's own pre-migration records from them, which under the
+    404-never-403 rule is indistinguishable from the records not existing.
+    """
+    caller_user_id = get_user_id(principal)
+    if caller_user_id is None:
+        # No integer identity on this request: the string is the only thing
+        # that can prove authorship. Matching the integer arm against NULL
+        # would return every unbackfilled record in the table.
+        return model.psychologist_id == principal.sub
+    return or_(
+        model.psychologist_id == principal.sub,
+        and_(
+            model.psychologist_user_id.is_not(None),
+            model.psychologist_user_id == caller_user_id,
+        ),
+    )
+
+
+def _owned_by(record, principal: KeycloakUserPrincipal) -> bool:
+    """The in-memory counterpart of `_authored_by`, for a record already loaded.
+
+    Same rule, same reason: either identity proves the same clinician. Kept
+    beside its SQL twin so the two can never drift -- a mismatch between them
+    would mean a record a psychologist can list but cannot open, or worse, the
+    reverse.
+    """
+    if record.psychologist_id == principal.sub:
+        return True
+    record_user_id = getattr(record, "psychologist_user_id", None)
+    caller_user_id = get_user_id(principal)
+    # Both must be present. Two NULLs are not the same person, and a caller
+    # with no integer identity must not match every unbackfilled record.
+    return (
+        record_user_id is not None
+        and caller_user_id is not None
+        and record_user_id == caller_user_id
+    )
+
+
 # ---------------------------------------------------------------------------
 # 1. Psychologist activity tracking
 # ---------------------------------------------------------------------------
@@ -71,6 +118,7 @@ async def create_activity_log(
     record = CounselingActivityLog(
         student_id=payload.student_id,
         psychologist_id=principal.sub,
+        psychologist_user_id=get_user_id(principal),
         signal_type=payload.signal_type,
         description=payload.description,
         severity=payload.severity,
@@ -97,7 +145,7 @@ async def list_activity_logs_for_viewer(
         .where(
             and_(
                 CounselingActivityLog.student_id == student_id,
-                CounselingActivityLog.psychologist_id == principal.sub,
+                _authored_by(CounselingActivityLog, principal),
             )
         )
         .order_by(CounselingActivityLog.recorded_at.desc())
@@ -117,6 +165,7 @@ async def create_session(
     record = CounselingSession(
         student_id=payload.student_id,
         psychologist_id=principal.sub,
+        psychologist_user_id=get_user_id(principal),
         session_date=payload.session_date,
         duration_minutes=payload.duration_minutes,
         notes=payload.notes,
@@ -141,7 +190,7 @@ async def get_session_for_psychologist(
     if not _is_psychologist(principal):
         return None
     record = await session.get(CounselingSession, session_id)
-    if record is None or record.psychologist_id != principal.sub:
+    if record is None or not _owned_by(record, principal):
         return None
     return record
 
@@ -158,7 +207,7 @@ async def list_sessions_for_viewer(
         .where(
             and_(
                 CounselingSession.student_id == student_id,
-                CounselingSession.psychologist_id == principal.sub,
+                _authored_by(CounselingSession, principal),
             )
         )
         .order_by(CounselingSession.session_date.desc())
