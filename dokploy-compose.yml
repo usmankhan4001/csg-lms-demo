@@ -261,7 +261,16 @@ services:
       HOSTNAME: 0.0.0.0
       NEXT_PUBLIC_APP_URL: ${APP_URL:-${LEARNHOUSE_URL:-https://${APP_DOMAIN:-lms-demo.csginfotech.co}}}
       NEXT_PUBLIC_LEARNHOUSE_API_URL: ${LEARNHOUSE_API_URL:-https://${API_DOMAIN:-api-demo.csginfotech.co}/api/v1/}
-      NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL: ${LEARNHOUSE_BACKEND_URL:-http://api:9000}
+      # PUBLIC url, not the internal one. NEXT_PUBLIC_* is shipped to the
+      # BROWSER, and a browser cannot resolve the Docker service hostname
+      # `api` -- nor load http:// from an https:// page, which Chrome blocks
+      # as mixed content before the request is even made. The old
+      # `http://api:9000` default therefore made every client-side fetch throw,
+      # and api-client.ts maps a thrown fetch to the Offline state: every
+      # module in the dashboard rendered "You're offline" while the API was
+      # perfectly healthy. Server-side rendering uses LEARNHOUSE_INTERNAL_API_URL
+      # for the internal hop; this one must stay publicly resolvable.
+      NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL: ${LEARNHOUSE_BACKEND_URL:-https://${API_DOMAIN:-api-demo.csginfotech.co}}
       LEARNHOUSE_INTERNAL_API_URL: http://api:9000
       NEXT_PUBLIC_LEARNHOUSE_DOMAIN: ${APP_DOMAIN:-lms-demo.csginfotech.co}
       NEXT_PUBLIC_LEARNHOUSE_TOP_DOMAIN: ${TOP_DOMAIN:-csginfotech.co}

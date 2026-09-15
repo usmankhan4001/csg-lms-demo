@@ -99,8 +99,20 @@ export function LiveClassRoom({ roomName, participantId, participantName, isTeac
       token={state.token}
       serverUrl={state.livekitUrl}
       connect
-      video
-      audio
+      // Publish ONLY if the server's token actually permits it.
+      //
+      // services/sms/live_class.py:55 issues `can_publish = is_teacher` unless
+      // overridden, so a STUDENT's token forbids publishing. Passing bare
+      // `video`/`audio` asked LiveKit to publish camera and mic on connect for
+      // everyone -- so a student's browser prompted for camera access, turned
+      // the camera light on, then had the publish rejected by the server. The
+      // toolbar showed mic/camera buttons that looked live and did nothing.
+      //
+      // A student can still be granted publish rights per-room (the `can_publish`
+      // override exists for exactly that); this follows the grant rather than
+      // assuming it, so raising a hand to speak keeps working when it is granted.
+      video={isTeacher}
+      audio={isTeacher}
       data-lk-theme="default"
       style={{ height: '100vh' }}
       onDisconnected={() => router.push(onLeaveHref)}
