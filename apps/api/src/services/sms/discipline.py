@@ -74,10 +74,23 @@ class DisciplineService:
         org_id: Optional[int],
     ) -> DisciplinaryIncident:
         incident = await db.get(DisciplinaryIncident, incident_id)
-        if not incident:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Disciplinary incident not found")
-        if org_id and incident.org_id != org_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        # ONE answer for "no such incident" and "not this school's incident".
+        #
+        # This previously returned 404 for the first and 403 "Access denied"
+        # for the second, which is a cross-tenant existence oracle: walking ids
+        # and reading the status code tells an authenticated user of school A
+        # exactly which incident ids exist at school B, and by counting them,
+        # roughly how many behaviour incidents another school has recorded.
+        # The incident body was never disclosed, but its existence was, and
+        # that is the disclosure that matters for a child's discipline record.
+        #
+        # Not a hypothetical shape here: 18 silent `org_id or 1` tenant
+        # defaults were removed from this codebase in the same phase.
+        if not incident or (org_id and incident.org_id != org_id):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Disciplinary incident not found",
+            )
         return incident
 
     @staticmethod
