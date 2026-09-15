@@ -114,6 +114,13 @@ export type FeePlanType =
   | 'QUARTERLY_4_PAY'
   | 'MONTHLY_10_PAY'
 
+export interface BANTScoreBreakdown {
+  budget: number
+  authority: number
+  need: number
+  timeline: number
+}
+
 export interface MatriculationPayload {
   leadId: string
   studentName: string
@@ -137,3 +144,4 @@ export interface MatriculationPayload {
   generateLmsPortalAccount: boolean
   specialInstructions?: string
 }
+

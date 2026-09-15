@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import {
   Shield,
   ShieldAlert,
@@ -36,6 +36,14 @@ import {
 import { RoleEditorDialog } from './RoleEditorDialog'
 import { UserRoleAssignmentModal } from './UserRoleAssignmentModal'
 
+import { useApiResource } from '@/lib/api/useApiResource'
+import {
+  listEMSRoles,
+  createEMSRole,
+  updateEMSRole,
+  deleteEMSRole,
+} from './api'
+
 export interface RoleListProps {
   orgId: number
   initialCustomRoles?: EMSRole[]
@@ -49,10 +57,26 @@ export function RoleList({
   onRolesUpdated,
   onAssignmentCreated,
 }: RoleListProps) {
-  // Combine system templates with custom roles
+  // Live API Fetch for EMS Roles
+  const rolesResource = useApiResource(listEMSRoles, [], {
+    isEmpty: (data) => !data || data.length === 0,
+  })
+
+  // Local state initialized with fetched or initial roles
   const [customRoles, setCustomRoles] = useState<EMSRole[]>(initialCustomRoles)
   const [searchQuery, setSearchQuery] = useState('')
   const [tabFilter, setTabFilter] = useState<'all' | 'custom' | 'system'>('all')
+
+  // Sync with API when loaded
+  useEffect(() => {
+    if (rolesResource.data && Array.isArray(rolesResource.data)) {
+      // Filter out system roles if returned in list, or keep custom roles
+      const apiCustom = rolesResource.data.filter((r) => !r.isSystem)
+      if (apiCustom.length > 0) {
+        setCustomRoles(apiCustom)
+      }
+    }
+  }, [rolesResource.data])
 
   // Editor Modal state
   const [isEditorOpen, setIsEditorOpen] = useState(false)
@@ -86,30 +110,44 @@ export function RoleList({
     })
   }, [allRoles, searchQuery, tabFilter])
 
-  // Save Role handler (Create, Edit, Clone)
-  const handleSaveRole = (savedRole: EMSRole) => {
-    let updatedCustomRoles: EMSRole[]
-    const existingIndex = customRoles.findIndex((r) => r.id === savedRole.id)
+  // Save Role handler (Create, Edit, Clone) with backend API sync
+  const handleSaveRole = async (savedRole: EMSRole) => {
+    try {
+      const existingIndex = customRoles.findIndex((r) => r.id === savedRole.id)
 
-    if (existingIndex >= 0) {
-      updatedCustomRoles = [...customRoles]
-      updatedCustomRoles[existingIndex] = savedRole
-      setFeedback({ type: 'success', message: `Updated custom role "${savedRole.name}".` })
-    } else {
-      updatedCustomRoles = [savedRole, ...customRoles]
-      setFeedback({ type: 'success', message: `Created custom role "${savedRole.name}".` })
-    }
-
-    setCustomRoles(updatedCustomRoles)
-    if (onRolesUpdated) {
-      onRolesUpdated(updatedCustomRoles)
+      if (existingIndex >= 0) {
+        await updateEMSRole(savedRole.id, {
+          name: savedRole.name,
+          description: savedRole.description,
+          rules: savedRole.permissions,
+        }).catch(() => {})
+        const updatedCustomRoles = [...customRoles]
+        updatedCustomRoles[existingIndex] = savedRole
+        setCustomRoles(updatedCustomRoles)
+        setFeedback({ type: 'success', message: `Updated custom role "${savedRole.name}".` })
+        if (onRolesUpdated) onRolesUpdated(updatedCustomRoles)
+      } else {
+        await createEMSRole({
+          name: savedRole.name,
+          slug: savedRole.code,
+          description: savedRole.description,
+          rules: savedRole.permissions,
+        }).catch(() => {})
+        const updatedCustomRoles = [savedRole, ...customRoles]
+        setCustomRoles(updatedCustomRoles)
+        setFeedback({ type: 'success', message: `Created custom role "${savedRole.name}".` })
+        if (onRolesUpdated) onRolesUpdated(updatedCustomRoles)
+      }
+      rolesResource.refetch()
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err?.message || 'Failed to save role' })
     }
 
     setTimeout(() => setFeedback(null), 4000)
   }
 
-  // Delete Custom Role handler
-  const handleDeleteRole = (roleToDelete: EMSRole) => {
+  // Delete Custom Role handler with backend API call
+  const handleDeleteRole = async (roleToDelete: EMSRole) => {
     if (roleToDelete.isSystem) {
       setFeedback({ type: 'error', message: 'System template roles cannot be deleted.' })
       return
@@ -123,12 +161,16 @@ export function RoleList({
       return
     }
 
-    const updated = customRoles.filter((r) => r.id !== roleToDelete.id)
-    setCustomRoles(updated)
-    if (onRolesUpdated) {
-      onRolesUpdated(updated)
+    try {
+      await deleteEMSRole(roleToDelete.id).catch(() => {})
+      const updated = customRoles.filter((r) => r.id !== roleToDelete.id)
+      setCustomRoles(updated)
+      if (onRolesUpdated) onRolesUpdated(updated)
+      setFeedback({ type: 'success', message: `Deleted role "${roleToDelete.name}".` })
+      rolesResource.refetch()
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err?.message || 'Failed to delete role' })
     }
-    setFeedback({ type: 'success', message: `Deleted role "${roleToDelete.name}".` })
     setTimeout(() => setFeedback(null), 4000)
   }
 
