@@ -104,8 +104,15 @@ class CertificateService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid certificate verification code")
 
         template = await db.get(CertificateTemplate, cert.template_id)
-        issuer_name = template.issuer_name if template else "Official Board"
-        issuer_title = template.issuer_title if template else "Authorized Issuer"
+        # NEVER invent an issuer. This is the PUBLIC verification response -- the
+        # one an employer or university reads to decide whether a credential is
+        # genuine. Falling back to "Official Board" / "Authorized Issuer"
+        # asserted that a real authority stood behind a certificate whose
+        # issuing template no longer exists. An unknown issuer is unknown; the
+        # certificate's own recipient, title and revocation state are still
+        # reported, so the verifier gets every fact we actually hold.
+        issuer_name = template.issuer_name if template else None
+        issuer_title = template.issuer_title if template else None
 
         return PublicCertificateVerificationResponse(
             is_valid=not cert.is_revoked,

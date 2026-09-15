@@ -62,7 +62,12 @@ class PublicCertificateVerificationResponse(BaseModel):
     title: str
     honors: Optional[str]
     issue_date: str
-    issuer_name: str
-    issuer_title: str
+    # Optional so "we do not know who issued this" is representable.
+    # These were required, which forced verify_certificate to invent
+    # "Official Board" / "Authorized Issuer" when the template row was
+    # missing -- on the PUBLIC endpoint an employer reads to check that
+    # a credential is genuine.
+    issuer_name: Optional[str] = None
+    issuer_title: Optional[str] = None
     is_revoked: bool
     revocation_reason: Optional[str] = None

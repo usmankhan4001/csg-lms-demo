@@ -154,8 +154,15 @@ async def get_campus(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campus not found")
 
     if not principal.is_superadmin:
+        # A campus in ANOTHER ORGANISATION must be indistinguishable from
+        # one that does not exist. Answering 403 here let an authenticated
+        # user at school A walk campus ids and learn which belong to school
+        # B, and how many it has. The same 404/403 split was found and
+        # fixed in discipline.py and alumni.py -- this is the third site.
+        # A cross-CAMPUS refusal inside the caller's OWN org stays 403
+        # below: they already know their own school has other campuses.
         if principal.org_id and campus.org_id != principal.org_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access to campus outside organization is denied")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campus not found")
         if principal.campus_id and principal.campus_id != campus.id and not principal.has_role(SCHOOL_ADMIN):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access to other campuses is restricted")
 
@@ -177,8 +184,16 @@ async def update_campus(
     if not campus:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campus not found")
 
-    if not principal.is_superadmin and principal.campus_id and principal.campus_id != campus.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot modify another campus")
+    # The organisation was never checked here. A SCHOOL_ADMIN whose
+    # principal.campus_id is None -- which is every admin not bound to
+    # one campus -- skipped the guard entirely and could PATCH a campus
+    # belonging to ANY other school. Check the tenant first, and answer
+    # 404 so the attempt cannot be used to probe which ids exist.
+    if not principal.is_superadmin:
+        if principal.org_id is None or campus.org_id != principal.org_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campus not found")
+        if principal.campus_id and principal.campus_id != campus.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot modify another campus")
 
     update_data = payload.model_dump(exclude_unset=True)
     for k, v in update_data.items():

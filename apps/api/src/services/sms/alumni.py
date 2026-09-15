@@ -122,10 +122,23 @@ class AlumniService:
         org_id: Optional[int],
     ) -> AlumniMilestone:
         profile = await db.get(AlumniProfile, payload.alumni_id)
-        if not profile:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alumni profile not found")
-        if org_id and profile.org_id != org_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        # ONE answer for "no such profile" and "not this school's profile".
+        #
+        # Splitting them -- 404 for the first, 403 "Access denied" for the
+        # second -- is a cross-tenant existence oracle: walking alumni_id values
+        # and reading the status code tells an authenticated user at school A
+        # exactly which alumni profile ids exist at school B, and by counting
+        # them, roughly how large another school's alumni register is. The
+        # profile body was never disclosed; its existence was.
+        #
+        # Identical detail text as well as identical status: a differing message
+        # leaks precisely what the shared status code is there to hide. This
+        # mirrors the same fix in services/sms/discipline.py.
+        if not profile or (org_id and profile.org_id != org_id):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Alumni profile not found",
+            )
 
         milestone = AlumniMilestone(
             alumni_id=payload.alumni_id,
