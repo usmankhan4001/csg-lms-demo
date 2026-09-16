@@ -171,3 +171,17 @@ async def enter_demo(
         _invalidate_session_cache(int(current_user.id))
 
     return DemoEntry(org_slug=org.slug, org_id=org.id)  # type: ignore[arg-type]
+
+
+@router.post("/seed-sms")
+async def seed_sms_demo_endpoint(
+    org_slug: Optional[str] = None,
+    db_session: AsyncSession = Depends(get_db_session),
+    current_user: PublicUser | AnonymousUser = Depends(get_current_user),
+):
+    """Seed comprehensive demo data for SMS and embedded Learnhouse LMS."""
+    from src.services.demo.sms_demo_seeder import seed_sms_demo_data
+
+    result = await seed_sms_demo_data(db_session, org_slug=org_slug)
+    return result
+
