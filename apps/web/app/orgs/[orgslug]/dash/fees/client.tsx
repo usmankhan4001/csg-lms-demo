@@ -45,6 +45,8 @@ import {
 } from '@/modules/sms/fees/api'
 import { PayVoucherDialog } from '@/modules/sms/fees/components/PayVoucherDialog'
 import type { VoucherStatus } from '@/modules/sms/fees/types'
+import { DataExportToolbar } from '@/components/ems/DataExportToolbar'
+import type { ExportColumn } from '@/lib/export/data-export'
 
 const STATUS_TONE: Record<VoucherStatus, StatusTone> = {
   PAID: 'positive',
@@ -467,13 +469,40 @@ export default function FeesDashClient({ org_id }: FeesDashClientProps) {
     }
   }
 
+  const feeExportColumns: ExportColumn[] = [
+    { key: 'voucher_no', label: 'Voucher #', type: 'text' },
+    { key: 'student_id', label: 'Student ID', type: 'number' },
+    { key: 'issue_date', label: 'Issue Date', type: 'date' },
+    { key: 'due_date', label: 'Due Date', type: 'date' },
+    { key: 'tuition_fee', label: 'Tuition Fee', type: 'currency' },
+    { key: 'transport_fee', label: 'Transport Fee', type: 'currency' },
+    { key: 'lab_fee', label: 'Lab Fee', type: 'currency' },
+    { key: 'other_fee', label: 'Other Fee', type: 'currency' },
+    { key: 'discount', label: 'Discount', type: 'currency' },
+    { key: 'fine', label: 'Fine', type: 'currency' },
+    { key: 'late_fee_applied', label: 'Late Fee Applied', type: 'currency' },
+    { key: 'total_amount', label: 'Total Invoiced', type: 'currency' },
+    { key: 'paid_amount', label: 'Paid Amount', type: 'currency' },
+    { key: 'balance_amount', label: 'Balance Outstanding', type: 'currency' },
+    { key: 'status', label: 'Payment Status', type: 'text' },
+  ]
+
   return (
     <DashPageShell
       title="Fees"
       description="Vouchers, collections and outstanding balances across the school."
       module="fees"
       action={
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {rows.length > 0 && (
+            <DataExportToolbar
+              data={rows}
+              columns={feeExportColumns}
+              filenamePrefix="fee_vouchers"
+              title="Student Fee Vouchers"
+              activeFilters={{ campus_id: effectiveCampusId, section_id: sectionId, status: statusFilter }}
+            />
+          )}
           <CreateFeeStructureDialog
             campusId={effectiveCampusId}
             onCreated={vouchers.refetch}

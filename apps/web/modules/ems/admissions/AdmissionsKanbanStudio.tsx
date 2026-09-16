@@ -69,6 +69,7 @@ import {
 } from './mockData'
 import { NetTuitionYieldModal } from './NetTuitionYieldModal'
 import { MatriculationDialog } from './MatriculationDialog'
+import { AdmissionsLead360Drawer } from '../inspectors'
 import {
   Dialog,
   DialogContent,
@@ -735,126 +736,17 @@ export const AdmissionsKanbanStudio: React.FC<AdmissionsKanbanStudioProps> = ({
         onConfirmMatriculation={handleConfirmMatriculation}
       />
 
-      {/* Lead Detail & SDR Pitch Drawer Modal */}
-      {activeDetailLead && (
-        <Dialog open={Boolean(activeDetailLead)} onOpenChange={(open) => !open && setActiveDetailLead(null)}>
-          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto p-0 border border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900 shadow-2xl">
-            {/* Header */}
-            <div className="bg-slate-900 text-white p-5 border-b border-slate-800 flex items-start justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`px-2 py-0.5 text-xs font-black uppercase rounded ${
-                      activeDetailLead.leadScoreTier === 'HOT'
-                        ? 'bg-rose-500 text-white'
-                        : activeDetailLead.leadScoreTier === 'WARM'
-                        ? 'bg-amber-500 text-white'
-                        : 'bg-blue-500 text-white'
-                    }`}
-                  >
-                    {activeDetailLead.leadScoreTier} ({activeDetailLead.leadScore}/100)
-                  </span>
-                  <span className="text-xs text-slate-400">ID: {activeDetailLead.id}</span>
-                </div>
-                <h3 className="text-xl font-bold text-white mt-1">{activeDetailLead.studentName}</h3>
-                <p className="text-xs text-slate-300">
-                  {activeDetailLead.targetGrade} &bull; {activeDetailLead.targetCampus} &bull; {activeDetailLead.feederSchool}
-                </p>
-              </div>
-              <button
-                onClick={() => setActiveDetailLead(null)}
-                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-5 space-y-4 text-xs">
-              {/* AI Recommended Pitch Box */}
-              {activeDetailLead.recommendedPitch && (
-                <div className="p-3.5 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-xl space-y-1">
-                  <div className="flex items-center gap-1.5 font-bold text-indigo-900 dark:text-indigo-300">
-                    <Sparkles className="w-4 h-4 text-indigo-600" />
-                    AI Admissions Advisor Recommended Pitch
-                  </div>
-                  <p className="text-slate-700 dark:text-slate-300">{activeDetailLead.recommendedPitch}</p>
-                </div>
-              )}
-
-              {/* Contact Information */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                <div>
-                  <span className="text-slate-500 block text-[11px]">Primary Guardian</span>
-                  <span className="font-bold text-slate-900 dark:text-slate-100">{activeDetailLead.parentName}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block text-[11px]">Phone & WhatsApp</span>
-                  <span className="font-bold text-slate-900 dark:text-slate-100">{activeDetailLead.parentPhone}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block text-[11px]">Email</span>
-                  <span className="font-bold text-slate-900 dark:text-slate-100">{activeDetailLead.parentEmail}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block text-[11px]">Assigned Officer</span>
-                  <span className="font-bold text-slate-900 dark:text-slate-100">{activeDetailLead.assignedOfficer}</span>
-                </div>
-              </div>
-
-              {/* Deal Breakdown */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-center">
-                  <span className="text-slate-500 text-[10px] uppercase font-semibold block">Gross Tuition</span>
-                  <span className="font-extrabold text-sm text-slate-900 dark:text-slate-100">
-                    {formatPKR(activeDetailLead.grossTuitionPKR)}
-                  </span>
-                </div>
-                <div className="p-3 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/30 text-center">
-                  <span className="text-amber-800 text-[10px] uppercase font-semibold block">Merit Discount</span>
-                  <span className="font-extrabold text-sm text-amber-600">
-                    {activeDetailLead.scholarshipDiscountPercent}% OFF
-                  </span>
-                </div>
-                <div className="p-3 rounded-xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/30 text-center">
-                  <span className="text-emerald-800 text-[10px] uppercase font-semibold block">Net Yield</span>
-                  <span className="font-extrabold text-sm text-emerald-600">
-                    {formatPKR(activeDetailLead.netTuitionYieldPKR)}
-                  </span>
-                </div>
-              </div>
-
-              {/* Notes */}
-              {activeDetailLead.notes && (
-                <div className="p-3 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-200 dark:border-slate-800">
-                  <span className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">Admissions Notes</span>
-                  <p className="text-slate-600 dark:text-slate-400">{activeDetailLead.notes}</p>
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <button
-                onClick={() => setActiveDetailLead(null)}
-                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg"
-              >
-                Close
-              </button>
-              <button
-                onClick={() => {
-                  setMatriculationTargetLead(activeDetailLead)
-                  setActiveDetailLead(null)
-                  setIsMatriculationOpen(true)
-                }}
-                className="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow flex items-center gap-1.5"
-              >
-                <GraduationCap className="w-4 h-4" />
-                Proceed to 1-Click Matriculation
-              </button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
+      {/* 360 Degree Admissions Lead Slide-Over Inspection Drawer */}
+      <AdmissionsLead360Drawer
+        isOpen={Boolean(activeDetailLead)}
+        lead={activeDetailLead}
+        onClose={() => setActiveDetailLead(null)}
+        onMatriculate={(lead) => {
+          setMatriculationTargetLead(lead)
+          setActiveDetailLead(null)
+          setIsMatriculationOpen(true)
+        }}
+      />
 
       {/* Quick Add Inquiry Modal */}
       <Dialog open={isNewInquiryOpen} onOpenChange={(open) => !open && setIsNewInquiryOpen(false)}>

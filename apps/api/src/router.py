@@ -46,6 +46,8 @@ from src.routers import (
     sms_inventory,
     sms_section_subjects,
     sms_matriculation,
+    sms_documents,
+    sms_exports,
     live_classes,
     live_class_webhooks,
 )
@@ -820,6 +822,18 @@ v1_router.include_router(
 # CSG-EMS Academic Curricular Bridge & Section-Subject Mapping
 v1_router.include_router(
     sms_section_subjects.router,
+)
+
+# CSG-EMS Document Engine, Institutional Branding & Audit Trail
+v1_router.include_router(
+    sms_documents.router,
+)
+
+# CSG-EMS Universal Audited Data Export Engine
+v1_router.include_router(
+    sms_exports.router,
+    prefix="/sms/exports",
+    tags=["sms-exports"],
 )
 
 

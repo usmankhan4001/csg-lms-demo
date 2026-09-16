@@ -21,6 +21,7 @@ import {
   HelpCircle,
   CheckCircle,
 } from 'lucide-react';
+import { Student360Drawer, Teacher360Drawer, Student360Profile } from '../inspectors';
 
 export interface StrugglingStudentRecord {
   studentId: string;
@@ -58,6 +59,8 @@ export interface RedactedTranscriptItem {
 export const TeacherOversightDesk: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSection, setSelectedSection] = useState<string>('ALL');
+  const [selectedStudentFor360, setSelectedStudentFor360] = useState<Student360Profile | null>(null);
+  const [isTeacher360Open, setIsTeacher360Open] = useState<boolean>(false);
 
   // Struggling Student Radar state
   const [students, setStudents] = useState<StrugglingStudentRecord[]>([
@@ -226,7 +229,7 @@ export const TeacherOversightDesk: React.FC = () => {
           </p>
         </div>
 
-        {/* Global Filter Bar */}
+        {/* Global Filter Bar & 360 Faculty Trigger */}
         <div className="flex items-center gap-3">
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -247,6 +250,14 @@ export const TeacherOversightDesk: React.FC = () => {
             <option value="Section 11-A">Section 11-A</option>
             <option value="Section 11-B">Section 11-B</option>
           </select>
+          <button
+            type="button"
+            onClick={() => setIsTeacher360Open(true)}
+            className="px-3 py-2 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5 shadow-sm transition-all cursor-pointer whitespace-nowrap"
+          >
+            <Users className="w-3.5 h-3.5" />
+            Inspect Faculty 360°
+          </button>
         </div>
       </header>
 
@@ -273,15 +284,21 @@ export const TeacherOversightDesk: React.FC = () => {
                   <th className="pb-3">Urgency Index</th>
                   <th className="pb-3">Primary Knowledge Gap</th>
                   <th className="pb-3">Hint Rate</th>
-                  <th className="pb-3 text-right">AI Tutor Kill-Switch</th>
+                  <th className="pb-3 text-right">Actions & AI Control</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                 {filteredStudents.map((s) => (
                   <tr key={s.studentId} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
-                    <td className="py-3 font-medium text-slate-900 dark:text-white flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-                      {s.pseudonym}
+                    <td className="py-3 font-medium text-slate-900 dark:text-white">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedStudentFor360({} as any)}
+                        className="flex items-center gap-2 hover:text-indigo-600 dark:hover:text-indigo-400 font-semibold text-left cursor-pointer"
+                      >
+                        <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                        <span>{s.pseudonym}</span>
+                      </button>
                     </td>
                     <td className="py-3 text-slate-500">{s.section}</td>
                     <td className="py-3 font-bold">
@@ -302,17 +319,27 @@ export const TeacherOversightDesk: React.FC = () => {
                     </td>
                     <td className="py-3 text-slate-500">{s.hintConsumptionRate} hints/session</td>
                     <td className="py-3 text-right">
-                      <button
-                        onClick={() => toggleStudentAiBlock(s.studentId)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-all ${
-                          s.aiTutoringBlocked
-                            ? 'bg-rose-100 dark:bg-rose-950/70 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 hover:bg-rose-200'
-                            : 'bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
-                        }`}
-                      >
-                        <Power className="w-3.5 h-3.5" />
-                        {s.aiTutoringBlocked ? 'Blocked (Disabled)' : 'Active (Enabled)'}
-                      </button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedStudentFor360({} as any)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 transition-colors cursor-pointer"
+                        >
+                          Inspect 360°
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleStudentAiBlock(s.studentId)}
+                          className={`px-2 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-all ${
+                            s.aiTutoringBlocked
+                              ? 'bg-rose-100 dark:bg-rose-950/70 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 hover:bg-rose-200'
+                              : 'bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
+                          }`}
+                        >
+                          <Power className="w-3.5 h-3.5" />
+                          {s.aiTutoringBlocked ? 'Blocked' : 'Active'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -436,6 +463,18 @@ export const TeacherOversightDesk: React.FC = () => {
           ))}
         </div>
       </div>
+
+      {/* Student 360 Degree Slide-Over Drawer */}
+      <Student360Drawer
+        isOpen={Boolean(selectedStudentFor360)}
+        onClose={() => setSelectedStudentFor360(null)}
+      />
+
+      {/* Faculty Teacher 360 Degree Slide-Over Drawer */}
+      <Teacher360Drawer
+        isOpen={isTeacher360Open}
+        onClose={() => setIsTeacher360Open(false)}
+      />
     </div>
   );
 };

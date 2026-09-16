@@ -6,3 +6,7 @@ export * from './oversight';
 export * from './roles';
 export * from './speedgrader';
 export * from './tutor';
+export * from './financials';
+export * from './payroll';
+export * from './inspectors';
+export * from './documents';

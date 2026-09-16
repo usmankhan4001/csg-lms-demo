@@ -44,6 +44,8 @@ import {
   isActiveStage,
 } from '@/modules/sms/revops/presentation'
 import type { LeadListFilters, LeadRead } from '@/modules/sms/revops/types'
+import { DataExportToolbar } from '@/components/ems/DataExportToolbar'
+import type { ExportColumn } from '@/lib/export/data-export'
 
 interface Props {
   org_id: number
@@ -119,6 +121,23 @@ export default function AdmissionsLeadsClient({ org_id, orgslug }: Props) {
     }
   }
 
+  const leadExportColumns: ExportColumn<LeadRead>[] = useMemo(
+    () => [
+      { key: 'id', label: 'Lead ID', type: 'number' },
+      { key: 'parent_name', label: 'Parent Name', type: 'text' },
+      { key: 'student_name', label: 'Student Name', type: 'text' },
+      { key: 'email', label: 'Email', type: 'masked_pii', formatOptions: { piiType: 'email' } },
+      { key: 'phone', label: 'Phone', type: 'masked_pii', formatOptions: { piiType: 'phone' } },
+      { key: 'grade_applying_for', label: 'Grade Applying', type: 'text' },
+      { key: 'stage', label: 'Stage', type: 'text', accessor: (l) => STAGE_LABEL[l.stage] || l.stage },
+      { key: 'intent_level', label: 'Intent', type: 'text' },
+      { key: 'lead_score', label: 'Lead Score', type: 'number' },
+      { key: 'source', label: 'Source', type: 'text', accessor: (l) => SOURCE_LABEL[l.source] || l.source },
+      { key: 'created_at', label: 'Created Date', type: 'datetime' },
+    ],
+    []
+  )
+
   return (
     <DashPageShell
       module="admissions"
@@ -126,6 +145,14 @@ export default function AdmissionsLeadsClient({ org_id, orgslug }: Props) {
       description="Every admissions enquiry, filterable and sortable. The board at Admissions is for moving leads along; this is for finding them."
       action={
         <div className="flex items-center gap-2">
+          <DataExportToolbar
+            data={rows}
+            columns={leadExportColumns}
+            filenamePrefix="admissions_leads"
+            title="Admissions Leads"
+            activeFilters={effectiveFilters}
+            classification="RESTRICTED"
+          />
           <button
             type="button"
             id="leads-batch-score"

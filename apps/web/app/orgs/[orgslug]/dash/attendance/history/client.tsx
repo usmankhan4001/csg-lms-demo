@@ -42,6 +42,8 @@ import {
   studentLabel,
 } from '@/modules/sms/attendance/presentation'
 import { useStudentNames } from '@/modules/sms/attendance/useStudentNames'
+import { DataExportToolbar } from '@/components/ems/DataExportToolbar'
+import type { ExportColumn } from '@/lib/export/data-export'
 
 interface Props {
   org_id: number
@@ -72,6 +74,23 @@ export default function AttendanceHistoryClient({ org_id }: Props) {
   )
 
   const stats = sheet.data?.stats
+
+  const dailyExportColumns: ExportColumn[] = [
+    { key: 'date', label: 'Date', type: 'date' },
+    { key: 'period_id', label: 'Period', type: 'text', accessor: (r) => (r.period_id ? `#${r.period_id}` : 'Whole day') },
+    { key: 'status', label: 'Status', type: 'text' },
+    { key: 'remarks', label: 'Remarks', type: 'text' },
+  ]
+
+  const trailExportColumns: ExportColumn[] = [
+    { key: 'date', label: 'Register Date', type: 'date' },
+    { key: 'action', label: 'Action', type: 'text' },
+    { key: 'previous_status', label: 'Previous Status', type: 'text' },
+    { key: 'new_status', label: 'New Status', type: 'text' },
+    { key: 'changed_by_user_id', label: 'Changed By User ID', type: 'number' },
+    { key: 'reason', label: 'Reason', type: 'text' },
+    { key: 'created_at', label: 'Timestamp', type: 'datetime' },
+  ]
 
   return (
     <DashPageShell
@@ -171,6 +190,17 @@ export default function AttendanceHistoryClient({ org_id }: Props) {
             onRetry={sheet.refetch}
             emptyTitle="No register taken this month"
             emptyDescription="Nothing has been marked for this student in the month selected."
+            action={
+              (sheet.data?.daily_records ?? []).length > 0 && (
+                <DataExportToolbar
+                  data={sheet.data?.daily_records ?? []}
+                  columns={dailyExportColumns}
+                  filenamePrefix={`attendance_student_${studentId}_${year}_${month}`}
+                  title={`Daily Attendance - Student #${studentId}`}
+                  activeFilters={{ studentId, year, month }}
+                />
+              )
+            }
           >
             <DataTable
               rows={sheet.data?.daily_records ?? []}
@@ -205,6 +235,18 @@ export default function AttendanceHistoryClient({ org_id }: Props) {
             onRetry={trail.refetch}
             emptyTitle="No changes recorded"
             emptyDescription="Nothing has been marked or corrected for this student yet."
+            action={
+              (trail.data ?? []).length > 0 && (
+                <DataExportToolbar
+                  data={trail.data ?? []}
+                  columns={trailExportColumns}
+                  filenamePrefix={`attendance_audit_trail_student_${studentId}`}
+                  title={`Attendance Correction Trail - Student #${studentId}`}
+                  activeFilters={{ studentId }}
+                  classification="RESTRICTED"
+                />
+              )
+            }
           >
             <DataTable
               rows={trail.data ?? []}

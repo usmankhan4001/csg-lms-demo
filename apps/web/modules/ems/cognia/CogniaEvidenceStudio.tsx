@@ -25,6 +25,8 @@ import {
   Copy,
   Check,
 } from 'lucide-react';
+import { DataExportToolbar } from '@/components/ems/DataExportToolbar';
+import type { ExportColumn } from '@/lib/export/data-export';
 
 export interface EvidenceArtifact {
   id: string;
@@ -199,6 +201,20 @@ export const CogniaEvidenceStudio: React.FC = () => {
         item.description.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
+  const cogniaExportColumns: ExportColumn<EvidenceArtifact>[] = [
+    { key: 'standardCode', label: 'Standard Code', type: 'text' },
+    { key: 'domain', label: 'Accreditation Domain', type: 'text' },
+    { key: 'title', label: 'Artifact Title', type: 'text' },
+    { key: 'description', label: 'Scope & Description', type: 'text' },
+    { key: 'evidenceType', label: 'Evidence Type', type: 'text' },
+    { key: 'performanceScore', label: 'Performance Score', type: 'number' },
+    { key: 'status', label: 'Verification Status', type: 'text' },
+    { key: 'contentSha256', label: 'SHA-256 Checksum', type: 'text' },
+    { key: 'academicYear', label: 'Academic Year', type: 'text' },
+    { key: 'submittedBy', label: 'Submitted By', type: 'text' },
+    { key: 'createdAt', label: 'Created At', type: 'text' },
+  ];
+
   return (
     <div className="flex flex-col h-full bg-slate-950 text-slate-100 p-6 space-y-6">
       {/* Top Header */}
@@ -223,9 +239,17 @@ export const CogniaEvidenceStudio: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          <DataExportToolbar
+            data={filteredEvidence}
+            columns={cogniaExportColumns}
+            filenamePrefix="cognia_accreditation_evidence"
+            title="Cognia Accreditation Evidence Locker"
+            classification="RESTRICTED"
+            activeFilters={{ domain: selectedDomain, search: searchTerm }}
+          />
           <button
             onClick={() => setIsExportingDossier(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-sm font-semibold rounded-lg shadow-lg shadow-blue-500/20 transition-all"
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-sm font-semibold rounded-lg shadow-lg shadow-blue-500/20 transition-all cursor-pointer"
           >
             <Download className="w-4 h-4" />
             <span>One-Click Self-Study Dossier</span>

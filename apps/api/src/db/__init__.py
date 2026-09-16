@@ -66,6 +66,15 @@ from src.db.sms_section_subject import (
     SectionSubjectReadDetailed,
 )
 
+from src.db.sms_document_template import (
+    SchoolBrandingSettings,
+    SMSDocumentTemplate,
+)
+
+from src.db.sms_audit_log import (
+    SMSDocumentAuditLog,
+)
+
 __all__ = [
     # Multi-Campus Models
     "Campus",
@@ -122,5 +131,9 @@ __all__ = [
     "DEFAULT_EMS_ROLE_SPECS",
     "seed_default_ems_roles",
     "seed_default_ems_roles_sync",
+    # Document Engine & Branding Models
+    "SchoolBrandingSettings",
+    "SMSDocumentTemplate",
+    "SMSDocumentAuditLog",
 ]
 

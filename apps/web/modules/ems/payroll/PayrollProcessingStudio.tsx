@@ -28,6 +28,7 @@ import {
   Search,
   Filter,
 } from 'lucide-react'
+import { Payslip360Drawer } from '../inspectors'
 
 export interface ProgressiveTaxTier {
   name: string
@@ -722,102 +723,18 @@ export function PayrollProcessingStudio({
         </div>
       )}
 
-      {/* Modal: Detailed Payslip Generator View */}
-      {selectedPayslip && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 max-w-2xl w-full rounded-3xl border border-slate-200 dark:border-slate-800 p-6 md:p-8 shadow-2xl space-y-6 animate-in fade-in zoom-in-95 duration-150">
-            {/* Payslip Header */}
-            <div className="flex items-start justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
-              <div>
-                <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
-                  Official Academic Payslip
-                </span>
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white mt-1">{selectedPayslip.staffName}</h2>
-                <p className="text-xs text-slate-500">
-                  {selectedPayslip.role} • {selectedPayslip.department} • Ref: {selectedPayslip.slipNo}
-                </p>
-              </div>
-              <button onClick={() => setSelectedPayslip(null)} className="p-1 hover:opacity-75">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Compensation Details */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Earnings */}
-              <div className="space-y-2 bg-slate-50 dark:bg-slate-800/40 p-4 rounded-xl">
-                <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Earnings</h4>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">Basic Salary:</span>
-                  <span className="font-semibold text-slate-900 dark:text-white">${selectedPayslip.basic.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">Housing Allowance:</span>
-                  <span className="font-semibold text-slate-900 dark:text-white">${selectedPayslip.housingAllowance.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">Medical Allowance:</span>
-                  <span className="font-semibold text-slate-900 dark:text-white">${selectedPayslip.medicalAllowance.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">Other Allowances:</span>
-                  <span className="font-semibold text-slate-900 dark:text-white">${selectedPayslip.otherAllowances.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-xs pt-2 border-t border-slate-200 dark:border-slate-700 font-bold">
-                  <span className="text-slate-800 dark:text-slate-200">Gross Salary:</span>
-                  <span className="text-indigo-600 dark:text-indigo-400">${selectedPayslip.grossSalary.toLocaleString()}</span>
-                </div>
-              </div>
-
-              {/* Deductions */}
-              <div className="space-y-2 bg-slate-50 dark:bg-slate-800/40 p-4 rounded-xl">
-                <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Deductions</h4>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">Unpaid Leave ({selectedPayslip.unpaidLeaveDays} days):</span>
-                  <span className="font-semibold text-rose-600 dark:text-rose-400">-${selectedPayslip.unpaidLeaveDeduction.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">Provident Fund (5% Pension):</span>
-                  <span className="font-semibold text-rose-600 dark:text-rose-400">-${selectedPayslip.providentFund.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">Progressive Income Tax:</span>
-                  <span className="font-semibold text-rose-600 dark:text-rose-400">-${selectedPayslip.taxDeduction.toLocaleString()}</span>
-                </div>
-                {selectedPayslip.otherDeductions > 0 && (
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">Other Deductions:</span>
-                    <span className="font-semibold text-rose-600 dark:text-rose-400">-${selectedPayslip.otherDeductions.toLocaleString()}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-xs pt-2 border-t border-slate-200 dark:border-slate-700 font-bold">
-                  <span className="text-slate-800 dark:text-slate-200">Total Deductions:</span>
-                  <span className="text-rose-600 dark:text-rose-400">-${selectedPayslip.totalDeductions.toLocaleString()}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Net Amount Banner */}
-            <div className="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 flex items-center justify-between">
-              <div>
-                <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-300">Net Clamped Compensation</span>
-                <p className="text-2xl font-black text-indigo-900 dark:text-indigo-100">
-                  ${selectedPayslip.netSalary.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => window.print()}
-                  className="flex items-center gap-1 px-3 py-2 text-xs font-bold rounded-xl bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 shadow-sm"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  Print
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 360 Degree Payslip Inspection Slide-Over Drawer */}
+      <Payslip360Drawer
+        isOpen={Boolean(selectedPayslip)}
+        onClose={() => setSelectedPayslip(null)}
+        record={selectedPayslip}
+        taxBrackets={DEFAULT_TAX_BRACKETS}
+        onAuthorize={(id) => {
+          if (selectedPayslip) {
+            handleApproveSlip(selectedPayslip)
+          }
+        }}
+      />
     </div>
   )
 }

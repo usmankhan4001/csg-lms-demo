@@ -41,6 +41,8 @@ import {
   updateStaffLeaveStatus,
 } from '@/modules/sms/hr_payroll/api'
 import type { LeaveStatus, SalaryPaymentStatus } from '@/modules/sms/hr_payroll/types'
+import { DataExportToolbar } from '@/components/ems/DataExportToolbar'
+import type { ExportColumn } from '@/lib/export/data-export'
 
 interface HrDashClientProps {
   org_id: number
@@ -167,6 +169,15 @@ export default function HrDashClient({ org_id }: HrDashClientProps) {
     }
   }
 
+  const staffExportColumns: ExportColumn[] = [
+    { key: 'employee_code', label: 'Employee Code', type: 'text' },
+    { key: 'full_name', label: 'Full Name', type: 'text' },
+    { key: 'designation', label: 'Designation', type: 'text' },
+    { key: 'department', label: 'Department', type: 'text' },
+    { key: 'contract_type', label: 'Contract Type', type: 'text' },
+    { key: 'joining_date', label: 'Joining Date', type: 'date' },
+  ]
+
   return (
     <DashPageShell
       title="HR &amp; Payroll"
@@ -177,6 +188,16 @@ export default function HrDashClient({ org_id }: HrDashClientProps) {
           once, so it confirms and names the period first. Getting the month
           wrong here is expensive to unpick.
         */
+        <div className="flex items-center gap-2">
+          {staffRows.length > 0 && (
+            <DataExportToolbar
+              data={staffRows}
+              columns={staffExportColumns}
+              filenamePrefix="staff_directory"
+              title="Staff & Faculty Directory"
+              classification="RESTRICTED"
+            />
+          )}
           <SchoolDialog
             open={generateOpen}
             onOpenChange={setGenerateOpen}
@@ -216,6 +237,7 @@ export default function HrDashClient({ org_id }: HrDashClientProps) {
               this is not the period you meant.
             </p>
           </SchoolDialog>
+        </div>
       }
     >
 

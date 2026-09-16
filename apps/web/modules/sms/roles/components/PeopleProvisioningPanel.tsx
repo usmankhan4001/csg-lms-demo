@@ -58,6 +58,8 @@ import type {
   ProvisionPersonPayload,
   ProvisionableRole,
 } from '../types'
+import { DataExportToolbar } from '@/components/ems/DataExportToolbar'
+import type { ExportColumn } from '@/lib/export/data-export'
 
 const PROVISIONABLE_ROLES: { key: ProvisionableRole; label: string; desc: string }[] = [
   { key: 'TEACHER', label: 'Teacher', desc: 'Takes roll call, enters grades, hosts live classes' },
@@ -326,6 +328,27 @@ export function PeopleProvisioningPanel({ orgId }: { orgId: number }) {
   const totalPeople = directory.data?.length ?? 0
   const withoutRole = (directory.data ?? []).filter((e) => e.roles.length === 0).length
 
+  const peopleExportColumns: ExportColumn<DirectoryEntry>[] = useMemo(
+    () => [
+      { key: 'user_id', label: 'User ID', type: 'number' },
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'email', label: 'Email', type: 'masked_pii', formatOptions: { piiType: 'email' } },
+      {
+        key: 'roles',
+        label: 'Roles',
+        type: 'text',
+        accessor: (r) => (r.roles.length > 0 ? r.roles.map(roleLabel).join(', ') : 'No role'),
+      },
+      {
+        key: 'status',
+        label: 'Status',
+        type: 'text',
+        accessor: (r) => (r.roles.length === 0 ? 'Unassigned' : 'Active'),
+      },
+    ],
+    []
+  )
+
   return (
     <div className="space-y-6">
       {banner && (
@@ -374,6 +397,16 @@ export function PeopleProvisioningPanel({ orgId }: { orgId: number }) {
         emptyDescription="Create the first teacher or student account to get started."
         action={
           <div className="flex flex-wrap items-center gap-2">
+            {entries.length > 0 && (
+              <DataExportToolbar
+                data={entries}
+                columns={peopleExportColumns}
+                filenamePrefix="school_people_directory"
+                title="School People Directory"
+                activeFilters={{ unassignedOnly, search }}
+                classification="RESTRICTED"
+              />
+            )}
             <button
               id="people-refresh"
               type="button"

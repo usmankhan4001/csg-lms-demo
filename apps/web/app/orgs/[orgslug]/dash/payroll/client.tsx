@@ -45,6 +45,8 @@ import type {
   PayrollActionRead,
   SalarySlipRead,
 } from '@/modules/sms/hr_payroll/types'
+import { DataExportToolbar } from '@/components/ems/DataExportToolbar'
+import type { ExportColumn } from '@/lib/export/data-export'
 
 interface PayrollClientProps {
   org_id: number
@@ -147,6 +149,29 @@ export default function PayrollClient({ org_id }: PayrollClientProps) {
   const notFound = (outcomes ?? []).filter((o) => o.outcome === 'not_found')
   const alreadyPaid = (outcomes ?? []).filter((o) => o.outcome === 'already_paid')
 
+  const payrollExportColumns: ExportColumn<SalarySlipRead>[] = useMemo(
+    () => [
+      { key: 'slip_no', label: 'Slip #', type: 'text' },
+      { key: 'staff_id', label: 'Staff ID', type: 'number' },
+      { key: 'month', label: 'Month', type: 'text', accessor: (s) => MONTHS[s.month - 1] ?? s.month },
+      { key: 'year', label: 'Year', type: 'number' },
+      { key: 'basic', label: 'Basic Salary', type: 'currency' },
+      { key: 'housing_allowance', label: 'Housing Allowance', type: 'currency' },
+      { key: 'medical_allowance', label: 'Medical Allowance', type: 'currency' },
+      { key: 'other_allowances', label: 'Other Allowances', type: 'currency' },
+      { key: 'gross_salary', label: 'Gross Salary', type: 'currency' },
+      { key: 'tax_deduction', label: 'Tax Deduction', type: 'currency' },
+      { key: 'provident_fund', label: 'Provident Fund', type: 'currency' },
+      { key: 'other_deductions', label: 'Other Deductions', type: 'currency' },
+      { key: 'unpaid_leave_deduction', label: 'Unpaid Leave Deduction', type: 'currency' },
+      { key: 'total_deductions', label: 'Total Deductions', type: 'currency' },
+      { key: 'net_salary', label: 'Net Salary', type: 'currency' },
+      { key: 'payment_status', label: 'Payment Status', type: 'text' },
+      { key: 'payment_date', label: 'Payment Date', type: 'date' },
+    ],
+    []
+  )
+
   return (
     <DashPageShell
       title="Payroll"
@@ -246,6 +271,17 @@ export default function PayrollClient({ org_id }: PayrollClientProps) {
         emptyDescription="Generate slips for the selected month and year to begin a payroll run."
         action={
           <div className="flex flex-wrap items-center gap-2">
+            {rows.length > 0 && (
+              <DataExportToolbar
+                data={rows}
+                columns={payrollExportColumns}
+                filenamePrefix={`payroll_slips_${year}_${month}`}
+                title={`Payroll Register - ${MONTHS[month - 1]} ${year}`}
+                selectedIds={selected}
+                activeFilters={{ month, year }}
+                classification="RESTRICTED"
+              />
+            )}
             <button
               type="button"
               id="payroll-approve"

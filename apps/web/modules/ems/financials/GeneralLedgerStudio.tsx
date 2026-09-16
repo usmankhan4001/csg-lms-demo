@@ -31,6 +31,7 @@ import {
   Sparkles,
   Zap,
 } from 'lucide-react'
+import { FeeVoucher360Drawer } from '../inspectors'
 
 export type AccountType = 'ASSET' | 'LIABILITY' | 'EQUITY' | 'REVENUE' | 'EXPENSE'
 
@@ -138,6 +139,7 @@ export function GeneralLedgerStudio({
   const [selectedEntryForReversal, setSelectedEntryForReversal] = useState<JournalVoucherRecord | null>(null)
   const [reversalReason, setReversalReason] = useState('')
   const [feedbackBanner, setFeedbackBanner] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [isFeeVoucherDrawerOpen, setIsFeeVoucherDrawerOpen] = useState(false)
 
   // Double Entry Invariant Calculations
   const totals = useMemo(() => {
@@ -421,6 +423,15 @@ export function GeneralLedgerStudio({
               ${(accounts.filter((a) => a.accountType === 'REVENUE').reduce((sum, a) => sum + a.balance, 0) - accounts.filter((a) => a.accountType === 'EXPENSE').reduce((sum, a) => sum + a.balance, 0)).toLocaleString()}
             </span>
           </div>
+
+          <button
+            type="button"
+            onClick={() => setIsFeeVoucherDrawerOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
+          >
+            <FileText className="w-4 h-4" />
+            Inspect Fee Voucher 360°
+          </button>
         </div>
       </div>
 
@@ -1033,6 +1044,12 @@ export function GeneralLedgerStudio({
           </div>
         </div>
       )}
+
+      {/* 360 Degree Fee Voucher Slide-Over Inspection Drawer */}
+      <FeeVoucher360Drawer
+        isOpen={isFeeVoucherDrawerOpen}
+        onClose={() => setIsFeeVoucherDrawerOpen(false)}
+      />
     </div>
   )
 }

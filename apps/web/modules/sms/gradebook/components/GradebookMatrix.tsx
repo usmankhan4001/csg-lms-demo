@@ -35,6 +35,8 @@ import { listSectionEnrollments } from '@/modules/sms/campus/api'
 import { useStudentNames } from '@/modules/sms/attendance/useStudentNames'
 import { GradeHistoryDialog } from './GradeHistoryDialog'
 import { studentLabel } from '../presentation'
+import { DataExportToolbar } from '@/components/ems/DataExportToolbar'
+import type { ExportColumn } from '@/lib/export/data-export'
 import {
   batchEnterGrades,
   listAssessmentPlans,
@@ -218,6 +220,8 @@ export function GradebookMatrix({ sectionId, courseId, academicTermId, gradedBy,
     [scores, planList]
   )
 
+  const dirtyCount = Object.keys(dirty).length
+
   async function handleSave() {
     // The API batches per assessment plan, so one request per plan that has
     // at least one entered score.
@@ -265,6 +269,48 @@ export function GradebookMatrix({ sectionId, courseId, academicTermId, gradedBy,
     }
   }
 
+  const exportColumns: ExportColumn[] = useMemo(() => {
+    const cols: ExportColumn[] = [
+      { key: 'student_id', label: 'Student ID', type: 'number' },
+      { key: 'student_name', label: 'Student Name', type: 'text' },
+      { key: 'roll_number', label: 'Roll Number', type: 'text' },
+    ]
+    for (const plan of planList) {
+      cols.push({
+        key: `plan_${plan.id}`,
+        label: `${plan.assessment_name} (${plan.weight_percentage}%)`,
+        type: 'number',
+      })
+    }
+    cols.push(
+      { key: 'weighted_total', label: 'Weighted %', type: 'percentage' },
+      { key: 'letter_grade', label: 'Grade', type: 'text' }
+    )
+    return cols
+  }, [planList])
+
+  const exportRows = useMemo(() => {
+    return students.map((s) => {
+      const total = weightedTotal(s.student_id)
+      const serverEntry = saved[s.student_id]
+      const preview = total !== null ? resolveLetter(total, intervals) : null
+      const label = studentLabel(s.student_id, names.names)
+      const row: Record<string, any> = {
+        id: s.student_id,
+        student_id: s.student_id,
+        student_name: label,
+        roll_number: s.roll_number ?? '—',
+        weighted_total: total,
+        letter_grade: serverEntry?.letter_grade ?? preview?.grade ?? '—',
+      }
+      for (const p of planList) {
+        const val = scores[s.student_id]?.[p.id]
+        row[`plan_${p.id}`] = val !== undefined && val !== '' ? Number(val) : ''
+      }
+      return row
+    })
+  }, [students, scores, saved, intervals, names.names, planList])
+
   const combinedStatus =
     enrollments.status === 'error' || plans.status === 'error'
       ? 'error'
@@ -278,6 +324,30 @@ export function GradebookMatrix({ sectionId, courseId, academicTermId, gradedBy,
       title="Gradebook"
       description={`Section #${sectionId}`}
       icon={<GraduationCap className="size-4 text-muted-foreground" />}
+      action={
+        <div className="flex items-center gap-2">
+          {students.length > 0 && (
+            <DataExportToolbar
+              data={exportRows}
+              columns={exportColumns}
+              filenamePrefix={`gradebook_section_${sectionId}`}
+              title={`Gradebook Matrix - Section #${sectionId}`}
+              activeFilters={{ sectionId, courseId, academicTermId }}
+            />
+          )}
+          {dirtyCount > 0 && (
+            <Button
+              size="sm"
+              disabled={saving || hasInvalid}
+              onClick={handleSave}
+              className="gap-1.5"
+            >
+              <Save className="size-3.5" />
+              {saving ? 'Saving...' : `Save ${dirtyCount} mark${dirtyCount === 1 ? '' : 's'}`}
+            </Button>
+          )}
+        </div>
+      }
       state={combinedStatus}
       error={enrollments.error ?? plans.error}
       onRetry={() => {
