@@ -15,6 +15,7 @@ import type {
   AttachCourseworkRequest,
   CreateLiveClassSessionRequest,
   LiveClassAttendanceLogRead,
+  LiveClassBoardOption,
   LiveClassCourseworkRead,
   LiveClassDetailRead,
   LiveClassRecordingRead,
@@ -47,6 +48,19 @@ export function endLiveClassSession(roomName: string, recordingUrl?: string): Pr
 
 export function getRoomAttendanceLogs(roomName: string): Promise<LiveClassAttendanceLogRead[]> {
   return apiGet<LiveClassAttendanceLogRead[]>(`/live/rooms/${encodeURIComponent(roomName)}/attendance`)
+}
+
+/**
+ * `GET /boards/org/{org_id}` -- boards.py:71.
+ *
+ * The in-class whiteboard is a real Learnhouse board, so this is the list the
+ * host picks from. It is the org's boards endpoint rather than anything
+ * live-class specific on purpose: the collab server only opens documents named
+ * `board:{uuid}` and authorizes them against this board's membership, so a
+ * board that is not in this list is a board nobody in the class can open.
+ */
+export function listOrgBoards(orgId: number): Promise<LiveClassBoardOption[]> {
+  return apiGet<LiveClassBoardOption[]>(`/boards/org/${orgId}`)
 }
 
 // ---------------------------------------------------------------------------

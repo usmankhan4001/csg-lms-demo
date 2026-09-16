@@ -50,6 +50,7 @@ from src.db.sms_identity import SMSUserRole, SchoolRole
 from src.db.sms_payroll import SalaryPaymentStatus, SalarySlip
 from src.db.sms_revops import AdmissionsLead, LeadIntent, LeadSource, LeadStage
 from src.db.users import User
+from src.security.ems_rbac import require_permission
 from src.security.school_ownership import get_user_id, require_org_id
 from src.services.audit.audit import extract_request_context, record_audit_event
 
@@ -59,6 +60,29 @@ router = APIRouter()
 
 _PRIVILEGED_ROLES = [SUPER_ADMIN, SCHOOL_ADMIN, STAFF]
 _ALL_STAFF_ROLES = [SUPER_ADMIN, SCHOOL_ADMIN, TEACHER, STAFF, PSYCHOLOGIST]
+
+# --- Dynamic RBAC (src/security/ems_rbac.py) -------------------------------
+#
+# Fine-grained second gate behind the coarse `require_roles(...)` above. These
+# are bulk extractions of children's data, so every one is gated on the
+# `export` action of the domain it actually dumps -- `academic`, `hr`,
+# `revops`, `finance`, `compliance` from `ResourceDomain`
+# (src/db/ems_roles.py) -- rather than on a generic 'can export'.
+#
+# OPERATOR ACTION REQUIRED: the built-in `staff` template grants export on
+# NONE of these domains, and `teacher` grants it only on `academic`. A
+# backfilled STAFF caller therefore loses the teacher/fee-voucher/payroll
+# exports, and a TEACHER loses the Cognia one. Grant `export` on the relevant
+# domain to the role that should have it, or run with
+# EMS_RBAC_LEGACY_FALLBACK=1 until you have.
+STUDENTS = "academic.students"
+STAFF_DIRECTORY = "hr.staff"
+ADMISSIONS_LEADS = "revops.leads"
+ATTENDANCE = "academic.attendance"
+GRADEBOOK = "academic.gradebook"
+FEE_VOUCHERS = "finance.fees"
+PAYROLL = "hr.payroll"
+COGNIA = "compliance.cognia"
 
 
 def _mask_email(email: Optional[str]) -> str:
@@ -133,7 +157,7 @@ def _make_json_stream(columns: List[str], rows_generator: AsyncGenerator[Dict[st
 # ---------------------------------------------------------------------------
 # 1. Students & Enrolment Export
 # ---------------------------------------------------------------------------
-@router.get("/students")
+@router.get("/students", dependencies=[Depends(require_permission(STUDENTS, "export"))])
 async def export_students(
     request: Request,
     format: str = Query("csv", regex="^(csv|json)$"),
@@ -235,7 +259,7 @@ async def export_students(
 # ---------------------------------------------------------------------------
 # 2. Teachers & Staff Export
 # ---------------------------------------------------------------------------
-@router.get("/teachers")
+@router.get("/teachers", dependencies=[Depends(require_permission(STAFF_DIRECTORY, "export"))])
 async def export_teachers(
     request: Request,
     format: str = Query("csv", regex="^(csv|json)$"),
@@ -324,7 +348,7 @@ async def export_teachers(
 # ---------------------------------------------------------------------------
 # 3. Admissions Leads Export
 # ---------------------------------------------------------------------------
-@router.get("/admissions-leads")
+@router.get("/admissions-leads", dependencies=[Depends(require_permission(ADMISSIONS_LEADS, "export"))])
 async def export_admissions_leads(
     request: Request,
     format: str = Query("csv", regex="^(csv|json)$"),
@@ -413,7 +437,7 @@ async def export_admissions_leads(
 # ---------------------------------------------------------------------------
 # 4. Attendance Logs Export
 # ---------------------------------------------------------------------------
-@router.get("/attendance-logs")
+@router.get("/attendance-logs", dependencies=[Depends(require_permission(ATTENDANCE, "export"))])
 async def export_attendance_logs(
     request: Request,
     format: str = Query("csv", regex="^(csv|json)$"),
@@ -512,7 +536,7 @@ async def export_attendance_logs(
 # ---------------------------------------------------------------------------
 # 5. Gradebook Matrix Export
 # ---------------------------------------------------------------------------
-@router.get("/gradebook")
+@router.get("/gradebook", dependencies=[Depends(require_permission(GRADEBOOK, "export"))])
 async def export_gradebook(
     request: Request,
     format: str = Query("csv", regex="^(csv|json)$"),
@@ -623,7 +647,7 @@ async def export_gradebook(
 # ---------------------------------------------------------------------------
 # 6. Fee Vouchers & Invoices Export
 # ---------------------------------------------------------------------------
-@router.get("/fee-vouchers")
+@router.get("/fee-vouchers", dependencies=[Depends(require_permission(FEE_VOUCHERS, "export"))])
 async def export_fee_vouchers(
     request: Request,
     format: str = Query("csv", regex="^(csv|json)$"),
@@ -718,7 +742,7 @@ async def export_fee_vouchers(
 # ---------------------------------------------------------------------------
 # 7. Payroll Registers Export
 # ---------------------------------------------------------------------------
-@router.get("/payroll")
+@router.get("/payroll", dependencies=[Depends(require_permission(PAYROLL, "export"))])
 async def export_payroll(
     request: Request,
     format: str = Query("csv", regex="^(csv|json)$"),
@@ -815,7 +839,7 @@ async def export_payroll(
 # ---------------------------------------------------------------------------
 # 8. Cognia Accreditation Evidence Export
 # ---------------------------------------------------------------------------
-@router.get("/cognia-evidence")
+@router.get("/cognia-evidence", dependencies=[Depends(require_permission(COGNIA, "export"))])
 async def export_cognia_evidence(
     request: Request,
     format: str = Query("csv", regex="^(csv|json)$"),

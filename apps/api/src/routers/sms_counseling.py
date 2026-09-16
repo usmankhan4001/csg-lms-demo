@@ -55,6 +55,7 @@ from src.schemas.sms_counseling import (
     PastoralEscalationCreate,
     PastoralEscalationRead,
 )
+from src.security.ems_rbac import require_permission
 from src.security.features_utils.dependencies import require_tutor_counseling_feature
 from src.services.ai.llm import AINotConfiguredError
 from src.services.sms import clinical_desk as clinical_desk_service
@@ -64,6 +65,26 @@ router = APIRouter(dependencies=[Depends(require_tutor_counseling_feature)])
 
 # Staff roles permitted to generate a (non-confidential) career guidance plan.
 CAREER_GUIDANCE_STAFF_ROLES = [SUPER_ADMIN, SCHOOL_ADMIN, TEACHER, PSYCHOLOGIST]
+
+# --- Dynamic RBAC (src/security/ems_rbac.py) -------------------------------
+#
+# Fine-grained second gate. Every key below is inside the `clinical` domain of
+# `ResourceDomain` (src/db/ems_roles.py), which is what makes the engine's
+# 404-Never-403 guardrail fire: a caller who is not a clinical specialist gets
+# a bare 404, never a 403 -- the same contract this module already enforces by
+# hand with `_confidential_not_found()`.
+#
+# Applied ONLY to endpoints whose existing unauthorised outcome is already a
+# refusal (404/403). The list endpoints in this module deliberately answer an
+# unauthorised caller with an EMPTY LIST, and a dependency cannot produce that
+# -- so they are left to the service layer's per-psychologist scoping, which is
+# where that contract actually lives. See the module docstring.
+CLINICAL_SESSIONS = "clinical.sessions"
+CLINICAL_ACTIVITY_LOGS = "clinical.activity_logs"
+CLINICAL_CASE_NOTES = "clinical.case_notes"
+CLINICAL_TRIAGE = "clinical.triage"
+CLINICAL_ESCALATIONS = "clinical.escalations"
+CAREER_GUIDANCE = "academic.career_guidance"
 
 def _confidential_not_found() -> HTTPException:
     """A generic 404, deliberately indistinguishable from 'record does not
@@ -81,6 +102,7 @@ def _confidential_not_found() -> HTTPException:
     status_code=status.HTTP_201_CREATED,
     summary="Log a Counseling-Relevant Activity Signal",
     description="PSYCHOLOGIST-only. Any other role gets a generic 404, never a 403.",
+    dependencies=[Depends(require_permission(CLINICAL_ACTIVITY_LOGS, "create"))],
 )
 async def create_activity_log_endpoint(
     payload: ActivityLogCreate,
@@ -122,6 +144,7 @@ async def list_activity_logs_endpoint(
     status_code=status.HTTP_201_CREATED,
     summary="Log a 1:1 Counseling Session",
     description="PSYCHOLOGIST-only. Any other role gets a generic 404, never a 403.",
+    dependencies=[Depends(require_permission(CLINICAL_SESSIONS, "create"))],
 )
 async def create_session_endpoint(
     payload: CounselingSessionCreate,
@@ -158,6 +181,7 @@ async def list_sessions_endpoint(
     response_model=CounselingSessionRead,
     summary="Get a Counseling Session by ID",
     description="PSYCHOLOGIST-only (the author). Every other caller gets a generic 404.",
+    dependencies=[Depends(require_permission(CLINICAL_SESSIONS, "read"))],
 )
 async def get_session_endpoint(
     session_id: int,
@@ -175,6 +199,7 @@ async def get_session_endpoint(
     response_model=CounselingSessionRead,
     summary="Edit a Counseling Session",
     description="PSYCHOLOGIST-only (the author). Every other caller gets a generic 404.",
+    dependencies=[Depends(require_permission(CLINICAL_SESSIONS, "update"))],
 )
 async def update_session_endpoint(
     session_id: int,
@@ -243,6 +268,7 @@ async def _build_academic_summary(session: AsyncSession, student_id: int) -> str
         "steps) grounded in the student's academic profile. A single "
         "generate-and-store operation, not a conversational agent."
     ),
+    dependencies=[Depends(require_permission(CAREER_GUIDANCE, "create"))],
 )
 async def generate_career_guidance_endpoint(
     payload: CareerGuidanceGenerateRequest,
@@ -277,6 +303,7 @@ async def generate_career_guidance_endpoint(
     response_model=List[CareerGuidancePlanRead],
     summary="List a Student's Career Guidance Plans",
     description="Not confidential -- visible to school staff and to the student/parent themselves.",
+    dependencies=[Depends(require_permission(CAREER_GUIDANCE, "read"))],
 )
 async def list_career_guidance_endpoint(
     student_id: int,
@@ -297,6 +324,7 @@ async def list_career_guidance_endpoint(
     status_code=status.HTTP_201_CREATED,
     summary="Store Encrypted Clinical Case Note",
     description="PSYCHOLOGIST-only. Enforces 404-Never-403 for non-psychologists.",
+    dependencies=[Depends(require_permission(CLINICAL_CASE_NOTES, "create"))],
 )
 async def create_encrypted_case_note_endpoint(
     payload: ClinicalCaseNoteCreate,
@@ -367,6 +395,7 @@ async def list_encrypted_case_notes_endpoint(
     status_code=status.HTTP_201_CREATED,
     summary="Record Encrypted Diagnostic Assessment",
     description="PSYCHOLOGIST-only. Enforces 404-Never-403.",
+    dependencies=[Depends(require_permission(CLINICAL_CASE_NOTES, "create"))],
 )
 async def create_diagnostic_assessment_endpoint(
     payload: DiagnosticAssessmentCreate,
@@ -404,6 +433,7 @@ async def create_diagnostic_assessment_endpoint(
         "Emits protective pastoral alert to school principal / leadership. "
         "Zero clinical notes or diagnostic narratives are leaked."
     ),
+    dependencies=[Depends(require_permission(CLINICAL_ESCALATIONS, "create"))],
 )
 async def emit_pastoral_escalation_endpoint(
     payload: PastoralEscalationCreate,
@@ -436,6 +466,7 @@ async def list_pastoral_escalations_endpoint(
     status_code=status.HTTP_201_CREATED,
     summary="Flag Crisis Triage Item",
     description="PSYCHOLOGIST-only. Enforces 404-Never-403.",
+    dependencies=[Depends(require_permission(CLINICAL_TRIAGE, "create"))],
 )
 async def create_crisis_triage_endpoint(
     payload: CrisisTriageItemCreate,
@@ -467,6 +498,7 @@ async def list_crisis_triage_endpoint(
     response_model=CrisisTriageItemRead,
     summary="Update Crisis Triage Status",
     description="PSYCHOLOGIST-only. Enforces 404-Never-403.",
+    dependencies=[Depends(require_permission(CLINICAL_TRIAGE, "update"))],
 )
 async def update_crisis_triage_endpoint(
     triage_id: int,

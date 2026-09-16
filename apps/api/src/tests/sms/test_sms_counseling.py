@@ -19,9 +19,11 @@ Covers:
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from sqlmodel import select
 
 from src.core.events.database import get_db_session
 from src.core.keycloak_auth import KeycloakUserPrincipal, get_current_user_principal
+from src.db.ems_roles import EMSRole, EMSUserRoleAssignment, seed_default_ems_roles
 from src.routers import sms_counseling
 from src.security.features_utils.dependencies import require_tutor_counseling_feature
 from src.services.sms import counseling as counseling_service
@@ -35,8 +37,36 @@ def _make_app(db):
     return app
 
 
-def _principal(roles, sub):
-    return KeycloakUserPrincipal(sub=sub, org_id=1, campus_id=1, roles=set(roles))
+async def _grant_ems_role(db, user_id, slug, org_id=1, campus_id=1):
+    """Give `user_id` the built-in EMS role `slug`.
+
+    These principals are constructed by hand rather than resolved from a real
+    session, so nothing has populated `EMSUserRoleAssignment` for them. The
+    dynamic gate (src/security/ems_rbac.require_permission) FAILS CLOSED, so a
+    principal with no assignment is refused -- which is exactly what
+    `backfill_ems_assignments_from_sms_roles()` exists to prevent for real
+    users. Seeding the grant here models a backfilled deployment.
+    """
+    await seed_default_ems_roles(db, org_id=None)
+    role = (await db.execute(select(EMSRole).where(EMSRole.slug == slug))).scalars().first()
+    assert role is not None, f"EMS role {slug} was not seeded"
+    db.add(
+        EMSUserRoleAssignment(
+            user_id=user_id, role_id=role.id, org_id=org_id, campus_id=campus_id
+        )
+    )
+    await db.commit()
+
+
+def _principal(roles, sub, user_id):
+    """`lh_user_id` is required: it is how the EMS store is keyed."""
+    return KeycloakUserPrincipal(
+        sub=sub,
+        org_id=1,
+        campus_id=1,
+        roles=set(roles),
+        raw_claims={"lh_user_id": user_id},
+    )
 
 
 SESSION_PAYLOAD = {
@@ -52,7 +82,8 @@ SESSION_PAYLOAD = {
 @pytest.mark.asyncio
 async def test_psychologist_can_log_and_read_activity_and_session(db):
     app = _make_app(db)
-    psych = _principal({"PSYCHOLOGIST"}, "psych-1")
+    psych = _principal({"PSYCHOLOGIST"}, "psych-1", user_id=11)
+    await _grant_ems_role(db, 11, "psychologist")
     app.dependency_overrides[get_current_user_principal] = lambda: psych
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -107,7 +138,8 @@ async def test_teacher_and_school_admin_get_empty_result_never_403(db):
     generic 404, never a 403 -- a 403 itself would confirm the record exists."""
     app = _make_app(db)
 
-    psych = _principal({"PSYCHOLOGIST"}, "psych-2")
+    psych = _principal({"PSYCHOLOGIST"}, "psych-2", user_id=12)
+    await _grant_ems_role(db, 12, "psychologist")
     app.dependency_overrides[get_current_user_principal] = lambda: psych
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post(
@@ -126,8 +158,8 @@ async def test_teacher_and_school_admin_get_empty_result_never_403(db):
             },
         )
 
-    for role in ("TEACHER", "SCHOOL_ADMIN"):
-        staff = _principal({role}, f"staff-{role}")
+    for role, uid in (("TEACHER", 20), ("SCHOOL_ADMIN", 21)):
+        staff = _principal({role}, f"staff-{role}", user_id=uid)
         app.dependency_overrides[get_current_user_principal] = lambda staff=staff: staff
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             # List endpoints: empty list, status 200 -- not 403.
@@ -167,7 +199,8 @@ async def test_a_different_psychologist_cannot_see_a_colleagues_record(db):
     the empty result, not the confidential data."""
     app = _make_app(db)
 
-    psych_a = _principal({"PSYCHOLOGIST"}, "psych-a")
+    psych_a = _principal({"PSYCHOLOGIST"}, "psych-a", user_id=13)
+    await _grant_ems_role(db, 13, "psychologist")
     app.dependency_overrides[get_current_user_principal] = lambda: psych_a
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post(
@@ -176,7 +209,8 @@ async def test_a_different_psychologist_cannot_see_a_colleagues_record(db):
         )
         session_id = resp.json()["id"]
 
-    psych_b = _principal({"PSYCHOLOGIST"}, "psych-b")
+    psych_b = _principal({"PSYCHOLOGIST"}, "psych-b", user_id=14)
+    await _grant_ems_role(db, 14, "psychologist")
     app.dependency_overrides[get_current_user_principal] = lambda: psych_b
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         list_resp = await client.get("/sms/counseling/sessions/student/888")
@@ -191,7 +225,8 @@ async def test_a_different_psychologist_cannot_see_a_colleagues_record(db):
 async def test_parent_sees_only_the_parent_visible_flagged_session(db):
     app = _make_app(db)
 
-    psych = _principal({"PSYCHOLOGIST"}, "psych-3")
+    psych = _principal({"PSYCHOLOGIST"}, "psych-3", user_id=15)
+    await _grant_ems_role(db, 15, "psychologist")
     app.dependency_overrides[get_current_user_principal] = lambda: psych
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         # One flagged for the parent, one not.
@@ -211,7 +246,7 @@ async def test_parent_sees_only_the_parent_visible_flagged_session(db):
         )
         assert unflagged.status_code == 201
 
-    parent = _principal({"PARENT"}, "parent-1")
+    parent = _principal({"PARENT"}, "parent-1", user_id=30)
     app.dependency_overrides[get_current_user_principal] = lambda: parent
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         summary_resp = await client.get("/sms/counseling/sessions/student/999/parent-summary")
@@ -249,7 +284,8 @@ async def test_career_guidance_plan_generation_and_listing(db, monkeypatch):
     monkeypatch.setattr(counseling_service, "generate", _fake_generate)
 
     app = _make_app(db)
-    teacher = _principal({"TEACHER"}, "teacher-2")
+    teacher = _principal({"TEACHER"}, "teacher-2", user_id=22)
+    await _grant_ems_role(db, 22, "teacher")
     app.dependency_overrides[get_current_user_principal] = lambda: teacher
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -273,7 +309,7 @@ async def test_career_guidance_plan_generation_and_listing(db, monkeypatch):
 @pytest.mark.asyncio
 async def test_career_guidance_generation_requires_staff_role(db):
     app = _make_app(db)
-    student = _principal({"STUDENT"}, "student-1")
+    student = _principal({"STUDENT"}, "student-1", user_id=40)
     app.dependency_overrides[get_current_user_principal] = lambda: student
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

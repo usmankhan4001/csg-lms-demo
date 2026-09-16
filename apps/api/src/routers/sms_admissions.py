@@ -48,6 +48,7 @@ from src.schemas.sms_admissions import (
     DocumentRead,
     DocumentVerifyRequest,
 )
+from src.security.ems_rbac import require_permission
 from src.security.school_ownership import assert_campus_allowed, resolve_scoped_campus_id
 from src.services.sms import admissions as svc
 
@@ -55,6 +56,21 @@ from src.services.sms import admissions as svc
 # docstring. STAFF is included because the admissions office IS back-office
 # staff; a receptionist taking a walk-in application is the normal case.
 _ADMISSIONS = ["SUPER_ADMIN", "SCHOOL_ADMIN", "STAFF"]
+
+# --- Dynamic RBAC (src/security/ems_rbac.py) -------------------------------
+#
+# Fine-grained second gate behind the coarse `require_roles(_ADMISSIONS)` /
+# `require_roles(_ADMISSIONS_LEAD)`. Admissions is the `revops` domain of
+# `ResourceDomain` (src/db/ems_roles.py) -- the same mapping
+# RESOURCE_DOMAIN_MAP already uses for 'admissions' and
+# 'admissions.applications'.
+#
+# OPERATOR ACTION REQUIRED: the built-in `staff` template grants NOTHING on
+# revops, so a backfilled STAFF user (the receptionist this module exists for)
+# passes the coarse gate and is then refused here. Grant revops to the role
+# your admissions office actually uses -- that is what the dynamic store is
+# for -- or run with EMS_RBAC_LEGACY_FALLBACK=1 until you have.
+ADMISSIONS = "revops.admissions"
 
 # Decisions and document verification are accountable acts that carry the
 # school's name. Narrower than _ADMISSIONS on purpose: a receptionist may
@@ -124,6 +140,7 @@ async def _load_application_in_scope(
         "never have been a tracked RevOps lead, and requiring one would force "
         "the front desk to fabricate a marketing record to accept a form."
     ),
+    dependencies=[Depends(require_permission(ADMISSIONS, "create"))],
 )
 async def create_application(
     payload: ApplicationCreate,
@@ -166,6 +183,7 @@ async def create_application(
         "narrowed to their own campus even when they request none -- an "
         "omitted filter must not widen access."
     ),
+    dependencies=[Depends(require_permission(ADMISSIONS, "read"))],
 )
 async def list_applications(
     campus_id: Optional[int] = Query(None),
@@ -200,6 +218,7 @@ async def list_applications(
         "`decisions` are empty lists when nothing has been recorded -- an "
         "applicant with no assessment has no assessment, never a zero score."
     ),
+    dependencies=[Depends(require_permission(ADMISSIONS, "read"))],
 )
 async def get_application_detail(
     application_id: int,
@@ -226,6 +245,7 @@ async def get_application_detail(
     "/applications/{application_id}",
     response_model=ApplicationRead,
     summary="Update Application",
+    dependencies=[Depends(require_permission(ADMISSIONS, "update"))],
 )
 async def update_application(
     application_id: int,
@@ -246,6 +266,7 @@ async def update_application(
     "/applications/{application_id}/submit",
     response_model=ApplicationRead,
     summary="Submit Application",
+    dependencies=[Depends(require_permission(ADMISSIONS, "approve"))],
 )
 async def submit_application(
     application_id: int,
@@ -261,6 +282,7 @@ async def submit_application(
     "/applications/{application_id}/status",
     response_model=ApplicationRead,
     summary="Set Application Status",
+    dependencies=[Depends(require_permission(ADMISSIONS, "update"))],
 )
 async def set_status(
     application_id: int,
@@ -287,6 +309,7 @@ async def set_status(
         "reachable by guessing an application id. Uploads land as PENDING: an "
         "unchecked file must never read as verified."
     ),
+    dependencies=[Depends(require_permission(ADMISSIONS, "create"))],
 )
 async def upload_document(
     application_id: int,
@@ -312,6 +335,7 @@ async def upload_document(
     "/applications/{application_id}/documents",
     response_model=List[DocumentRead],
     summary="List Supporting Documents",
+    dependencies=[Depends(require_permission(ADMISSIONS, "read"))],
 )
 async def list_documents(
     application_id: int,
@@ -331,6 +355,7 @@ async def list_documents(
         "re-scoped on every call, so a document id alone is never sufficient "
         "authority to read a child's identity papers."
     ),
+    dependencies=[Depends(require_permission(ADMISSIONS, "read"))],
 )
 async def download_document(
     document_id: int,
@@ -368,6 +393,7 @@ async def download_document(
         "client-supplied id. A rejection requires a reason so the family knows "
         "what to resubmit."
     ),
+    dependencies=[Depends(require_permission(ADMISSIONS, "approve"))],
 )
 async def verify_document(
     document_id: int,
@@ -407,6 +433,7 @@ async def verify_document(
     response_model=AssessmentRead,
     status_code=status.HTTP_201_CREATED,
     summary="Schedule Assessment",
+    dependencies=[Depends(require_permission(ADMISSIONS, "create"))],
 )
 async def schedule_assessment(
     application_id: int,
@@ -429,6 +456,7 @@ async def schedule_assessment(
     "/applications/{application_id}/assessments",
     response_model=List[AssessmentRead],
     summary="List Assessments",
+    dependencies=[Depends(require_permission(ADMISSIONS, "read"))],
 )
 async def list_assessments(
     application_id: int,
@@ -448,6 +476,7 @@ async def list_assessments(
         "A NOT_ATTENDED outcome cannot carry a score: an applicant who never "
         "sat the paper did not score zero on it."
     ),
+    dependencies=[Depends(require_permission(ADMISSIONS, "update"))],
 )
 async def record_assessment_result(
     assessment_id: int,
@@ -494,6 +523,7 @@ async def record_assessment_result(
         "so a school challenged months later can show what was decided, by "
         "whom, and why. The reason is required."
     ),
+    dependencies=[Depends(require_permission(ADMISSIONS, "approve"))],
 )
 async def record_decision(
     application_id: int,
@@ -524,6 +554,7 @@ async def record_decision(
     "/applications/{application_id}/decisions",
     response_model=List[DecisionRead],
     summary="List Admission Decisions",
+    dependencies=[Depends(require_permission(ADMISSIONS, "read"))],
 )
 async def list_decisions(
     application_id: int,

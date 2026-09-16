@@ -10,9 +10,11 @@ hierarchical scoping (ALL, CAMPUS, DEPARTMENT, OWN_SECTION, OWN_ONLY).
 """
 
 import logging
+import os
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Set, Union
 from fastapi import Depends, HTTPException, Request, status
-from sqlmodel import select
+from sqlmodel import or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.events.database import get_db_session
@@ -30,6 +32,7 @@ from src.db.ems_roles import (
     EMSUserRoleAssignment,
     ResourceDomain,
     ScopeLevel,
+    seed_default_ems_roles,
 )
 from src.security.school_ownership import (
     get_own_children_ids,
@@ -38,6 +41,143 @@ from src.security.school_ownership import (
 )
 
 logger = logging.getLogger("ems_rbac")
+
+
+# ---------------------------------------------------------
+# Principal claims carrying the EMS role store
+# ---------------------------------------------------------
+#
+# `KeycloakUserPrincipal.roles` is the LEGACY 7-value enum (SUPER_ADMIN,
+# SCHOOL_ADMIN, TEACHER, STUDENT, PARENT, STAFF, PSYCHOLOGIST) and is what the
+# 262 existing `require_roles([...])` call sites match on. EMS assignments are
+# therefore NOT merged into `.roles` -- doing so would silently widen every one
+# of those gates. They ride in `raw_claims` instead, which is built server-side
+# by `resolve_school_principal()` and is never client-supplied.
+EMS_ASSIGNMENTS_CLAIM = "ems_assignments"
+EMS_ROLE_SLUGS_CLAIM = "ems_role_slugs"
+
+
+# ---------------------------------------------------------
+# Fallback policy: FAIL CLOSED
+# ---------------------------------------------------------
+#
+# A caller with no (unexpired, in-scope) EMS assignment is DENIED.
+#
+# `has_permission()` keeps its historical legacy-role bridge for direct
+# callers (it is a library function and existing callers/tests depend on that
+# reading). The ENFORCEMENT path -- `require_permission()`, which is what the
+# routers use -- does not: it reads this switch, which defaults to off.
+#
+# `EMS_RBAC_LEGACY_FALLBACK=1` is a migration escape hatch ONLY. It restores
+# the pre-wiring behaviour (fall back to the built-in role template matching
+# the caller's legacy role) so a deployment that has not yet run the backfill
+# is not hard-locked out of fees/payroll/counseling/admissions/exports. Run
+# the backfill (see `backfill_ems_assignments_from_sms_roles` at the bottom of
+# this module) and leave it off.
+EMS_RBAC_LEGACY_FALLBACK: bool = os.getenv("EMS_RBAC_LEGACY_FALLBACK", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
+_legacy_fallback_warned = False
+
+
+# Scope breadth, narrowest first. Used only when a caller passes
+# `required_scope` to demand that the GRANTING rule be at least this broad.
+_SCOPE_BREADTH: Dict[str, int] = {
+    ScopeLevel.OWN_ONLY.value: 0,
+    ScopeLevel.OWN_SECTION.value: 1,
+    ScopeLevel.DEPARTMENT.value: 2,
+    ScopeLevel.CAMPUS.value: 3,
+    ScopeLevel.ALL.value: 4,
+}
+
+
+def _normalise_scope(scope: Any) -> str:
+    raw = scope.value if isinstance(scope, ScopeLevel) else str(scope)
+    return raw.upper().strip()
+
+
+def _is_expired(expires_at: Any, now: datetime) -> bool:
+    """True when an assignment's `expires_at` is in the past.
+
+    Tolerates a naive datetime (assumed UTC) and an ISO string (SQLite hands
+    some drivers back the raw column text), so an unparseable value is treated
+    as expired rather than as 'no expiry'.
+    """
+    if expires_at is None:
+        return False
+    if isinstance(expires_at, str):
+        try:
+            expires_at = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        except ValueError:
+            return True
+    if not isinstance(expires_at, datetime):
+        return True
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at <= now
+
+
+async def load_active_ems_assignments(
+    db_session: Optional[AsyncSession],
+    *,
+    user_id: Optional[int],
+    org_id: Optional[int],
+    campus_id: Optional[int] = None,
+    now: Optional[datetime] = None,
+) -> List[EMSUserRoleAssignment]:
+    """The single, canonical read of the EMS assignment store.
+
+    Shared by `resolve_school_principal()` (to populate the principal),
+    `has_permission()` and `is_clinical_specialist()`, so all three agree on
+    what 'this user holds right now' means. An assignment counts only when it
+    is:
+      - for this user,
+      - in the caller's organisation (a principal with no org is scoped to no
+        school, so it gets nothing -- never 'every org'),
+      - unscoped to a campus or scoped to the caller's own campus,
+      - not expired.
+
+    Expiry is filtered in Python rather than SQL: `expires_at` is a
+    timezone-aware column and SQLite (the test dialect) compares it as text.
+    """
+    if db_session is None or user_id is None or org_id is None:
+        return []
+
+    query = select(EMSUserRoleAssignment).where(
+        EMSUserRoleAssignment.user_id == user_id,
+        EMSUserRoleAssignment.org_id == org_id,
+    )
+    if campus_id is not None:
+        query = query.where(
+            or_(
+                EMSUserRoleAssignment.campus_id.is_(None),
+                EMSUserRoleAssignment.campus_id == campus_id,
+            )
+        )
+
+    result = await db_session.execute(query)
+    now = now or datetime.now(timezone.utc)
+    return [a for a in result.scalars().all() if not _is_expired(a.expires_at, now)]
+
+
+def principal_ems_assignments(principal: KeycloakUserPrincipal) -> List[Dict[str, Any]]:
+    """The EMS assignments `resolve_school_principal()` attached to this
+    principal, or [] for a principal built by hand (tests, the dormant
+    Keycloak-JWT path). Informational: `has_permission()` re-reads the store
+    rather than trusting this."""
+    raw = principal.raw_claims or {}
+    value = raw.get(EMS_ASSIGNMENTS_CLAIM)
+    return list(value) if isinstance(value, list) else []
+
+
+def principal_ems_role_slugs(principal: KeycloakUserPrincipal) -> Set[str]:
+    """The slugs of the EMS roles this principal carries."""
+    raw = principal.raw_claims or {}
+    value = raw.get(EMS_ROLE_SLUGS_CLAIM)
+    return {str(s) for s in value} if isinstance(value, list) else set()
 
 
 async def is_clinical_specialist(
@@ -57,13 +197,12 @@ async def is_clinical_specialist(
 
     user_id = get_user_id(user_principal)
     if db_session is not None and user_id is not None:
-        query = select(EMSUserRoleAssignment).where(
-            EMSUserRoleAssignment.user_id == user_id
+        assignments = await load_active_ems_assignments(
+            db_session,
+            user_id=user_id,
+            org_id=user_principal.org_id,
+            campus_id=user_principal.campus_id,
         )
-        if user_principal.org_id is not None:
-            query = query.where(EMSUserRoleAssignment.org_id == user_principal.org_id)
-        result = await db_session.execute(query)
-        assignments = list(result.scalars().all())
         for assign in assignments:
             role = await db_session.get(EMSRole, assign.role_id)
             if role and (role.is_clinical_specialist or role.slug.lower() in ("psychologist", "clinical-specialist")):
@@ -251,6 +390,7 @@ async def has_permission(
     action: str,
     target_context: Optional[Dict[str, Any]] = None,
     db_session: Optional[AsyncSession] = None,
+    allow_legacy_fallback: bool = True,
 ) -> bool:
     """
     Evaluates dynamic permissions for a user principal against a resource and action.
@@ -259,9 +399,25 @@ async def has_permission(
       - Clinical Isolation: 'clinical.case_notes' requires `is_clinical_specialist`.
         Raises 404 HTTPException for non-specialists (the 404-Never-403 rule)
         to prevent probing the existence of sealed psychological records.
+
+    `allow_legacy_fallback` (default True, the historical behaviour) permits
+    the built-in role template matching the caller's LEGACY role to answer the
+    question when the caller holds no EMS assignment. `require_permission()`
+    passes False so the enforcement path FAILS CLOSED -- see
+    `EMS_RBAC_LEGACY_FALLBACK` above.
+
+    `target_context["required_scope"]`, when present, demands that the rule
+    which grants the action be at least that broad (e.g. a CAMPUS floor
+    refuses to honour an OWN_ONLY grant).
     """
     context = target_context or {}
     user_id = get_user_id(user_principal)
+    required_scope = context.get("required_scope")
+    required_breadth = (
+        _SCOPE_BREADTH.get(_normalise_scope(required_scope), 0)
+        if required_scope is not None
+        else None
+    )
 
     # 1. Special Guardrail: Clinical Isolation
     is_clinical_resource = (
@@ -283,41 +439,53 @@ async def has_permission(
     if user_principal.is_superadmin:
         return True
 
-    # 3. Dynamic database assignments
-    if db_session is not None and user_id is not None:
-        query = select(EMSUserRoleAssignment).where(
-            EMSUserRoleAssignment.user_id == user_id
-        )
-        if user_principal.org_id is not None:
-            query = query.where(EMSUserRoleAssignment.org_id == user_principal.org_id)
+    # 3. Dynamic database assignments -- the authoritative store.
+    assignments = await load_active_ems_assignments(
+        db_session,
+        user_id=user_id,
+        org_id=user_principal.org_id,
+        campus_id=user_principal.campus_id,
+    )
 
-        result = await db_session.execute(query)
-        assignments = list(result.scalars().all())
+    for assignment in assignments:
+        role = await db_session.get(EMSRole, assignment.role_id)
+        if not role:
+            continue
 
-        for assignment in assignments:
-            role = await db_session.get(EMSRole, assignment.role_id)
-            if not role:
-                continue
-
-            rules_res = await db_session.execute(
-                select(EMSPermissionRule).where(
-                    EMSPermissionRule.role_id == role.id
-                )
+        rules_res = await db_session.execute(
+            select(EMSPermissionRule).where(
+                EMSPermissionRule.role_id == role.id
             )
-            rules = list(rules_res.scalars().all())
+        )
+        rules = list(rules_res.scalars().all())
 
-            for rule in rules:
-                if _matches_resource(rule.resource_key, resource_key) and _matches_action(rule, action):
-                    scope_ok = await _evaluate_scope(
-                        scope_level=rule.scope_level,
-                        target_context=context,
-                        user_id=user_id,
-                        principal=user_principal,
-                        assignment=assignment,
-                        db_session=db_session,
-                    )
-                    if scope_ok:
-                        return True
+        for rule in rules:
+            if _matches_resource(rule.resource_key, resource_key) and _matches_action(rule, action):
+                if required_breadth is not None and _SCOPE_BREADTH.get(
+                    _normalise_scope(rule.scope_level), 0
+                ) < required_breadth:
+                    continue  # granted, but too narrow for what was asked
+                scope_ok = await _evaluate_scope(
+                    scope_level=rule.scope_level,
+                    target_context=context,
+                    user_id=user_id,
+                    principal=user_principal,
+                    assignment=assignment,
+                    db_session=db_session,
+                )
+                if scope_ok:
+                    return True
+
+    if not allow_legacy_fallback:
+        # FAIL CLOSED: the caller holds no usable EMS grant for this
+        # resource/action. Deliberately no fall-through to the legacy role.
+        logger.info(
+            "Denied %s:%s for user %s -- no EMS grant (fail closed)",
+            resource_key,
+            action,
+            user_id,
+        )
+        return False
 
     # 4. Fallback / System Template Blueprints for assigned realm roles
     # Maps uppercase role names to template specs
@@ -345,6 +513,10 @@ async def has_permission(
         rules_dict = template.get("rules", {})
         for r_domain, r_rule in rules_dict.items():
             if _matches_resource(r_domain, resource_key) and _matches_action(r_rule, action):
+                if required_breadth is not None and _SCOPE_BREADTH.get(
+                    _normalise_scope(r_rule.get("scope_level", ScopeLevel.CAMPUS)), 0
+                ) < required_breadth:
+                    continue
                 scope_ok = await _evaluate_scope(
                     scope_level=r_rule.get("scope_level", ScopeLevel.CAMPUS),
                     target_context=context,
@@ -367,6 +539,14 @@ def require_permission(
     """
     FastAPI dependency factory enforcing dynamic RBAC permissions and scope checks.
 
+    This is the ENFORCEMENT entry point and it FAILS CLOSED: a caller with no
+    unexpired, in-scope EMS assignment is refused, regardless of their legacy
+    role. `EMS_RBAC_LEGACY_FALLBACK=1` restores the legacy-role bridge for a
+    deployment that has not yet run the backfill.
+
+    `required_scope` (a `ScopeLevel` name) additionally demands that the rule
+    granting the action be at least that broad.
+
     Usage:
         @router.get("/courses/{course_id}")
         async def get_course(
@@ -381,6 +561,9 @@ def require_permission(
         principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
         db_session: AsyncSession = Depends(get_db_session),
     ) -> KeycloakUserPrincipal:
+        # Identity/scope come from path and query params ONLY. The request body
+        # is never consulted: it is attacker-controlled and is not yet parsed
+        # at dependency time.
         target_context: Dict[str, Any] = {}
         for param_name, param_val in {**request.query_params, **request.path_params}.items():
             if param_name in ("campus_id", "department_id", "section_id", "student_id", "user_id"):
@@ -392,12 +575,23 @@ def require_permission(
         if required_scope is not None:
             target_context["required_scope"] = required_scope
 
+        if EMS_RBAC_LEGACY_FALLBACK:
+            global _legacy_fallback_warned
+            if not _legacy_fallback_warned:
+                _legacy_fallback_warned = True
+                logger.warning(
+                    "EMS_RBAC_LEGACY_FALLBACK is enabled -- require_permission "
+                    "is falling back to legacy role templates instead of "
+                    "failing closed. Run the EMS backfill and turn this off."
+                )
+
         allowed = await has_permission(
             user_principal=principal,
             resource_key=resource_key,
             action=action,
             target_context=target_context,
             db_session=db_session,
+            allow_legacy_fallback=EMS_RBAC_LEGACY_FALLBACK,
         )
 
         if not allowed:
@@ -414,3 +608,138 @@ def require_permission(
         return principal
 
     return _permission_checker
+
+
+# ---------------------------------------------------------
+# Backfill: the migration path that makes fail-closed safe
+# ---------------------------------------------------------
+#
+# `require_permission()` refuses any caller with no EMS assignment. Before
+# this engine was wired up, NOTHING populated `EMSUserRoleAssignment` for real
+# users -- `resolve_school_principal()` built every principal from `SMSUserRole`
+# alone -- so turning the gate on without this step would lock every existing
+# deployment out of fees, payroll, counseling, admissions and exports.
+#
+# This gives every active `SMSUserRole` holder the equivalent EMS assignment,
+# preserving their org and campus scope. It is idempotent: re-running it adds
+# nothing and never removes an assignment an operator granted by hand.
+#
+# Run it once per deployment, before (or immediately after) enabling the gate:
+#
+#     cd apps/api
+#     python -m src.security.ems_rbac --backfill
+#     python -m src.security.ems_rbac --backfill --org-id 3   # one tenant only
+#
+# Wiring it into startup or an Alembic migration is deliberately NOT done here:
+# that would put a write in the request path / schema history, and this change
+# is scoped to the security layer.
+
+LEGACY_ROLE_TO_CORE_SLUG: Dict[str, str] = {
+    "SUPER_ADMIN": CoreRoleSlug.SUPER_ADMIN.value,
+    "SCHOOL_ADMIN": CoreRoleSlug.SCHOOL_ADMIN.value,
+    "TEACHER": CoreRoleSlug.TEACHER.value,
+    "STUDENT": CoreRoleSlug.STUDENT.value,
+    "PARENT": CoreRoleSlug.PARENT.value,
+    "STAFF": CoreRoleSlug.STAFF.value,
+    "PSYCHOLOGIST": CoreRoleSlug.PSYCHOLOGIST.value,
+}
+
+
+async def backfill_ems_assignments_from_sms_roles(
+    db_session: AsyncSession,
+    org_id: Optional[int] = None,
+) -> int:
+    """Give every active `SMSUserRole` holder an equivalent EMS assignment.
+
+    Seeds the built-in role templates (globally, `org_id=None`) if they are
+    missing, then creates one `EMSUserRoleAssignment` per active grant that
+    does not already have one. Returns the number of assignments created.
+
+    `org_id` restricts the pass to a single tenant; None backfills all.
+    """
+    from src.db.sms_identity import SMSUserRole  # local: keeps the security layer importable without the SMS identity tables
+
+    await seed_default_ems_roles(db_session, org_id=None)
+
+    roles_res = await db_session.execute(select(EMSRole))
+    roles_by_slug: Dict[str, EMSRole] = {}
+    for role in roles_res.scalars().all():
+        # A tenant-scoped override of a built-in slug wins over the global
+        # template, so a school that has customised 'teacher' keeps its version.
+        if role.slug not in roles_by_slug or role.org_id is not None:
+            roles_by_slug[role.slug] = role
+
+    grants_query = select(SMSUserRole).where(SMSUserRole.is_active == True)  # noqa: E712
+    if org_id is not None:
+        grants_query = grants_query.where(SMSUserRole.org_id == org_id)
+    grants = list((await db_session.execute(grants_query)).scalars().all())
+
+    existing_res = await db_session.execute(select(EMSUserRoleAssignment))
+    existing = {
+        (a.user_id, a.role_id, a.org_id, a.campus_id)
+        for a in existing_res.scalars().all()
+    }
+
+    created = 0
+    for grant in grants:
+        role_value = grant.role.value if hasattr(grant.role, "value") else str(grant.role)
+        slug = LEGACY_ROLE_TO_CORE_SLUG.get(role_value.upper())
+        if slug is None:
+            logger.warning("No EMS core role maps to legacy role %s -- skipped", role_value)
+            continue
+        role = roles_by_slug.get(slug)
+        if role is None or role.id is None:
+            logger.warning("EMS role %s is not seeded -- skipped", slug)
+            continue
+        if grant.org_id is None:
+            # An unscoped grant cannot be attributed to a school; refusing is
+            # the safe direction (see school_ownership.require_org_id).
+            continue
+        key = (grant.user_id, role.id, grant.org_id, grant.campus_id)
+        if key in existing:
+            continue
+        db_session.add(
+            EMSUserRoleAssignment(
+                user_id=grant.user_id,
+                role_id=role.id,
+                org_id=grant.org_id,
+                campus_id=grant.campus_id,
+            )
+        )
+        existing.add(key)
+        created += 1
+
+    await db_session.flush()
+    logger.info("EMS backfill: created %s assignment(s) from %s SMS role grant(s)", created, len(grants))
+    return created
+
+
+async def _backfill_cli(org_id: Optional[int]) -> int:
+    """Entry point for `python -m src.security.ems_rbac --backfill`."""
+    from src.core.events.database import get_db_session
+
+    created = 0
+    async for session in get_db_session():  # type: ignore[attr-defined]
+        created = await backfill_ems_assignments_from_sms_roles(session, org_id=org_id)
+        await session.commit()
+        break
+    return created
+
+
+if __name__ == "__main__":
+    import argparse
+    import asyncio
+
+    parser = argparse.ArgumentParser(description="CSG-EMS dynamic RBAC maintenance")
+    parser.add_argument(
+        "--backfill",
+        action="store_true",
+        help="Create EMS role assignments for every active SMSUserRole holder.",
+    )
+    parser.add_argument("--org-id", type=int, default=None, help="Restrict the backfill to one organisation.")
+    args = parser.parse_args()
+
+    if not args.backfill:
+        parser.error("nothing to do: pass --backfill")
+
+    print(f"EMS backfill complete: {asyncio.run(_backfill_cli(args.org_id))} assignment(s) created")

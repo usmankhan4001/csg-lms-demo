@@ -169,9 +169,17 @@ class EncryptedClinicalCaseNote(SQLModel, table=True):
     __table_args__ = (
         Index("ix_clinical_notes_student", "student_id"),
         Index("ix_clinical_notes_psychologist", "psychologist_id"),
+        Index("ix_clinical_notes_org_campus", "org_id", "campus_id"),
+        Index("ix_clinical_notes_org_student", "org_id", "student_id"),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    # Tenant scoping. Nullable and NOT backfilled by create_all -- see
+    # migrations/versions/c9d0e1f2a3b4_sms_tenant_columns.py, which adds the
+    # columns to existing databases and resolves them from the student's
+    # enrolment chain. NULL means "tenant unresolved", never "shared".
+    org_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
+    campus_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
     student_id: int = Field(sa_column=Column(Integer, nullable=False, index=True))
     psychologist_id: str = Field(sa_column=Column(String(255), nullable=False, index=True))
     psychologist_user_id: Optional[int] = Field(

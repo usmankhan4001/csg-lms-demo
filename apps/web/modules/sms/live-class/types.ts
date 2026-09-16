@@ -39,6 +39,20 @@ export interface CreateLiveClassSessionRequest {
   end_time?: string
 }
 
+/**
+ * One row of `GET /boards/org/{org_id}` (`apps/api/src/routers/boards/boards.py:71`),
+ * narrowed to what the in-class whiteboard picker needs.
+ *
+ * A board is the unit the collab server knows about: it is the only document
+ * name `apps/collab` will open (see `LiveClassWhiteboard.tsx`), so the
+ * whiteboard surface is a board, not a room-scoped document.
+ */
+export interface LiveClassBoardOption {
+  id: number
+  board_uuid: string
+  name: string
+}
+
 export interface LiveClassAttendanceLogRead {
   id: number
   session_id: number

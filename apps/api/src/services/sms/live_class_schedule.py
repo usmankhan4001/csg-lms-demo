@@ -13,12 +13,15 @@ interpretation, and it means nothing that already exists breaks.
 import datetime
 import logging
 import uuid
+from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, desc, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from src.db.courses.activities import Activity
+from src.db.courses.chapter_activities import ChapterActivity
 from src.db.sms_campus import ClassSection, StudentEnrollment
 from src.db.sms_live_class import (
     LiveClassCoursework,
@@ -29,6 +32,7 @@ from src.db.sms_live_class import (
 )
 from src.services.sms.live_class_recording import (
     RecordingStorageUnavailable,
+    parse_egress_ended,
     public_url_for,
     recording_is_available,
     start_recording,
@@ -36,6 +40,20 @@ from src.services.sms.live_class_recording import (
 )
 
 logger = logging.getLogger(__name__)
+
+# A recording that was already dispatched, or has already finished, must not be
+# started again: a second egress would record the same class twice and orphan
+# the first file. UNAVAILABLE is in here too -- retrying a deployment with no
+# object storage on every participant join would just re-fail, and the reason
+# is already recorded on the class.
+_RECORDING_ALREADY_STARTED = frozenset(
+    {
+        RecordingStatus.RECORDING.value,
+        RecordingStatus.PROCESSING.value,
+        RecordingStatus.READY.value,
+        RecordingStatus.UNAVAILABLE.value,
+    }
+)
 
 
 def _now() -> datetime.datetime:
@@ -330,15 +348,192 @@ async def begin_recording_if_requested(
     return detail
 
 
+async def begin_recording_on_room_start(
+    session: AsyncSession, *, live: LiveClassSession
+) -> Optional[LiveClassSessionDetail]:
+    """Dispatch egress when the room actually opens, if the teacher opted in.
+
+    Called from the `room_started` webhook rather than only from the teacher's
+    "start class" call because LiveKit is the authority on when a room exists:
+    it can open because a participant joined directly, with no API call at all.
+
+    Idempotent. `start_live_class` may already have dispatched an egress for
+    this session, and `room_started` fires on the first join -- without the
+    guard every class would be recorded twice.
+    """
+    detail = await get_detail(session, live.id)
+    if detail is None or not detail.recording_enabled:
+        return detail
+    if detail.recording_status in _RECORDING_ALREADY_STARTED:
+        return detail
+    return await begin_recording_if_requested(session, live=live)
+
+
+async def complete_recording_from_egress(
+    session: AsyncSession, *, live: LiveClassSession, egress_info
+) -> Optional[LiveClassSessionDetail]:
+    """Persist what `egress_ended` told us. The ONLY path that may set READY.
+
+    Everything else -- the teacher ending the class, the room closing, a
+    dispatch failure -- leaves the recording non-terminal or FAILED, because
+    only LiveKit knows whether a file actually landed in storage. Marking a
+    recording ready on anything weaker is how a student gets a link to
+    nothing.
+    """
+    result = parse_egress_ended(egress_info)
+
+    detail = await get_detail(session, live.id)
+    if detail is None:
+        # An egress for a session with no detail row: an ad-hoc room that never
+        # opted in, or a row that is gone. Nothing to attach it to, and
+        # creating one would claim a recording for a class that never asked.
+        logger.warning(
+            "egress_ended for room=%s (egress_id=%s) but the session has no "
+            "detail row; nothing recorded",
+            live.room_name,
+            result.egress_id,
+        )
+        return None
+
+    if not detail.recording_enabled:
+        # An egress this class never asked for (recording is opt-in). Writing
+        # FAILED here would tell a teacher their recording broke when they
+        # never turned it on, so the event is ignored instead.
+        logger.warning(
+            "egress_ended for room=%s but recording is not enabled on this class; "
+            "ignoring",
+            live.room_name,
+        )
+        return detail
+
+    if result.egress_id:
+        detail.egress_id = result.egress_id
+    if result.object_key:
+        detail.recording_object_key = result.object_key
+    if result.duration_seconds is not None:
+        detail.recording_duration_seconds = result.duration_seconds
+    detail.recording_completed_at = _now()
+
+    # `result.file_size_bytes` is parsed but NOT stored: `sms_live_class_detail`
+    # has no file-size column, and adding one needs an Alembic migration
+    # (create_all creates missing tables, it never ALTERs an existing one).
+    # Reported rather than faked -- see the deployment notes.
+
+    if not result.succeeded:
+        detail.recording_status = RecordingStatus.FAILED.value
+        detail.recording_note = result.error
+        await session.commit()
+        await session.refresh(detail)
+        return detail
+
+    link = await recording_course_link(session, live=live)
+    if link.course_id is None:
+        # The file is real but nothing in the LMS can hold it, so it is
+        # unreachable for students however long it sits in the bucket.
+        logger.warning(
+            "Recording for room=%s finished but resolves to no course; it will "
+            "not appear in any student's course",
+            live.room_name,
+        )
+
+    url = public_url_for(detail.recording_object_key) if detail.recording_object_key else None
+    if url:
+        live.recording_url = url
+        session.add(live)
+        detail.recording_status = RecordingStatus.READY.value
+        detail.recording_note = None
+    else:
+        # The file is in storage but no public domain is configured, so there
+        # is no honest link to hand out. PROCESSING, not READY: from the
+        # student's side there is still nothing to watch.
+        detail.recording_status = RecordingStatus.PROCESSING.value
+        detail.recording_note = (
+            "The recording was captured but no public media domain is configured, "
+            "so it cannot be linked yet. Ask your administrator to set S3_PUBLIC_DOMAIN."
+        )
+    await session.commit()
+    await session.refresh(detail)
+    return detail
+
+
+@dataclass(frozen=True)
+class RecordingCourseLink:
+    """Where a finished recording belongs in the LMS."""
+
+    course_id: Optional[int] = None
+    chapter_id: Optional[int] = None
+    activity_id: Optional[int] = None
+
+
+async def recording_course_link(
+    session: AsyncSession, *, live: LiveClassSession
+) -> RecordingCourseLink:
+    """Resolve the course -- and chapter, when there is one -- a recording
+    belongs to.
+
+    `sms_live_class_coursework` carries only an `activity_id`: it has no
+    chapter or course column of its own, and giving it one would need an
+    Alembic migration. It does not need one. Learnhouse's own content model
+    already supplies the link -- `activity` -> `chapter_activity` -> `chapter`
+    -> `course` -- so walking it is the minimal change and invents no parallel
+    content type.
+
+    Falls back to the session's own `course_id` when no coursework is attached.
+    An unresolvable recording reports no course rather than course 0: absence
+    of a link is not the same as a link to something.
+    """
+    coursework = (
+        await session.execute(
+            select(LiveClassCoursework)
+            .where(LiveClassCoursework.session_id == live.id)
+            .order_by(LiveClassCoursework.created_at)
+        )
+    ).scalars().first()
+
+    if coursework is not None:
+        row = (
+            await session.execute(
+                select(Activity.course_id, ChapterActivity.chapter_id)
+                .join(ChapterActivity, ChapterActivity.activity_id == Activity.id)
+                .where(Activity.id == coursework.activity_id)
+            )
+        ).first()
+        if row is not None:
+            return RecordingCourseLink(
+                course_id=row[0], chapter_id=row[1], activity_id=coursework.activity_id
+            )
+        # Attached to an activity that is not in any chapter (or is gone): the
+        # course is still knowable from the activity row itself.
+        course_id = (
+            await session.execute(
+                select(Activity.course_id).where(Activity.id == coursework.activity_id)
+            )
+        ).scalar_one_or_none()
+        if course_id is not None:
+            return RecordingCourseLink(
+                course_id=course_id, chapter_id=None, activity_id=coursework.activity_id
+            )
+
+    return RecordingCourseLink(course_id=live.course_id, chapter_id=None, activity_id=None)
+
+
 async def finish_recording(
     session: AsyncSession, *, live: LiveClassSession
 ) -> Optional[LiveClassSessionDetail]:
-    """Stop egress when a class ends and resolve the stored file's URL."""
+    """Stop egress when a class ends.
+
+    Deliberately does NOT mark the recording READY, and does not write
+    `live.recording_url`. Asking Egress to stop is not the same as the file
+    landing in storage -- the upload happens after this, and it can still fail.
+    Publishing a URL here hands a student a link to a file that may not exist
+    yet, or at all. `complete_recording_from_egress` (driven by `egress_ended`)
+    is the only thing that knows the upload finished, so it is the only thing
+    that sets READY.
+    """
     detail = await get_detail(session, live.id)
     if detail is None or detail.recording_status != RecordingStatus.RECORDING.value:
         return detail
 
-    object_key = detail.recording_object_key
     if detail.egress_id:
         await stop_recording(detail.egress_id)
 
@@ -347,20 +542,8 @@ async def finish_recording(
     if started is not None:
         detail.recording_duration_seconds = round((_now() - started).total_seconds(), 2)
 
-    url = public_url_for(object_key) if object_key else None
-    if url:
-        live.recording_url = url
-        detail.recording_status = RecordingStatus.READY.value
-        detail.recording_note = None
-    else:
-        # The file exists in storage but no public domain is configured, so
-        # there is no honest link to hand out. Say that rather than invent one.
-        detail.recording_status = RecordingStatus.PROCESSING.value
-        detail.recording_note = (
-            "The recording was captured but no public media domain is configured, "
-            "so it cannot be linked yet. Ask your administrator to set S3_PUBLIC_DOMAIN."
-        )
-    session.add(live)
+    detail.recording_status = RecordingStatus.PROCESSING.value
+    detail.recording_note = "The recording is being uploaded and will be available shortly."
     await session.commit()
     await session.refresh(detail)
     return detail

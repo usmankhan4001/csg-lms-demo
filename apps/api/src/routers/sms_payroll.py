@@ -26,6 +26,7 @@ from src.schemas.sms_payroll import (
     SalaryStructureCreate,
     SalaryStructureRead,
 )
+from src.security.ems_rbac import require_permission
 from src.security.features_utils.dependencies import require_sms_hr_payroll_feature
 from src.security.school_ownership import (
     assert_campus_allowed,
@@ -52,6 +53,14 @@ from src.services.sms.payroll_approval import (
 # require_roles() grants SUPER_ADMIN an automatic bypass; it is listed anyway
 # so the intended audience is readable at the call site.
 _PAYROLL_ADMIN = ["SUPER_ADMIN", "SCHOOL_ADMIN"]
+
+# --- Dynamic RBAC (src/security/ems_rbac.py) -------------------------------
+#
+# Fine-grained second gate behind the coarse `require_roles(_PAYROLL_ADMIN)`.
+# Payroll is the `hr` domain of `ResourceDomain` (src/db/ems_roles.py);
+# disbursement and approval use that model's `approve` action because paying
+# out is the accountable act, not an edit.
+PAYROLL = "hr.payroll"
 
 
 async def _assert_may_read_salary(
@@ -153,6 +162,7 @@ router = APIRouter(dependencies=[Depends(require_sms_hr_payroll_feature)])
     response_model=SalaryStructureRead,
     status_code=status.HTTP_201_CREATED,
     summary="Create or Update Staff Salary Structure",
+    dependencies=[Depends(require_permission(PAYROLL, "create"))],
 )
 async def create_or_update_salary_structure(
     payload: SalaryStructureCreate,
@@ -227,6 +237,7 @@ async def create_or_update_salary_structure(
     "/structures/{staff_id}",
     response_model=SalaryStructureRead,
     summary="Get Staff Salary Structure",
+    dependencies=[Depends(require_permission(PAYROLL, "read"))],
 )
 async def get_staff_salary_structure(
     staff_id: int,
@@ -251,6 +262,7 @@ async def get_staff_salary_structure(
     response_model=List[SalarySlipRead],
     status_code=status.HTTP_201_CREATED,
     summary="Generate Batch Monthly Salary Slips",
+    dependencies=[Depends(require_permission(PAYROLL, "create"))],
 )
 async def generate_salary_slips_batch(
     payload: BatchSalarySlipGenerateRequest,
@@ -288,6 +300,7 @@ async def generate_salary_slips_batch(
     "/slips",
     response_model=List[SalarySlipRead],
     summary="List Salary Slips",
+    dependencies=[Depends(require_permission(PAYROLL, "read"))],
 )
 async def list_salary_slips(
     staff_id: Optional[int] = Query(None, description="Filter by Staff ID"),
@@ -332,6 +345,7 @@ async def list_salary_slips(
     "/slips/{slip_id}",
     response_model=SalarySlipRead,
     summary="Get Salary Slip by ID",
+    dependencies=[Depends(require_permission(PAYROLL, "read"))],
 )
 async def get_salary_slip(
     slip_id: int,
@@ -355,6 +369,7 @@ async def get_salary_slip(
     "/slips/{slip_id}/pay",
     response_model=SalarySlipRead,
     summary="Record Salary Slip Disbursement Payment",
+    dependencies=[Depends(require_permission(PAYROLL, "approve"))],
 )
 async def record_salary_payment(
     slip_id: int,
@@ -406,6 +421,7 @@ async def record_salary_payment(
         "a payroll batch is a moving target, and approving by filter could "
         "sweep in a slip generated after the reviewer last looked."
     ),
+    dependencies=[Depends(require_permission(PAYROLL, "approve"))],
 )
 async def approve_salary_slips(
     payload: PayrollApprovalRequest,
@@ -432,6 +448,7 @@ async def approve_salary_slips(
     response_model=PayrollApprovalResponse,
     summary="Reject Salary Slips",
     description="Send slips back rather than approving them. The preparer may reject their own.",
+    dependencies=[Depends(require_permission(PAYROLL, "approve"))],
 )
 async def reject_salary_slips(
     payload: PayrollApprovalRequest,
@@ -462,6 +479,7 @@ async def reject_salary_slips(
         "it, who approved or rejected it, who paid it, and the net figure at "
         "each point."
     ),
+    dependencies=[Depends(require_permission(PAYROLL, "read"))],
 )
 async def list_slip_actions(
     slip_id: int,

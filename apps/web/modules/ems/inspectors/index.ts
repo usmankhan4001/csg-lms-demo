@@ -28,8 +28,6 @@ export type {
   TeacherCompensation,
 } from './Teacher360Drawer'
 
-export { AdmissionsLead360Drawer } from './AdmissionsLead360Drawer'
-export type { AdmissionsLead360DrawerProps } from './AdmissionsLead360Drawer'
 
 export { FeeVoucher360Drawer } from './FeeVoucher360Drawer'
 export type {

@@ -21,6 +21,16 @@ live_classes.py (kept there for backward compatibility / manual testing,
 but a client can simply not call them, or lie about timing; this cannot,
 since the event only exists if LiveKit's own server actually saw the
 participant connect/disconnect).
+
+Also drives the recording lifecycle, which nothing else can do because only
+LiveKit knows when a room opened and when a recording file actually landed:
+
+* `room_started`  -> dispatch a RoomCompositeEgress, for classes whose teacher
+  opted in. Idempotent, and a failure is recorded on the class rather than
+  raised -- the lesson must run even with no recorder available.
+* `egress_ended`  -> persist duration / object key / status. This is the ONLY
+  path that may set a recording READY; everything else leaves it
+  non-terminal or FAILED, so a student is never handed a link to nothing.
 """
 
 import datetime
@@ -33,6 +43,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.events.database import get_db_session
 from src.db.sms_live_class import LiveClassAttendanceLog, LiveClassSession
+from src.services.sms import live_class_schedule as lc_schedule
 from src.services.sms.live_class import verify_and_parse_webhook
 
 logger = logging.getLogger(__name__)
@@ -94,6 +105,11 @@ async def receive_livekit_webhook(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook signature")
 
     room_name = event.room.name if event.room else None
+    if not room_name and event.egress_info is not None:
+        # Egress events name their room on the egress payload; `room` is not
+        # always populated for them. Fall back so `egress_ended` is still
+        # attributable to a class.
+        room_name = event.egress_info.room_name or None
     if not room_name:
         return None
 
@@ -132,6 +148,24 @@ async def receive_livekit_webhook(
             if log:
                 _close_log(log, now)
                 await session.commit()
+
+    elif event.event == "room_started":
+        # LiveKit is the authority on when a room actually exists -- it can
+        # open because a participant joined directly, with no "start class"
+        # call from the teacher. Recording stays opt-in per class: this only
+        # dispatches for a class whose teacher enabled it, and it is
+        # idempotent because start_live_class may already have dispatched one.
+        # A failure here is recorded on the class, never raised: the lesson
+        # must run even if the recorder is down.
+        await lc_schedule.begin_recording_on_room_start(session, live=live_session)
+
+    elif event.event == "egress_ended":
+        # The only place a recording may become READY. Everything else leaves
+        # it non-terminal or FAILED, because only this event proves a file
+        # actually landed in storage.
+        await lc_schedule.complete_recording_from_egress(
+            session, live=live_session, egress_info=event.egress_info
+        )
 
     elif event.event == "room_finished":
         live_session.is_active = False

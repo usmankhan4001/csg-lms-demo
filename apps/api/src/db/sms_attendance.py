@@ -74,9 +74,18 @@ class StudentAttendance(SQLModel, table=True):
         ),
         Index("ix_sms_att_section_date", "section_id", "date"),
         Index("ix_sms_att_student_date", "student_id", "date"),
+        Index("ix_sms_att_org_campus", "org_id", "campus_id"),
+        Index("ix_sms_att_org_date", "org_id", "date"),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    # Tenant scoping. Nullable and NOT backfilled by create_all -- see
+    # migrations/versions/c9d0e1f2a3b4_sms_tenant_columns.py, which adds the
+    # columns to existing databases and resolves them from this row's section
+    # (falling back to the student's enrolment chain). NULL means "tenant
+    # unresolved", never "shared".
+    org_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
+    campus_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
     student_id: int = Field(
         sa_column=Column(Integer, nullable=False, index=True)
     )

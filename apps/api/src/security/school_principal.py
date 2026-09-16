@@ -26,9 +26,15 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.keycloak_auth import SUPER_ADMIN, KeycloakUserPrincipal
+from src.db.ems_roles import EMSRole
 from src.db.organizations import Organization
 from src.db.sms_identity import SMSUserRole
 from src.db.users import APITokenUser, PublicUser, SuperadminAPITokenUser, User
+from src.security.ems_rbac import (
+    EMS_ASSIGNMENTS_CLAIM,
+    EMS_ROLE_SLUGS_CLAIM,
+    load_active_ems_assignments,
+)
 from src.security.security import ALGORITHM, SECRET_KEY
 
 # ---------------------------------------------------------
@@ -172,6 +178,47 @@ async def resolve_school_principal(
     raw_claims: dict = {"lh_user_id": effective_user.id}
     if impersonated_by_user_id is not None:
         raw_claims["impersonated_by_user_id"] = impersonated_by_user_id
+
+    # --- EMS (dynamic RBAC) assignments -----------------------------------
+    #
+    # `roles` above stays the LEGACY 7-value enum on purpose: it is what the
+    # 262 `require_roles([...])` call sites match on, and widening it with EMS
+    # slugs would silently open every one of those gates. EMS grants ride in
+    # `raw_claims` instead, where `src/security/ems_rbac.py` reads them.
+    #
+    # The same loader the evaluator uses is called here so the principal and
+    # `has_permission()` can never disagree about what a user holds: same org
+    # and campus scoping, same expiry rule.
+    ems_assignments = await load_active_ems_assignments(
+        db_session,
+        user_id=effective_user.id,
+        org_id=org_id,
+        campus_id=campus_id,
+    )
+    ems_descriptors: list = []
+    ems_slugs: list = []
+    for assignment in ems_assignments:
+        role = await db_session.get(EMSRole, assignment.role_id)
+        if role is None:
+            continue
+        ems_descriptors.append(
+            {
+                "assignment_id": assignment.id,
+                "role_id": role.id,
+                "role_slug": role.slug,
+                "role_name": role.name,
+                "is_clinical_specialist": bool(role.is_clinical_specialist),
+                "org_id": assignment.org_id,
+                "campus_id": assignment.campus_id,
+                "department_id": assignment.department_id,
+                "section_id": assignment.section_id,
+                "expires_at": assignment.expires_at.isoformat() if assignment.expires_at else None,
+            }
+        )
+        ems_slugs.append(role.slug)
+
+    raw_claims[EMS_ASSIGNMENTS_CLAIM] = ems_descriptors
+    raw_claims[EMS_ROLE_SLUGS_CLAIM] = ems_slugs
 
     return KeycloakUserPrincipal(
         sub=effective_user.user_uuid,

@@ -60,9 +60,17 @@ class StudentFeeVoucher(SQLModel, table=True):
         UniqueConstraint("voucher_no", name="uq_sms_voucher_no"),
         Index("ix_sms_voucher_student_status", "student_id", "status"),
         Index("ix_sms_voucher_due_date", "due_date"),
+        Index("ix_sms_voucher_org_campus", "org_id", "campus_id"),
+        Index("ix_sms_voucher_org_status", "org_id", "status"),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    # Tenant scoping. Nullable and NOT backfilled by create_all -- see
+    # migrations/versions/c9d0e1f2a3b4_sms_tenant_columns.py, which adds the
+    # columns to existing databases and resolves them from the student's
+    # enrolment chain. NULL means "tenant unresolved", never "shared".
+    org_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
+    campus_id: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
     student_id: int = Field(sa_column=Column(Integer, nullable=False, index=True))
     fee_structure_id: Optional[int] = Field(
         default=None,

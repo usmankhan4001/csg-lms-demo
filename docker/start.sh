@@ -28,6 +28,19 @@ pm2 start uv --cwd /app/api --name learnhouse-api -- run app.py
 pm2 start uv --cwd /app/api --name learnhouse-worker -- run arq src.core.worker.WorkerSettings
 pm2 start node --cwd /app/collab --name learnhouse-collab -- dist/index.js
 
+# LiveKit Egress is deliberately NOT started here.
+#
+# PM2 supervises things this container can actually run: a Next.js server, a
+# Python app, an arq worker, a Bun collab server. Egress is none of those --
+# it is a Go binary that ships only inside the `livekit/egress` image, bundled
+# with GStreamer and headless Chromium, and it needs a /dev/shm larger than
+# this container's default. There is no pip or npm artifact to `pm2 start`.
+#
+# It is also not an oversight that livekit-server is absent from this list:
+# that too is its own compose service. Egress belongs beside it, as the
+# `livekit-egress` service in dokploy-compose.yml / docker-compose.prod.yml,
+# where it gets its own image, its own memory limit and its own healthcheck.
+#
 # Check if the services are running and log the status
 pm2 status
 

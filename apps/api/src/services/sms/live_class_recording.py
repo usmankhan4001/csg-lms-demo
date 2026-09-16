@@ -22,6 +22,7 @@ Two rules this module exists to enforce:
 import datetime
 import logging
 import os
+from dataclasses import dataclass
 from typing import Optional, Tuple
 
 from livekit.api import (
@@ -36,6 +37,9 @@ from config.config import get_learnhouse_config
 from src.services.sms.live_class import get_livekit_api_client
 
 logger = logging.getLogger(__name__)
+
+# LiveKit reports every egress timestamp and duration in NANOSECONDS.
+_NANOS_PER_SECOND = 1_000_000_000
 
 
 class RecordingStorageUnavailable(RuntimeError):
@@ -146,6 +150,85 @@ async def start_recording(room_name: str, session_id: int) -> Tuple[Optional[str
         return (getattr(info, "egress_id", None), object_key)
     finally:
         await client.aclose()
+
+
+@dataclass(frozen=True)
+class EgressResult:
+    """What one `egress_ended` webhook told us about a finished recording.
+
+    `succeeded` is the single gate on moving a recording to READY, and it is
+    true only for `EGRESS_COMPLETE` *with* a file result. An egress that ended
+    ABORTED, FAILED or LIMIT_REACHED produced nothing playable however long it
+    ran, and EGRESS_COMPLETE with no file result means nothing was written.
+    """
+
+    egress_id: Optional[str] = None
+    object_key: Optional[str] = None
+    duration_seconds: Optional[float] = None
+    file_size_bytes: Optional[int] = None
+    succeeded: bool = False
+    error: Optional[str] = None
+
+
+def _egress_status_name(status) -> str:
+    """Protobuf enums arrive as ints; the name is what we compare on."""
+    try:
+        from livekit.protocol.egress import EgressStatus
+
+        return EgressStatus.Name(int(status))
+    except Exception:  # noqa: BLE001
+        return str(status or "").strip()
+
+
+def _nanos_to_seconds(nanos: Optional[int]) -> Optional[float]:
+    if not nanos or nanos < 0:
+        return None
+    return round(nanos / _NANOS_PER_SECOND, 2)
+
+
+def parse_egress_ended(egress_info) -> EgressResult:
+    """Reduce a LiveKit `egress_ended` payload to the fields we persist.
+
+    Deliberately never raises: this runs inside the webhook handler, where an
+    unparsable event has to degrade to "recording failed, and here is why"
+    rather than to a 500 that makes LiveKit retry the same event forever.
+    """
+    if egress_info is None:
+        return EgressResult(error="LiveKit sent egress_ended with no egress info.")
+
+    status = _egress_status_name(getattr(egress_info, "status", None))
+    error = (getattr(egress_info, "error", "") or "").strip() or None
+
+    file_results = getattr(egress_info, "file_results", None)
+    file_info = file_results[0] if file_results else None
+
+    object_key = None
+    duration_seconds = None
+    file_size_bytes = None
+    if file_info is not None:
+        # `filename` is the key we asked Egress to write; `location` is the
+        # full URL when the uploader reports one. The key is what we stored at
+        # dispatch time and what `public_url_for` expects.
+        object_key = (getattr(file_info, "filename", "") or "").strip() or None
+        file_size_bytes = getattr(file_info, "size", 0) or None
+        duration_seconds = _nanos_to_seconds(getattr(file_info, "duration", 0) or 0)
+        if duration_seconds is None:
+            started = getattr(file_info, "started_at", 0) or 0
+            ended = getattr(file_info, "ended_at", 0) or 0
+            duration_seconds = _nanos_to_seconds(ended - started)
+
+    succeeded = status == "EGRESS_COMPLETE" and object_key is not None
+    if not succeeded and error is None:
+        error = f"Recording ended with status {status or 'unknown'}."
+
+    return EgressResult(
+        egress_id=(getattr(egress_info, "egress_id", "") or "").strip() or None,
+        object_key=object_key,
+        duration_seconds=duration_seconds,
+        file_size_bytes=file_size_bytes,
+        succeeded=succeeded,
+        error=error,
+    )
 
 
 async def stop_recording(egress_id: str) -> None:

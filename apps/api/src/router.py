@@ -54,6 +54,7 @@ from src.routers import (
     live_classes,
     live_class_webhooks,
     sms_live_class_attendance,
+    sms_live_class_interaction,
 )
 from src.routers import ems_roles
 from src.routers import mfa as mfa_router_module
@@ -693,6 +694,14 @@ v1_router.include_router(
 # per-handler require_roles, so it is not double-gated at the mount.
 v1_router.include_router(
     sms_live_class_attendance.router,
+    prefix="/live",
+    tags=["live-classes"],
+)
+
+# In-class polls and Q&A. Carries its own per-handler require_roles /
+# get_current_user_principal, so it is not double-gated at the mount.
+v1_router.include_router(
+    sms_live_class_interaction.router,
     prefix="/live",
     tags=["live-classes"],
 )

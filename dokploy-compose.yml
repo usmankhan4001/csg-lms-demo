@@ -265,8 +265,31 @@ services:
     image: livekit/livekit-server:v1.9.1
     restart: always
     environment:
+      # Now a full YAML config rather than the LIVEKIT_KEYS shorthand, because
+      # Egress needs two blocks that shorthand cannot express:
+      #   * `redis` -- livekit-server hands every StartRoomCompositeEgress to an
+      #     egress worker over the psrpc Redis bus. With no Redis here the API's
+      #     dispatch fails with "no response from egress service" and every
+      #     recording stays PENDING forever.
+      #   * `webhook` -- the only way room_started / egress_ended ever reach
+      #     POST /api/v1/live/webhooks, which is what drives the recording
+      #     lifecycle. Same target as docker-compose.prod.yml.
       # Same reasoning as the api service above: no committed fallback.
-      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set}"
+      LIVEKIT_CONFIG: |
+        port: 7880
+        rtc:
+          port_range_start: 50200
+          port_range_end: 50250
+          use_external_ip: true
+        redis:
+          address: csg-redis:6379
+          password: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+        keys:
+          ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set}
+        webhook:
+          api_key: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}
+          urls:
+            - http://api:9000/api/v1/live/webhooks
     ports:
       - "7883:7880"
       - "50200-50250:50200-50250/udp"
@@ -285,6 +308,56 @@ services:
           memory: 1024M
         reservations:
           memory: 256M
+
+  # ── LiveKit Egress (Composite Class Recording) ──────────────────────────────
+  # The recorder `sms_live_class_detail.recording_*` was modelled for but never
+  # had. It is a separate process from livekit-server on purpose: it runs
+  # headless Chromium + GStreamer, which is far too heavy to share the SFU's
+  # memory budget, and it scales independently (N recorders per SFU).
+  livekit-egress:
+    image: livekit/egress:v1.9.1
+    restart: always
+    environment:
+      # The image takes its whole YAML config in this one env var (the
+      # alternative, EGRESS_CONFIG_FILE, needs a mounted volume -- see the
+      # livekit/egress README). `ws_url` is the CONTAINER-INTERNAL address,
+      # the same split as LIVEKIT_INTERNAL_URL on the api service: "localhost"
+      # here would mean the egress container itself.
+      # `redis` MUST be the same Redis as livekit-server above -- that bus is
+      # how the server reaches this worker.
+      EGRESS_CONFIG_BODY: |
+        api_key: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}
+        api_secret: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set}
+        ws_url: ws://livekit:7880
+        redis:
+          address: csg-redis:6379
+          password: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+        health_port: 8080
+        logging:
+          level: info
+    # Headless Chromium needs more /dev/shm than Docker's 64MB default or it
+    # dies mid-recording with a crash that looks like an egress failure.
+    shm_size: 1gb
+    depends_on:
+      livekit:
+        condition: service_healthy
+      csg-redis:
+        condition: service_healthy
+    healthcheck:
+      # The health handler answers on ANY path with the service status JSON.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
+    networks:
+      - csg-internal
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
+        reservations:
+          memory: 512M
 
   # ── Hocuspocus Real-Time Collab ─────────────────────────────────────────────
   collab:

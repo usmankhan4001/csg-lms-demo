@@ -60,6 +60,7 @@ from src.services.sms.fee_checkout import (
     refund_online_payment,
     start_checkout,
 )
+from src.security.ems_rbac import require_permission
 from src.security.features_utils.dependencies import require_sms_fees_feature
 from src.security.school_ownership import (
     assert_campus_allowed,
@@ -91,6 +92,19 @@ from src.services.sms.fees import (
 # family's balance either.
 _BURSAR = ["SUPER_ADMIN", "SCHOOL_ADMIN", "STAFF"]
 
+# --- Dynamic RBAC (src/security/ems_rbac.py) -------------------------------
+#
+# `require_roles(_BURSAR)` above stays as the COARSE first pass; these are the
+# fine-grained second gate. Resource keys are `finance.*` -- the `finance`
+# domain of `ResourceDomain` in src/db/ems_roles.py -- and actions come from
+# that model's own vocabulary (read/create/update/delete/approve/export).
+#
+# They are attached as route `dependencies` rather than replacing the handler's
+# `Depends(require_roles(...))`, so the legacy gate is untouched. FastAPI runs
+# decorator dependencies BEFORE the handler's own parameter dependencies, so
+# the granular check answers first; both must pass.
+FEES = "finance.fees"
+
 router = APIRouter(dependencies=[Depends(require_sms_fees_feature)])
 
 
@@ -101,6 +115,7 @@ router = APIRouter(dependencies=[Depends(require_sms_fees_feature)])
     response_model=FeeStructureRead,
     status_code=status.HTTP_201_CREATED,
     summary="Create Fee Structure",
+    dependencies=[Depends(require_permission(FEES, "create"))],
 )
 async def create_fee_structure(
     payload: FeeStructureCreate,
@@ -129,6 +144,7 @@ async def create_fee_structure(
     "/structures",
     response_model=List[FeeStructureRead],
     summary="List Fee Structures",
+    dependencies=[Depends(require_permission(FEES, "read"))],
 )
 async def list_fee_structures(
     campus_id: Optional[int] = Query(None, description="Filter by Campus ID"),
@@ -157,6 +173,7 @@ async def list_fee_structures(
     status_code=status.HTTP_201_CREATED,
     summary="Generate Student Fee Vouchers",
     description="Generate monthly/term fee invoice vouchers for a batch of students.",
+    dependencies=[Depends(require_permission(FEES, "create"))],
 )
 async def generate_vouchers(
     payload: GenerateVouchersRequest,
@@ -171,6 +188,7 @@ async def generate_vouchers(
     "/vouchers",
     response_model=List[StudentFeeVoucherRead],
     summary="List Fee Vouchers",
+    dependencies=[Depends(require_permission(FEES, "read"))],
 )
 async def list_vouchers(
     student_id: Optional[int] = Query(None, description="Filter by Student ID"),
@@ -206,6 +224,7 @@ async def list_vouchers(
         "family's voucher paid."
     ),
     responses={403: {"description": "Only back-office staff may record payments"}},
+    dependencies=[Depends(require_permission(FEES, "create"))],
 )
 async def record_payment(
     payload: RecordPaymentRequest,
@@ -221,6 +240,7 @@ async def record_payment(
     response_model=StudentFeeLedgerResponse,
     summary="Get Student Fee Ledger",
     description="Retrieve complete transaction history, vouchers, receipts, and balance for a student.",
+    dependencies=[Depends(require_permission(FEES, "read"))],
 )
 async def get_student_fee_ledger_endpoint(
     student_id: int,
@@ -244,6 +264,7 @@ async def get_student_fee_ledger_endpoint(
         "capped as a percentage of the original principal. Returns only the "
         "vouchers that actually changed."
     ),
+    dependencies=[Depends(require_permission(FEES, "update"))],
 )
 async def accrue_late_fees_endpoint(
     student_id: Optional[int] = Query(None, description="Limit accrual to one student"),
@@ -301,6 +322,7 @@ _BURSAR_LEAD = ["SUPER_ADMIN", "SCHOOL_ADMIN"]
         "instalment 2 is charged a late fee on instalment 2 rather than on the "
         "whole year."
     ),
+    dependencies=[Depends(require_permission(FEES, "create"))],
 )
 async def create_installment_plan_endpoint(
     payload: CreateInstallmentPlanRequest,
@@ -331,6 +353,7 @@ async def create_installment_plan_endpoint(
     "/installment-plans/student/{student_id}",
     response_model=List[InstallmentPlanSummary],
     summary="List A Student Instalment Plans",
+    dependencies=[Depends(require_permission(FEES, "read"))],
 )
 async def list_student_installment_plans(
     student_id: int,
@@ -372,6 +395,7 @@ async def list_student_installment_plans(
         "second child is a school policy question, and guessing it would "
         "quietly award or withhold money from a real family."
     ),
+    dependencies=[Depends(require_permission(FEES, "approve"))],
 )
 async def create_concession_endpoint(
     payload: CreateConcessionRequest,
@@ -398,6 +422,7 @@ async def create_concession_endpoint(
     "/concessions/student/{student_id}",
     response_model=List[ConcessionRead],
     summary="List A Student Concessions",
+    dependencies=[Depends(require_permission(FEES, "read"))],
 )
 async def list_student_concessions(
     student_id: int,
@@ -429,6 +454,7 @@ async def list_student_concessions(
         "payment path uses, so a refunded voucher reads exactly like one that "
         "was never paid that much."
     ),
+    dependencies=[Depends(require_permission(FEES, "approve"))],
 )
 async def issue_refund_endpoint(
     payload: IssueRefundRequest,
@@ -458,6 +484,7 @@ async def issue_refund_endpoint(
         "here: formats are per-bank and per-country, and a parser guessing a "
         "column would silently attribute money to the wrong family."
     ),
+    dependencies=[Depends(require_permission(FEES, "create"))],
 )
 async def import_bank_transfers(
     payload: ImportBankTransfersRequest,
@@ -478,6 +505,7 @@ async def import_bank_transfers(
     response_model=List[BankTransferRead],
     summary="List Unmatched Bank Transfers",
     description="The reconciliation queue: money received that nobody has attributed to a family yet.",
+    dependencies=[Depends(require_permission(FEES, "read"))],
 )
 async def list_unmatched_transfers_endpoint(
     campus_id: Optional[int] = Query(None, description="Filter by campus"),
@@ -498,6 +526,7 @@ async def list_unmatched_transfers_endpoint(
         "match moves real money against the wrong family, so a human always "
         "confirms. Each suggestion states the evidence it was found on."
     ),
+    dependencies=[Depends(require_permission(FEES, "read"))],
 )
 async def suggest_transfer_matches_endpoint(
     transfer_id: int,
@@ -549,6 +578,7 @@ async def suggest_transfer_matches_endpoint(
         "payment path, so a reconciled payment is indistinguishable from one "
         "taken at the counter and cannot drift from it."
     ),
+    dependencies=[Depends(require_permission(FEES, "update"))],
 )
 async def match_transfer_endpoint(
     payload: MatchTransferRequest,
@@ -573,6 +603,7 @@ async def match_transfer_endpoint(
         "endpoint updates or deletes a row here -- a trail that can be "
         "rewritten is not a trail."
     ),
+    dependencies=[Depends(require_permission(FEES, "read"))],
 )
 async def get_voucher_history(
     voucher_id: int,
@@ -603,6 +634,7 @@ async def get_voucher_history(
         "unconfigured -- which is exactly the gap a school needs to see rather "
         "than assume reminders went out."
     ),
+    dependencies=[Depends(require_permission(FEES, "read"))],
 )
 async def list_fee_reminders(
     student_id: Optional[int] = Query(None, description="Filter by student"),
@@ -647,6 +679,13 @@ async def list_fee_reminders(
         409: {"description": "Online payment is off, or the amount is not exactly chargeable"},
         502: {"description": "The payment provider refused to open a session"},
     },
+    # Deliberately NOT gated on finance.fees:create. This is the one money
+    # write a STUDENT is meant to make (paying their own voucher), and the
+    # built-in student template sets finance.can_create = False -- a
+    # resource-level gate here would break self-payment. Record-level
+    # ownership is enforced inside start_checkout() instead
+    # (assert_owns_student_or_privileged). See the report: the student
+    # template's finance row is the thing to revisit, not this endpoint.
 )
 async def start_fee_checkout(
     voucher_id: int,
@@ -680,8 +719,9 @@ async def start_fee_checkout(
     description=(
         "Every attempt, including abandoned and failed ones. Abandonment is "
         "the normal way an online payment goes wrong — the payer closes the "
-        "tab — so it is shown rather than hidden."
+        "tab -- so it is shown rather than hidden."
     ),
+    dependencies=[Depends(require_permission(FEES, "read"))],
 )
 async def list_voucher_payment_attempts(
     voucher_id: int,
@@ -736,6 +776,7 @@ async def list_voucher_payment_attempts(
         "carries the replay guard."
     ),
     responses={403: {"description": "Only back-office staff may reconcile payments"}},
+    dependencies=[Depends(require_permission(FEES, "update"))],
 )
 async def reconcile_payment_intent(
     intent_id: int,
@@ -792,6 +833,7 @@ async def reconcile_payment_intent(
         409: {"description": "No provider reference — refund this one manually"},
         502: {"description": "The provider refused the refund; nothing was written"},
     },
+    dependencies=[Depends(require_permission(FEES, "approve"))],
 )
 async def refund_online_fee_payment(
     intent_id: int,
