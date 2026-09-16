@@ -142,7 +142,7 @@ export function FeeBankSlipPDF({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {data.feeItems.map((item) => (
+                    {(data?.feeItems || []).map((item) => (
                       <tr key={item.id}>
                         <td className="py-1 text-slate-700 pr-1">
                           {item.title}
@@ -153,7 +153,7 @@ export function FeeBankSlipPDF({
                           ) : null}
                         </td>
                         <td className="py-1 text-right font-medium text-slate-900 whitespace-nowrap">
-                          {item.netAmount.toLocaleString()}
+                          {(item.netAmount ?? item.amount ?? 0).toLocaleString()}
                         </td>
                       </tr>
                     ))}
@@ -165,27 +165,27 @@ export function FeeBankSlipPDF({
               <div className="border-t border-slate-300 pt-2 space-y-1 bg-slate-50 -mx-3.5 px-3.5 pb-2">
                 <div className="flex justify-between text-[10px] text-slate-600">
                   <span>Subtotal Amount:</span>
-                  <span>PKR {data.subtotal.toLocaleString()}</span>
+                  <span>PKR {(data?.subtotal ?? 0).toLocaleString()}</span>
                 </div>
-                {data.totalDiscount > 0 && (
+                {(data?.totalDiscount ?? 0) > 0 && (
                   <div className="flex justify-between text-[10px] text-emerald-600 font-medium">
                     <span>Total Discount / Waiver:</span>
-                    <span>-PKR {data.totalDiscount.toLocaleString()}</span>
+                    <span>-PKR {(data?.totalDiscount ?? 0).toLocaleString()}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-[11px] font-bold text-slate-900 border-t border-slate-200 pt-1">
-                  <span>Payable by Due Date ({formatDatePretty(data.dueDate)}):</span>
+                  <span>Payable by Due Date ({formatDatePretty(data?.dueDate || '')}):</span>
                   <span className="text-indigo-700 text-[12px]">
-                    PKR {data.netPayableBeforeDueDate.toLocaleString()}
+                    PKR {(data?.netPayableBeforeDueDate ?? 0).toLocaleString()}
                   </span>
                 </div>
                 <div className="flex justify-between text-[10px] text-rose-600">
                   <span>Late Fee Surcharge (After Due Date):</span>
-                  <span>+PKR {data.lateFeeSurcharge.toLocaleString()}</span>
+                  <span>+PKR {(data?.lateFeeSurcharge ?? 0).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-[11px] font-black text-rose-700 border-t border-slate-200 pt-1">
                   <span>Payable After Due Date:</span>
-                  <span>PKR {data.netPayableAfterDueDate.toLocaleString()}</span>
+                  <span>PKR {(data?.netPayableAfterDueDate ?? 0).toLocaleString()}</span>
                 </div>
               </div>
 

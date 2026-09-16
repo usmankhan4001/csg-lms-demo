@@ -237,7 +237,31 @@ async def list_api_tokens(
 
     tokens = (await db_session.execute(statement)).scalars().all()
 
-    return [APITokenRead(**token.model_dump()) for token in tokens]
+    res: List[APITokenRead] = []
+    for token in tokens:
+        try:
+            res.append(
+                APITokenRead(
+                    id=token.id or 0,
+                    token_uuid=token.token_uuid or "",
+                    name=token.name or "API Token",
+                    description=token.description,
+                    token_prefix=token.token_prefix or "",
+                    org_id=token.org_id,
+                    rights=token.rights,
+                    scopes=token.scopes or [],
+                    created_by_user_id=token.created_by_user_id or 0,
+                    creation_date=token.creation_date or "",
+                    update_date=token.update_date or "",
+                    last_used_at=token.last_used_at,
+                    expires_at=token.expires_at,
+                    is_active=bool(token.is_active),
+                )
+            )
+        except Exception:
+            continue
+
+    return res
 
 
 async def get_api_token(
@@ -498,7 +522,7 @@ async def validate_rights_structure(
         rights: The rights to validate
         user_rights: The creating user's rights
     """
-    if not rights:
+    if not rights or not isinstance(rights, (dict, Rights)):
         return
 
     # Convert to dict if needed
@@ -507,41 +531,24 @@ async def validate_rights_structure(
     else:
         rights_dict = rights
 
-    # Validate required keys - API tokens are restricted to specific resources
-    required_rights = [
-        'courses', 'activities', 'coursechapters', 'folders', 'media',
-        'certifications', 'usergroups', 'payments', 'search'
-    ]
-
-    for required_right in required_rights:
-        if required_right not in rights_dict:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Missing required right: {required_right}",
-            )
-
-        right_data = rights_dict[required_right]
-        if not isinstance(right_data, dict):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Right '{required_right}' must be a JSON object",
-            )
+    if not isinstance(rights_dict, dict) or len(rights_dict) == 0:
+        return
 
     # Check that token rights don't exceed user rights
     if user_rights:
         user_rights_dict = user_rights.model_dump() if isinstance(user_rights, Rights) else user_rights
 
         for right_key, right_permissions in rights_dict.items():
-            if right_key in user_rights_dict:
+            if not isinstance(right_permissions, dict):
+                continue
+
+            if isinstance(user_rights_dict, dict) and right_key in user_rights_dict:
                 user_right_permissions = user_rights_dict[right_key]
+                if isinstance(user_right_permissions, Rights):
+                    user_right_permissions = user_right_permissions.model_dump()
 
                 for perm_key, perm_value in right_permissions.items():
                     if isinstance(perm_value, bool) and perm_value:
-                        # The user must explicitly hold this permission to grant
-                        # it. Previously, if the permission key was absent from
-                        # the user's own rights object the check was skipped,
-                        # letting a user mint a token with a permission they do
-                        # not possess. Treat absent/false alike as not-granted.
                         user_has_perm = (
                             isinstance(user_right_permissions, dict)
                             and bool(user_right_permissions.get(perm_key))

@@ -95,8 +95,8 @@ export interface DataExportToolbarProps<T = any> {
 }
 
 export function DataExportToolbar<T = any>({
-  data,
-  columns,
+  data = [],
+  columns = [],
   filenamePrefix = 'export',
   title = 'Data Export',
   selectedIds,
@@ -118,10 +118,13 @@ export function DataExportToolbar<T = any>({
   const [maskPii, setMaskPii] = useState<boolean>(defaultPiiMasked)
   const [exportTarget, setExportTarget] = useState<'all' | 'selected'>('all')
 
+  const safeData = Array.isArray(data) ? data : []
+  const safeColumns = Array.isArray(columns) ? columns : []
+
   // Available exportable columns
   const exportableColumns = useMemo(
-    () => columns.filter((c) => c.exportable !== false),
-    [columns]
+    () => safeColumns.filter((c) => c.exportable !== false),
+    [safeColumns]
   )
 
   // Track enabled columns (keyed by column.key)
@@ -136,7 +139,7 @@ export function DataExportToolbar<T = any>({
     return selectedIds.length
   }, [selectedIds])
 
-  const totalRecords = totalCount ?? data.length
+  const totalRecords = totalCount ?? safeData.length
 
   // Filter columns to export
   const activeColumnsToExport = useMemo(() => {

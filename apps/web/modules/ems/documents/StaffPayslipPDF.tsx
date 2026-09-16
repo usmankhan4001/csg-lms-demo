@@ -226,12 +226,12 @@ export function StaffPayslipPDF({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 font-mono">
-              {data.taxSchedule.map((tier, idx) => (
+              {(data?.taxSchedule || []).map((tier, idx) => (
                 <tr key={idx}>
                   <td className="py-1 font-sans text-slate-700">{tier.tierName}</td>
                   <td className="py-1 text-center">{tier.ratePercent}%</td>
-                  <td className="py-1 text-right">{tier.taxableAmount.toLocaleString()}</td>
-                  <td className="py-1 text-right font-semibold text-slate-900">{tier.taxCharged.toLocaleString()}</td>
+                  <td className="py-1 text-right">{(tier.taxableAmount ?? 0).toLocaleString()}</td>
+                  <td className="py-1 text-right font-semibold text-slate-900">{(tier.taxCharged ?? 0).toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>
@@ -246,12 +246,12 @@ export function StaffPayslipPDF({
             Net Clamped Disbursed Salary
           </span>
           <p className="text-xs text-indigo-100 italic">
-            Amount in Words: <span className="font-semibold text-white">{data.netSalaryInWords}</span>
+            Amount in Words: <span className="font-semibold text-white">{data?.netSalaryInWords || 'Zero Rupees Only'}</span>
           </p>
         </div>
         <div className="text-left sm:text-right">
           <span className="text-3xl font-black text-white tracking-tight block">
-            PKR {data.netSalary.toLocaleString()}
+            PKR {(data?.netSalary ?? 0).toLocaleString()}
           </span>
           <span className="text-[10px] text-emerald-300 font-semibold flex items-center sm:justify-end gap-1 mt-0.5">
             <CheckCircle2 className="w-3.5 h-3.5" /> Disbursed via 1Link RTGS
