@@ -405,24 +405,39 @@ export async function regenerateAPIToken(
  * Fetch OpenAPI specification from the backend
  */
 export async function fetchOpenAPISpec(accessToken?: string) {
-  const url = `${getAPIUrl()}openapi.json`
+  const urls = [
+    `${getAPIUrl()}openapi.json`,
+    '/api/v1/openapi.json',
+    '/openapi.json',
+  ]
 
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    'Accept': 'application/json',
   }
   if (accessToken) {
     headers['Authorization'] = `Bearer ${accessToken}`
   }
 
-  const response = await fetch(url, {
-    method: 'GET',
-    headers,
-    credentials: 'include',
-  })
+  let lastError: Error | null = null
 
-  if (!response.ok) {
-    throw new Error('Failed to fetch OpenAPI spec')
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers,
+        credentials: 'include',
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data && (data.openapi || data.swagger || data.paths)) {
+          return data
+        }
+      }
+    } catch (err: any) {
+      lastError = err
+    }
   }
 
-  return response.json()
+  throw lastError || new Error('Failed to fetch OpenAPI spec')
 }

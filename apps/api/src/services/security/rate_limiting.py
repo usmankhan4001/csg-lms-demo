@@ -226,18 +226,18 @@ def check_refresh_rate_limit(request: Request) -> Tuple[bool, int]:
 
 def check_api_token_rate_limit(request: Request) -> Tuple[bool, int]:
     """
-    Check API token creation/regeneration rate limit: 10 per hour per IP.
+    Check API token creation/regeneration rate limit: 120 per 10 minutes per IP.
 
     Returns:
         Tuple of (is_allowed, retry_after_seconds)
     """
     ip = get_client_ip(request)
-    key = f"api_token:{ip}"
+    key = f"api_token_v2:{ip}"
 
     is_allowed, count, retry_after = check_rate_limit(
         key=key,
-        max_attempts=10,
-        window_seconds=60 * 60  # 1 hour
+        max_attempts=120,
+        window_seconds=10 * 60  # 10 minutes
     )
 
     return is_allowed, retry_after
