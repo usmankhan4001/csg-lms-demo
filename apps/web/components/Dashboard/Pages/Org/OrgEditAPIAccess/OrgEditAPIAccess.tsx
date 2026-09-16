@@ -39,6 +39,12 @@ import {
   Check,
   BookOpen,
   LifeBuoy,
+  GraduationCap,
+  Users,
+  DollarSign,
+  ShieldAlert,
+  Bot,
+  Layers,
 } from 'lucide-react'
 import {
   APIToken,
@@ -161,20 +167,12 @@ const OrgEditAPIAccess: React.FC = () => {
         setShowTokenValue(true)
         queryClient.invalidateQueries({ queryKey: ['org', org.id, 'api-tokens'] })
         toast.success('API token regenerated successfully', { id: loadingToast })
-        // Don't close the dialog here - keep it open to show the new token
       } else {
         toast.error(response.data?.detail || 'Failed to regenerate token', { id: loadingToast })
       }
     } catch (error: any) {
       toast.error(error.message || 'Failed to regenerate token', { id: loadingToast })
     }
-  }
-
-  const copyToClipboard = async (text: string) => {
-    await navigator.clipboard.writeText(text)
-    setCopiedToken(true)
-    toast.success('Token copied to clipboard')
-    setTimeout(() => setCopiedToken(false), 2000)
   }
 
   const handlePresetChange = (preset: 'custom' | 'readonly' | 'full') => {
@@ -186,629 +184,726 @@ const OrgEditAPIAccess: React.FC = () => {
     }
   }
 
-  const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return 'Never'
-    try {
-      return new Date(dateStr).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-    } catch {
-      return dateStr
-    }
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+    setCopiedToken(true)
+    toast.success('Copied to clipboard')
+    setTimeout(() => setCopiedToken(false), 2000)
+  }
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    })
   }
 
   return (
     <FeatureGate feature="api_access">
-    <>
-    <div className="sm:mx-10 mx-0 bg-white rounded-xl nice-shadow pt-3">
-      <div className="flex flex-col gap-0">
-        <div className="flex flex-col bg-gray-50 -space-y-1 px-5 py-3 mx-3 mb-3 rounded-md">
-          <h1 className="font-bold text-xl text-gray-800">
-            {activeTab === 'tokens' ? t('dashboard.organization.api_access.title') : t('dashboard.organization.api_access.api_docs_title')}
-          </h1>
-          <h2 className="text-gray-500 text-md">
-            {activeTab === 'tokens'
-              ? t('dashboard.organization.settings.pages.api.subtitle')
-              : 'Explore and test API endpoints using your API tokens'}
-          </h2>
+      <div className="flex flex-col gap-6 p-4 sm:p-8 max-w-7xl mx-auto w-full">
+        {/* Header Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="border bg-white rounded-xl p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-blue-50 text-blue-600 rounded-lg">
+                <Key size={20} />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase text-gray-500 tracking-wider">Active API Tokens</p>
+                <p className="text-2xl font-bold text-gray-900">{tokens?.filter((t) => t.is_active).length || 0}</p>
+              </div>
+            </div>
+          </div>
+          <div className="border bg-white rounded-xl p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-green-50 text-green-600 rounded-lg">
+                <Layers size={20} />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase text-gray-500 tracking-wider">Covered SMS & LMS Modules</p>
+                <p className="text-2xl font-bold text-gray-900">18 Domains</p>
+              </div>
+            </div>
+          </div>
+          <div className="border bg-white rounded-xl p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-purple-50 text-purple-600 rounded-lg">
+                <Bot size={20} />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase text-gray-500 tracking-wider">Granular Scope Enforcers</p>
+                <p className="text-2xl font-bold text-gray-900">37 URN Scopes</p>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full px-5">
-        <div className="flex items-center justify-between mb-6">
-          <TabsList>
-            <TabsTrigger value="tokens" className="flex items-center gap-2">
-              <Key size={16} />
-              API Tokens
-            </TabsTrigger>
-            <TabsTrigger value="documentation" className="flex items-center gap-2">
-              <BookOpen size={16} />
-              {t('dashboard.organization.api_access.docs_playground')}
-            </TabsTrigger>
-          </TabsList>
-          <a
-            href="mailto:hello@learnhouse.app"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors border border-gray-200"
-            title="Contact LearnHouse support"
-          >
-            <LifeBuoy size={14} />
-            {t('dashboard.organization.api_access.something_not_working')}
-          </a>
-        </div>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b pb-4">
+            <TabsList className="bg-gray-100/80 p-1">
+              <TabsTrigger value="tokens" className="flex items-center gap-2">
+                <Key size={15} />
+                <span>API Tokens</span>
+              </TabsTrigger>
+              <TabsTrigger value="documentation" className="flex items-center gap-2">
+                <BookOpen size={15} />
+                <span>Interactive API Explorer & Docs</span>
+              </TabsTrigger>
+            </TabsList>
 
-        <TabsContent value="tokens">
-          <div className="pb-4">
-            <div className="flex justify-between items-center mb-4">
-              <p className="text-sm text-gray-600">
-                {t('dashboard.organization.api_access.tokens_description')}
-              </p>
+            {activeTab === 'tokens' && (
               <Button
-                onClick={() => setIsCreateDialogOpen(true)}
-                className="bg-black text-white hover:bg-black/90"
+                onClick={() => {
+                  setTokenRights(getReadOnlyRights())
+                  setRightsPreset('readonly')
+                  setIsCreateDialogOpen(true)
+                }}
+                className="flex items-center gap-2 shadow-sm"
               >
-                <Plus size={16} className="me-2" />
-                {t('dashboard.organization.api_access.create_token')}
+                <Plus size={16} />
+                <span>Create API Token</span>
               </Button>
-            </div>
+            )}
+          </div>
 
-            {isLoading ? (
-              <div className="animate-pulse space-y-2">
-                <div className="h-9 bg-gray-100 rounded w-full" />
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="flex gap-4 px-4 py-3 border-b border-gray-100">
-                    <div className="h-4 bg-gray-100 rounded w-32" />
-                    <div className="h-4 bg-gray-100 rounded w-24" />
-                    <div className="h-4 bg-gray-100 rounded w-16" />
-                    <div className="h-4 bg-gray-100 rounded w-28" />
-                    <div className="h-4 bg-gray-100 rounded w-28" />
-                    <div className="h-4 bg-gray-100 rounded w-20" />
-                  </div>
-                ))}
-              </div>
-            ) : tokens && tokens.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Token Prefix</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Last Used</TableHead>
-                    <TableHead>Expires</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {tokens.map((token) => (
-                    <TableRow key={token.token_uuid}>
-                      <TableCell>
-                        <div>
-                          <div className="font-medium">{token.name}</div>
-                          {token.description && (
-                            <div className="text-sm text-gray-500 truncate max-w-[200px]">
-                              {token.description}
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <code className="bg-gray-100 px-2 py-1 rounded text-sm">
-                          {token.token_prefix}...
-                        </code>
-                      </TableCell>
-                      <TableCell>
-                        {token.is_active ? (
-                          <Badge variant="default" className="bg-green-100 text-green-800">
-                            Active
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="bg-red-100 text-red-800">
-                            Revoked
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm text-gray-600">
-                        {token.last_used_at ? formatDate(token.last_used_at) : 'Never'}
-                      </TableCell>
-                      <TableCell className="text-sm text-gray-600">
-                        {token.expires_at ? formatDate(token.expires_at) : 'Never'}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedToken(token)
-                              setIsViewDialogOpen(true)
-                            }}
-                          >
-                            <Eye size={16} />
-                          </Button>
-                          {token.is_active && (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setSelectedToken(token)
-                                  setIsRegenerateDialogOpen(true)
-                                }}
-                              >
-                                <RefreshCw size={16} />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-red-600 hover:text-red-700"
-                                onClick={() => {
-                                  setSelectedToken(token)
-                                  setIsRevokeDialogOpen(true)
-                                }}
-                              >
-                                <Trash2 size={16} />
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </TableCell>
+          <TabsContent value="tokens" className="pt-4">
+            <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+              {isLoading ? (
+                <div className="p-12 text-center text-gray-500">
+                  <RefreshCw className="animate-spin mx-auto mb-2" size={24} />
+                  <p>Loading API tokens...</p>
+                </div>
+              ) : tokens && tokens.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-gray-50/75">
+                      <TableHead>Token Name</TableHead>
+                      <TableHead>Token Prefix</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Last Used</TableHead>
+                      <TableHead>Expires</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <div className="text-center py-12 text-gray-500">
-                <Key size={48} className="mx-auto mb-4 opacity-50" />
-                <p>{t('dashboard.organization.api_access.no_tokens_yet')}</p>
-                <p className="text-sm">{t('dashboard.organization.api_access.create_first_token')}</p>
-              </div>
-            )}
-          </div>
-        </TabsContent>
+                  </TableHeader>
+                  <TableBody>
+                    {tokens.map((token) => (
+                      <TableRow key={token.id} className="hover:bg-gray-50/50">
+                        <TableCell>
+                          <div>
+                            <p className="font-semibold text-gray-900">{token.name}</p>
+                            {token.description && (
+                              <p className="text-xs text-gray-500 truncate max-w-xs">{token.description}</p>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <code className="bg-gray-100 text-gray-800 px-2 py-1 rounded text-xs font-mono">
+                            {token.token_prefix}...
+                          </code>
+                        </TableCell>
+                        <TableCell>
+                          {token.is_active ? (
+                            <Badge className="bg-green-50 text-green-700 border-green-200">Active</Badge>
+                          ) : (
+                            <Badge variant="secondary" className="bg-red-50 text-red-700 border-red-200">
+                              Revoked
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-600">
+                          {token.last_used_at ? formatDate(token.last_used_at) : 'Never'}
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-600">
+                          {token.expires_at ? formatDate(token.expires_at) : 'Never (Permanent)'}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="View Details"
+                              onClick={() => {
+                                setSelectedToken(token)
+                                setIsViewDialogOpen(true)
+                              }}
+                            >
+                              <Eye size={15} />
+                            </Button>
+                            {token.is_active && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  title="Regenerate Token"
+                                  onClick={() => {
+                                    setSelectedToken(token)
+                                    setIsRegenerateDialogOpen(true)
+                                  }}
+                                >
+                                  <RefreshCw size={15} />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  title="Revoke Token"
+                                  onClick={() => {
+                                    setSelectedToken(token)
+                                    setIsRevokeDialogOpen(true)
+                                  }}
+                                >
+                                  <Trash2 size={15} />
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <div className="text-center py-16 px-4">
+                  <Key size={48} className="mx-auto mb-3 text-gray-400" />
+                  <h3 className="text-lg font-bold text-gray-900 mb-1">No API tokens generated</h3>
+                  <p className="text-sm text-gray-500 max-w-sm mx-auto mb-6">
+                    Create API tokens with granular SMS and LMS scopes to securely connect custom integrations, biometric IoT turnstiles, and portals.
+                  </p>
+                  <Button
+                    onClick={() => {
+                      setTokenRights(getReadOnlyRights())
+                      setRightsPreset('readonly')
+                      setIsCreateDialogOpen(true)
+                    }}
+                  >
+                    <Plus size={16} className="mr-2" /> Create First API Token
+                  </Button>
+                </div>
+              )}
+            </div>
+          </TabsContent>
 
-        <TabsContent value="documentation" className="pb-4">
-          <APIDocumentation />
-        </TabsContent>
+          <TabsContent value="documentation" className="pt-4">
+            <APIDocumentation />
+          </TabsContent>
         </Tabs>
-      </div>
-    </div>
 
-      {/* Create Token Dialog */}
-      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader className="px-6 pt-6">
-            <DialogTitle>{t('dashboard.organization.api_access.create_api_token')}</DialogTitle>
-            <DialogDescription>
-              {t('dashboard.organization.api_access.create_token_desc')}
-            </DialogDescription>
-          </DialogHeader>
+        {/* Create Token Dialog */}
+        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="px-6 pt-6">
+              <DialogTitle>Generate Organization API Token</DialogTitle>
+              <DialogDescription>
+                Configure token identity and granular permissions across all native LMS and SMS operational modules.
+              </DialogDescription>
+            </DialogHeader>
 
-          {newTokenValue ? (
-            <div className="px-6 pb-6 space-y-4">
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle className="text-yellow-600 flex-shrink-0 mt-0.5" size={20} />
-                  <div>
-                    <p className="font-medium text-yellow-800">{t('dashboard.organization.api_access.save_token_warning')}</p>
-                    <p className="text-sm text-yellow-700">
-                      {t('dashboard.organization.api_access.save_token_hint')}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>{t('dashboard.organization.api_access.your_api_token')}</Label>
-                <div className="flex gap-2">
-                  <Input
-                    type={showTokenValue ? 'text' : 'password'}
-                    value={newTokenValue}
-                    readOnly
-                    className="font-mono text-sm"
-                  />
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setShowTokenValue(!showTokenValue)}
-                  >
-                    {showTokenValue ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => copyToClipboard(newTokenValue)}
-                  >
-                    {copiedToken ? <Check size={16} className="text-green-600" /> : <Copy size={16} />}
-                  </Button>
-                </div>
-              </div>
-
-              <DialogFooter>
-                <Button
-                  onClick={() => {
-                    setIsCreateDialogOpen(false)
-                    setNewTokenValue(null)
-                    setShowTokenValue(false)
-                  }}
-                >
-                  {t('dashboard.organization.api_access.done')}
-                </Button>
-              </DialogFooter>
-            </div>
-          ) : (
-            <div className="px-6 pb-6 space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="tokenName">{t('dashboard.organization.api_access.token_name_label')}</Label>
-                <Input
-                  id="tokenName"
-                  value={tokenName}
-                  onChange={(e) => setTokenName(e.target.value)}
-                  placeholder="e.g., CI/CD Pipeline, Mobile App"
-                  maxLength={100}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="tokenDescription">{t('dashboard.organization.api_access.description_label')}</Label>
-                <Textarea
-                  id="tokenDescription"
-                  value={tokenDescription}
-                  onChange={(e) => setTokenDescription(e.target.value)}
-                  placeholder="What will this token be used for?"
-                  maxLength={500}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="tokenExpiry">{t('dashboard.organization.api_access.expiration_label')}</Label>
-                <Input
-                  id="tokenExpiry"
-                  type="datetime-local"
-                  value={tokenExpiry}
-                  onChange={(e) => setTokenExpiry(e.target.value)}
-                />
-                <p className="text-xs text-gray-500">{t('dashboard.organization.api_access.expiration_hint')}</p>
-              </div>
-
-              <div className="space-y-3">
-                <Label>{t('dashboard.organization.api_access.permissions_label')}</Label>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant={rightsPreset === 'readonly' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => handlePresetChange('readonly')}
-                  >
-                    {t('dashboard.organization.api_access.read_only')}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={rightsPreset === 'full' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => handlePresetChange('full')}
-                  >
-                    {t('dashboard.organization.api_access.full_access')}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={rightsPreset === 'custom' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => handlePresetChange('custom')}
-                  >
-                    {t('dashboard.organization.api_access.custom')}
-                  </Button>
-                </div>
-
-                {rightsPreset === 'custom' && (
-                  <PermissionsEditor rights={tokenRights} onChange={setTokenRights} />
-                )}
-              </div>
-
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-                  {t('dashboard.organization.api_access.cancel')}
-                </Button>
-                <Button onClick={handleCreateToken}>{t('dashboard.organization.api_access.create_token')}</Button>
-              </DialogFooter>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* View Token Dialog */}
-      <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader className="px-6 pt-6">
-            <DialogTitle>Token Details</DialogTitle>
-          </DialogHeader>
-          {selectedToken && (
-            <div className="px-6 pb-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-gray-500">Name</Label>
-                  <p className="font-medium">{selectedToken.name}</p>
-                </div>
-                <div>
-                  <Label className="text-gray-500">Status</Label>
-                  <p>
-                    {selectedToken.is_active ? (
-                      <Badge className="bg-green-100 text-green-800">Active</Badge>
-                    ) : (
-                      <Badge className="bg-red-100 text-red-800">Revoked</Badge>
-                    )}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-gray-500">Token Prefix</Label>
-                  <code className="bg-gray-100 px-2 py-1 rounded text-sm">
-                    {selectedToken.token_prefix}...
-                  </code>
-                </div>
-                <div>
-                  <Label className="text-gray-500">Created</Label>
-                  <p className="text-sm">{formatDate(selectedToken.creation_date)}</p>
-                </div>
-                <div>
-                  <Label className="text-gray-500">Last Used</Label>
-                  <p className="text-sm">
-                    {selectedToken.last_used_at ? formatDate(selectedToken.last_used_at) : 'Never'}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-gray-500">Expires</Label>
-                  <p className="text-sm">
-                    {selectedToken.expires_at ? formatDate(selectedToken.expires_at) : 'Never'}
-                  </p>
-                </div>
-              </div>
-              {selectedToken.description && (
-                <div>
-                  <Label className="text-gray-500">Description</Label>
-                  <p className="text-sm">{selectedToken.description}</p>
-                </div>
-              )}
-              {selectedToken.rights && (
-                <div>
-                  <Label className="text-gray-500">Permissions</Label>
-                  <div className="mt-2 bg-gray-50 rounded-lg p-3 text-xs">
-                    <PermissionsViewer rights={selectedToken.rights} />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Revoke Token Dialog */}
-      <Dialog open={isRevokeDialogOpen} onOpenChange={setIsRevokeDialogOpen}>
-        <DialogContent>
-          <DialogHeader className="px-6 pt-6">
-            <DialogTitle className="flex items-center gap-2 text-red-600">
-              <AlertTriangle size={20} />
-              Revoke API Token
-            </DialogTitle>
-            <DialogDescription>
-              Are you sure you want to revoke this token? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="px-6 pb-6">
-            {selectedToken && (
-              <div className="bg-gray-50 rounded-lg p-3 mb-4">
-                <p className="font-medium">{selectedToken.name}</p>
-                <code className="text-sm text-gray-600">{selectedToken.token_prefix}...</code>
-              </div>
-            )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsRevokeDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={handleRevokeToken}>
-                Revoke Token
-              </Button>
-            </DialogFooter>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Regenerate Token Dialog */}
-      <Dialog open={isRegenerateDialogOpen} onOpenChange={setIsRegenerateDialogOpen}>
-        <DialogContent>
-          <DialogHeader className="px-6 pt-6">
-            <DialogTitle className="flex items-center gap-2">
-              <RefreshCw size={20} />
-              Regenerate API Token
-            </DialogTitle>
-            <DialogDescription>
-              This will generate a new secret for this token. The old token will immediately stop working.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="px-6 pb-6">
             {newTokenValue ? (
-              <div className="space-y-4">
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="px-6 pb-6 space-y-5">
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
                   <div className="flex items-start gap-3">
-                    <AlertTriangle className="text-yellow-600 flex-shrink-0 mt-0.5" size={20} />
+                    <AlertTriangle className="text-amber-600 flex-shrink-0 mt-0.5" size={22} />
                     <div>
-                      <p className="font-medium text-yellow-800">Save your new token!</p>
-                      <p className="text-sm text-yellow-700">
-                        This is the only time you&apos;ll see this token.
+                      <p className="font-bold text-amber-900">Copy your API Secret Key now!</p>
+                      <p className="text-sm text-amber-800 mt-0.5">
+                        For security reasons, this token secret is never stored in plaintext and will never be shown again.
                       </p>
                     </div>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Input
-                    type={showTokenValue ? 'text' : 'password'}
-                    value={newTokenValue}
-                    readOnly
-                    className="font-mono text-sm"
-                  />
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setShowTokenValue(!showTokenValue)}
-                  >
-                    {showTokenValue ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => copyToClipboard(newTokenValue)}
-                  >
-                    {copiedToken ? <Check size={16} className="text-green-600" /> : <Copy size={16} />}
-                  </Button>
+
+                <div className="space-y-2">
+                  <Label>Bearer API Token Secret</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      type={showTokenValue ? 'text' : 'password'}
+                      value={newTokenValue}
+                      readOnly
+                      className="font-mono text-sm bg-gray-50 font-medium"
+                    />
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setShowTokenValue(!showTokenValue)}
+                    >
+                      {showTokenValue ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => copyToClipboard(newTokenValue)}
+                    >
+                      {copiedToken ? <Check size={16} className="text-green-600" /> : <Copy size={16} />}
+                    </Button>
+                  </div>
                 </div>
+
                 <DialogFooter>
                   <Button
                     onClick={() => {
-                      setIsRegenerateDialogOpen(false)
+                      setIsCreateDialogOpen(false)
                       setNewTokenValue(null)
                       setShowTokenValue(false)
-                      setSelectedToken(null)
                     }}
                   >
-                    Done
+                    Done & Close
                   </Button>
                 </DialogFooter>
               </div>
             ) : (
-              <>
-                {selectedToken && (
-                  <div className="bg-gray-50 rounded-lg p-3 mb-4">
-                    <p className="font-medium">{selectedToken.name}</p>
-                    <code className="text-sm text-gray-600">{selectedToken.token_prefix}...</code>
+              <div className="px-6 pb-6 space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="tokenName">Token Identifier / Name <span className="text-red-500">*</span></Label>
+                    <Input
+                      id="tokenName"
+                      value={tokenName}
+                      onChange={(e) => setTokenName(e.target.value)}
+                      placeholder="e.g. Biometric Turnstile Sync, Mobile App Bridge"
+                      maxLength={100}
+                    />
                   </div>
-                )}
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsRegenerateDialogOpen(false)}>
+                  <div className="space-y-2">
+                    <Label htmlFor="tokenExpiry">Expiration Date (Optional)</Label>
+                    <Input
+                      id="tokenExpiry"
+                      type="datetime-local"
+                      value={tokenExpiry}
+                      onChange={(e) => setTokenExpiry(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="tokenDescription">Integration Purpose & Description</Label>
+                  <Textarea
+                    id="tokenDescription"
+                    value={tokenDescription}
+                    onChange={(e) => setTokenDescription(e.target.value)}
+                    placeholder="Describe what external service or automated script will use this token..."
+                    maxLength={500}
+                    rows={2}
+                  />
+                </div>
+
+                <div className="space-y-3 pt-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b pb-2">
+                    <Label className="text-sm font-bold text-gray-900">Module Access & Permissions Matrix</Label>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant={rightsPreset === 'readonly' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => handlePresetChange('readonly')}
+                      >
+                        Read-Only Preset
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={rightsPreset === 'full' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => handlePresetChange('full')}
+                      >
+                        Full Access (*)
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={rightsPreset === 'custom' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => handlePresetChange('custom')}
+                      >
+                        Custom Scope Matrix
+                      </Button>
+                    </div>
+                  </div>
+
+                  <PermissionsEditor rights={tokenRights} onChange={setTokenRights} />
+                </div>
+
+                <DialogFooter className="pt-3 border-t">
+                  <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
                     Cancel
                   </Button>
-                  <Button onClick={handleRegenerateToken}>Regenerate</Button>
+                  <Button onClick={handleCreateToken}>Generate API Token</Button>
                 </DialogFooter>
-              </>
+              </div>
             )}
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
+          </DialogContent>
+        </Dialog>
+
+        {/* View Token Dialog */}
+        <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="px-6 pt-6">
+              <DialogTitle>API Token Inspection</DialogTitle>
+            </DialogHeader>
+            {selectedToken && (
+              <div className="px-6 pb-6 space-y-4">
+                <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl">
+                  <div>
+                    <Label className="text-gray-500 text-xs uppercase">Token Name</Label>
+                    <p className="font-bold text-gray-900">{selectedToken.name}</p>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500 text-xs uppercase">Status</Label>
+                    <p>
+                      {selectedToken.is_active ? (
+                        <Badge className="bg-green-100 text-green-800">Active</Badge>
+                      ) : (
+                        <Badge className="bg-red-100 text-red-800">Revoked</Badge>
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500 text-xs uppercase">Prefix</Label>
+                    <code className="font-mono text-sm bg-white border px-2 py-0.5 rounded">
+                      {selectedToken.token_prefix}...
+                    </code>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500 text-xs uppercase">Created Date</Label>
+                    <p className="text-sm">{formatDate(selectedToken.creation_date)}</p>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500 text-xs uppercase">Last Activity</Label>
+                    <p className="text-sm">
+                      {selectedToken.last_used_at ? formatDate(selectedToken.last_used_at) : 'Never'}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-gray-500 text-xs uppercase">Expiration</Label>
+                    <p className="text-sm">
+                      {selectedToken.expires_at ? formatDate(selectedToken.expires_at) : 'Permanent'}
+                    </p>
+                  </div>
+                </div>
+
+                {selectedToken.description && (
+                  <div>
+                    <Label className="text-gray-500 text-xs uppercase">Description</Label>
+                    <p className="text-sm bg-gray-50 p-3 rounded-lg mt-1">{selectedToken.description}</p>
+                  </div>
+                )}
+
+                {selectedToken.rights && (
+                  <div>
+                    <Label className="text-gray-500 text-xs uppercase mb-2 block">Authorized Domain Rights</Label>
+                    <PermissionsViewer rights={selectedToken.rights} />
+                  </div>
+                )}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Revoke Token Dialog */}
+        <Dialog open={isRevokeDialogOpen} onOpenChange={setIsRevokeDialogOpen}>
+          <DialogContent>
+            <DialogHeader className="px-6 pt-6">
+              <DialogTitle className="flex items-center gap-2 text-red-600">
+                <AlertTriangle size={20} />
+                Revoke API Token
+              </DialogTitle>
+              <DialogDescription>
+                Are you sure you want to revoke this API token? Any client application or automated script using it will immediately be rejected with 401 Unauthorized.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="px-6 pb-6">
+              {selectedToken && (
+                <div className="bg-gray-50 rounded-lg p-3 mb-4">
+                  <p className="font-semibold text-gray-900">{selectedToken.name}</p>
+                  <code className="text-xs text-gray-600 font-mono">{selectedToken.token_prefix}...</code>
+                </div>
+              )}
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsRevokeDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button variant="destructive" onClick={handleRevokeToken}>
+                  Confirm Revocation
+                </Button>
+              </DialogFooter>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Regenerate Token Dialog */}
+        <Dialog open={isRegenerateDialogOpen} onOpenChange={setIsRegenerateDialogOpen}>
+          <DialogContent>
+            <DialogHeader className="px-6 pt-6">
+              <DialogTitle className="flex items-center gap-2">
+                <RefreshCw size={20} />
+                Regenerate API Token Secret
+              </DialogTitle>
+              <DialogDescription>
+                This will rotate the secret key for this token. The old token value will stop working immediately.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="px-6 pb-6">
+              {newTokenValue ? (
+                <div className="space-y-4">
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                    <p className="font-bold text-amber-900">New Token Secret Generated!</p>
+                    <p className="text-sm text-amber-800 mt-1">
+                      Store this new key safely now. It will not be shown again.
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      type={showTokenValue ? 'text' : 'password'}
+                      value={newTokenValue}
+                      readOnly
+                      className="font-mono text-sm"
+                    />
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setShowTokenValue(!showTokenValue)}
+                    >
+                      {showTokenValue ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => copyToClipboard(newTokenValue)}
+                    >
+                      {copiedToken ? <Check size={16} className="text-green-600" /> : <Copy size={16} />}
+                    </Button>
+                  </div>
+                  <DialogFooter>
+                    <Button
+                      onClick={() => {
+                        setIsRegenerateDialogOpen(false)
+                        setNewTokenValue(null)
+                        setShowTokenValue(false)
+                        setSelectedToken(null)
+                      }}
+                    >
+                      Done
+                    </Button>
+                  </DialogFooter>
+                </div>
+              ) : (
+                <>
+                  {selectedToken && (
+                    <div className="bg-gray-50 rounded-lg p-3 mb-4">
+                      <p className="font-medium">{selectedToken.name}</p>
+                      <code className="text-sm text-gray-600 font-mono">{selectedToken.token_prefix}...</code>
+                    </div>
+                  )}
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setIsRegenerateDialogOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button onClick={handleRegenerateToken}>Rotate Secret</Button>
+                  </DialogFooter>
+                </>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
     </FeatureGate>
   )
 }
+
+interface DomainSection {
+  title: string
+  icon: any
+  resources: Array<{ key: string; label: string; hasCrud?: boolean }>
+}
+
+const PERMISSION_DOMAINS: DomainSection[] = [
+  {
+    title: 'SMS Academics & LMS Core',
+    icon: GraduationCap,
+    resources: [
+      { key: 'sms_academic', label: 'Academic Structures & Sections', hasCrud: true },
+      { key: 'sms_attendance', label: 'Biometric & Daily Attendance', hasCrud: true },
+      { key: 'sms_gradebook', label: 'Master Gradebook & SpeedGrader', hasCrud: true },
+      { key: 'sms_exams', label: 'CBT Exams & Psychometrics', hasCrud: true },
+      { key: 'courses', label: 'LMS Courses & Syllabi', hasCrud: true },
+      { key: 'activities', label: 'Interactive Activities & Blocks', hasCrud: true },
+      { key: 'assignments', label: 'Coursework Submissions', hasCrud: true },
+      { key: 'coursechapters', label: 'Course Modules & Chapters', hasCrud: true },
+      { key: 'certifications', label: 'Accredited Certifications', hasCrud: true },
+    ],
+  },
+  {
+    title: 'Admissions & RevOps CRM',
+    icon: Users,
+    resources: [
+      { key: 'sms_admissions', label: 'Inquiries, Leads & Matriculation', hasCrud: true },
+    ],
+  },
+  {
+    title: 'Financials, Tuition & Progressive Payroll',
+    icon: DollarSign,
+    resources: [
+      { key: 'sms_fees', label: 'Tuition Vouchers & Fee Invoices', hasCrud: true },
+      { key: 'sms_financials', label: 'General Ledger & Journal Entries', hasCrud: true },
+      { key: 'sms_payroll', label: 'Progressive Payroll Runs & Payslips', hasCrud: true },
+      { key: 'sms_hr', label: 'Staff Contracts & Faculty Roster', hasCrud: true },
+      { key: 'payments', label: 'Payment Transactions & Gateways', hasCrud: true },
+    ],
+  },
+  {
+    title: 'Pastoral Care, Safety & Cognia Compliance',
+    icon: ShieldAlert,
+    resources: [
+      { key: 'sms_pastoral', label: 'Pastoral Care & Disciplinary Logs', hasCrud: true },
+      { key: 'sms_counseling', label: 'Clinical Desk (Encrypted Notes)', hasCrud: true },
+      { key: 'sms_cognia', label: 'Cognia Standards & AMI Index', hasCrud: true },
+    ],
+  },
+  {
+    title: 'AI Companion, Operations & System',
+    icon: Bot,
+    resources: [
+      { key: 'ai_tutor', label: 'Socratic AI Tutor & Knowledge Graph', hasCrud: true },
+      { key: 'sms_library', label: 'School Library & Book Loans', hasCrud: true },
+      { key: 'sms_transport', label: 'Transport Fleet & Route Telemetry', hasCrud: true },
+      { key: 'ems_roles', label: 'Dynamic RBAC Roles & Scopes', hasCrud: true },
+      { key: 'webhooks', label: 'Webhook Endpoints & Events', hasCrud: true },
+      { key: 'usergroups', label: 'User Groups & Class Roster', hasCrud: true },
+      { key: 'media', label: 'Media Library & Artifacts', hasCrud: true },
+      { key: 'folders', label: 'Folder Storage', hasCrud: true },
+      { key: 'search', label: 'Global Semantic Search', hasCrud: false },
+    ],
+  },
+]
 
 // Permissions Editor Component
 const PermissionsEditor: React.FC<{
   rights: APITokenRights
   onChange: (_rights: APITokenRights) => void
 }> = ({ rights, onChange }) => {
-  // API Token access is restricted to specific resources
-  const resources = [
-    { key: 'courses', label: 'Courses', hasCrud: true },
-    { key: 'activities', label: 'Activities', hasCrud: true },
-    { key: 'assignments', label: 'Assignments', hasCrud: true },
-    { key: 'coursechapters', label: 'Chapters', hasCrud: true },
-    { key: 'folders', label: 'Folders', hasCrud: true },
-    { key: 'media', label: 'Media', hasCrud: true },
-    { key: 'certifications', label: 'Certifications', hasCrud: true },
-    { key: 'usergroups', label: 'User Groups', hasCrud: true },
-    { key: 'payments', label: 'Payments', hasCrud: true },
-  ]
-
   const togglePermission = (resource: string, permission: string) => {
     const newRights = { ...rights }
-    const resourceRights = { ...(newRights as any)[resource] }
+    const resourceRights = { ...((newRights as any)[resource] || {}) }
     resourceRights[permission] = !resourceRights[permission]
     ;(newRights as any)[resource] = resourceRights
     onChange(newRights)
   }
 
   return (
-    <div className="border rounded-lg overflow-hidden">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Resource</TableHead>
-            <TableHead className="text-center">Create</TableHead>
-            <TableHead className="text-center">Read</TableHead>
-            <TableHead className="text-center">Update</TableHead>
-            <TableHead className="text-center">Delete</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {resources.map((resource) => (
-            <TableRow key={resource.key}>
-              <TableCell className="font-medium">{resource.label}</TableCell>
-              <TableCell className="text-center">
-                <Switch
-                  checked={(rights as any)[resource.key]?.action_create || false}
-                  onCheckedChange={() => togglePermission(resource.key, 'action_create')}
-                />
-              </TableCell>
-              <TableCell className="text-center">
-                <Switch
-                  checked={(rights as any)[resource.key]?.action_read || false}
-                  onCheckedChange={() => togglePermission(resource.key, 'action_read')}
-                />
-              </TableCell>
-              <TableCell className="text-center">
-                <Switch
-                  checked={(rights as any)[resource.key]?.action_update || false}
-                  onCheckedChange={() => togglePermission(resource.key, 'action_update')}
-                />
-              </TableCell>
-              <TableCell className="text-center">
-                <Switch
-                  checked={(rights as any)[resource.key]?.action_delete || false}
-                  onCheckedChange={() => togglePermission(resource.key, 'action_delete')}
-                />
-              </TableCell>
-            </TableRow>
-          ))}
-          <TableRow>
-            <TableCell className="font-medium">Search</TableCell>
-            <TableCell className="text-center">-</TableCell>
-            <TableCell className="text-center">
-              <Switch
-                checked={rights.search?.action_read || false}
-                onCheckedChange={() => togglePermission('search', 'action_read')}
-              />
-            </TableCell>
-            <TableCell className="text-center">-</TableCell>
-            <TableCell className="text-center">-</TableCell>
-          </TableRow>
-        </TableBody>
-      </Table>
+    <div className="space-y-4 max-h-[450px] overflow-y-auto pr-1">
+      {PERMISSION_DOMAINS.map((domain, idx) => (
+        <div key={idx} className="border rounded-xl overflow-hidden bg-white shadow-xs">
+          <div className="bg-gray-50/80 px-4 py-2.5 border-b flex items-center gap-2">
+            <domain.icon size={16} className="text-gray-700" />
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-700">{domain.title}</span>
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-white hover:bg-white text-xs">
+                <TableHead className="w-1/2">Resource</TableHead>
+                <TableHead className="text-center w-1/8">Create</TableHead>
+                <TableHead className="text-center w-1/8">Read</TableHead>
+                <TableHead className="text-center w-1/8">Update</TableHead>
+                <TableHead className="text-center w-1/8">Delete</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {domain.resources.map((resource) => (
+                <TableRow key={resource.key} className="hover:bg-gray-50/60 text-sm">
+                  <TableCell className="font-medium text-gray-900 py-2.5">{resource.label}</TableCell>
+                  {resource.hasCrud !== false ? (
+                    <>
+                      <TableCell className="text-center py-2.5">
+                        <Switch
+                          checked={(rights as any)[resource.key]?.action_create || false}
+                          onCheckedChange={() => togglePermission(resource.key, 'action_create')}
+                        />
+                      </TableCell>
+                      <TableCell className="text-center py-2.5">
+                        <Switch
+                          checked={(rights as any)[resource.key]?.action_read || false}
+                          onCheckedChange={() => togglePermission(resource.key, 'action_read')}
+                        />
+                      </TableCell>
+                      <TableCell className="text-center py-2.5">
+                        <Switch
+                          checked={(rights as any)[resource.key]?.action_update || false}
+                          onCheckedChange={() => togglePermission(resource.key, 'action_update')}
+                        />
+                      </TableCell>
+                      <TableCell className="text-center py-2.5">
+                        <Switch
+                          checked={(rights as any)[resource.key]?.action_delete || false}
+                          onCheckedChange={() => togglePermission(resource.key, 'action_delete')}
+                        />
+                      </TableCell>
+                    </>
+                  ) : (
+                    <>
+                      <TableCell className="text-center text-gray-300">-</TableCell>
+                      <TableCell className="text-center py-2.5">
+                        <Switch
+                          checked={rights.search?.action_read || false}
+                          onCheckedChange={() => togglePermission('search', 'action_read')}
+                        />
+                      </TableCell>
+                      <TableCell className="text-center text-gray-300">-</TableCell>
+                      <TableCell className="text-center text-gray-300">-</TableCell>
+                    </>
+                  )}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ))}
     </div>
   )
 }
 
 // Permissions Viewer Component
 const PermissionsViewer: React.FC<{ rights: APITokenRights }> = ({ rights }) => {
-  const getPermissionSummary = (resourceRights: any) => {
-    const perms = []
-    if (resourceRights?.action_create) perms.push('C')
-    if (resourceRights?.action_read) perms.push('R')
-    if (resourceRights?.action_update) perms.push('U')
-    if (resourceRights?.action_delete) perms.push('D')
-    return perms.length > 0 ? perms.join('') : '-'
+  const getSummary = (res: any) => {
+    if (!res) return '-'
+    const p = []
+    if (res.action_create) p.push('C')
+    if (res.action_read) p.push('R')
+    if (res.action_update) p.push('U')
+    if (res.action_delete) p.push('D')
+    return p.length > 0 ? p.join('') : '-'
   }
 
+  const items = [
+    { label: 'Academic Structures', val: getSummary(rights.sms_academic) },
+    { label: 'Attendance', val: getSummary(rights.sms_attendance) },
+    { label: 'Gradebook', val: getSummary(rights.sms_gradebook) },
+    { label: 'CBT Exams', val: getSummary(rights.sms_exams) },
+    { label: 'Admissions', val: getSummary(rights.sms_admissions) },
+    { label: 'Tuition Fees', val: getSummary(rights.sms_fees) },
+    { label: 'Financials', val: getSummary(rights.sms_financials) },
+    { label: 'Payroll', val: getSummary(rights.sms_payroll) },
+    { label: 'HR / Staff', val: getSummary(rights.sms_hr) },
+    { label: 'Pastoral Care', val: getSummary(rights.sms_pastoral) },
+    { label: 'Clinical Desk', val: getSummary(rights.sms_counseling) },
+    { label: 'Cognia AMI', val: getSummary(rights.sms_cognia) },
+    { label: 'AI Tutor', val: getSummary(rights.ai_tutor) },
+    { label: 'Roles & Scopes', val: getSummary(rights.ems_roles) },
+    { label: 'Webhooks', val: getSummary(rights.webhooks) },
+    { label: 'Courses', val: getSummary(rights.courses) },
+    { label: 'Activities', val: getSummary(rights.activities) },
+    { label: 'Assignments', val: getSummary(rights.assignments) },
+    { label: 'Payments', val: getSummary(rights.payments) },
+    { label: 'Search', val: rights.search?.action_read ? 'R' : '-' },
+  ]
+
   return (
-    <div className="grid grid-cols-3 gap-2">
-      <div>Courses: {getPermissionSummary(rights.courses)}</div>
-      <div>Activities: {getPermissionSummary(rights.activities)}</div>
-      <div>Assignments: {getPermissionSummary(rights.assignments)}</div>
-      <div>Chapters: {getPermissionSummary(rights.coursechapters)}</div>
-      <div>Folders: {getPermissionSummary(rights.folders)}</div>
-      <div>Media: {getPermissionSummary(rights.media)}</div>
-      <div>Certs: {getPermissionSummary(rights.certifications)}</div>
-      <div>Groups: {getPermissionSummary(rights.usergroups)}</div>
-      <div>Payments: {getPermissionSummary(rights.payments)}</div>
-      <div>Search: {rights.search?.action_read ? 'R' : '-'}</div>
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-gray-50 p-3 rounded-xl border text-xs">
+      {items.map((item, idx) => (
+        <div key={idx} className="flex justify-between items-center py-1 px-2 rounded bg-white border border-gray-100">
+          <span className="text-gray-600 font-medium truncate">{item.label}</span>
+          <span className="font-mono font-bold text-gray-900 bg-gray-100 px-1.5 py-0.5 rounded text-[11px]">
+            {item.val}
+          </span>
+        </div>
+      ))}
     </div>
   )
 }
