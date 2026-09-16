@@ -126,9 +126,14 @@ const OrgEditAPIAccess: React.FC = () => {
         setTokenDescription('')
         setTokenExpiry('')
         setTokenRights(getDefaultRights())
-        setRightsPreset('readonly')
       } else {
-        toast.error(response.data?.detail || 'Failed to create token', { id: loadingToast })
+        const errorMsg =
+          typeof response.data?.detail === 'string'
+            ? response.data.detail
+            : Array.isArray(response.data?.detail)
+              ? response.data.detail.map((d: any) => d.msg || JSON.stringify(d)).join(', ')
+              : response.data?.message || 'Failed to create token'
+        toast.error(errorMsg, { id: loadingToast })
       }
     } catch (error: any) {
       toast.error(error.message || 'Failed to create token', { id: loadingToast })
