@@ -405,7 +405,7 @@ export async function regenerateAPIToken(
  * Fetch OpenAPI specification from the backend
  */
 export async function fetchOpenAPISpec(accessToken?: string) {
-  const url = `${getAPIUrl().replace('/api/v1/', '')}/openapi.json`
+  const url = `${getAPIUrl()}openapi.json`
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',

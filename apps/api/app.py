@@ -143,9 +143,15 @@ app = FastAPI(
     description="Unified API for CSG LMS, Academic SMS, Financial ERP & Admissions RevOps",
     docs_url="/docs" if learnhouse_config.general_config.development_mode else None,
     redoc_url="/redoc" if learnhouse_config.general_config.development_mode else None,
+    openapi_url="/api/v1/openapi.json",
     version="4.2.0",
     lifespan=lifespan,
 )
+
+@app.get("/openapi.json", include_in_schema=False)
+@app.get("/api/v1/openapi.json", include_in_schema=False)
+async def custom_openapi_endpoint():
+    return app.openapi()
 
 # Middleware
 configure_cors(app)
