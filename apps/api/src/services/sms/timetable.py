@@ -388,9 +388,12 @@ async def scan_timetable_conflicts(
     looked at" -- a clean timetable and an empty one are different answers.
 
     `detect_timetable_clashes` answers "would this one proposed slot conflict?"
-    and runs on write. It cannot answer "is our timetable sound?", which is the
-    question that matters once slots have been created with enforce_no_clash
-    disabled, imported in bulk, or invalidated by a later edit elsewhere.
+    and runs on write. It cannot answer "is our timetable sound?", which still
+    matters for rows written before the partial unique indexes existed, for
+    bulk imports, and for slots invalidated by a later edit elsewhere. The
+    indexes are also scoped by whether `academic_term_id` is set, so a
+    term-less slot booked against a term-scoped one is a double-booking the
+    database cannot see and only this scan will find.
 
     Groups every slot by (day, period) and reports teacher, room and section
     double-bookings within each group. Each conflicting PAIR is reported once,

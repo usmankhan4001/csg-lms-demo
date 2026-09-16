@@ -1,5 +1,6 @@
 import pytest
-from datetime import date
+from datetime import date, timedelta
+from fastapi import HTTPException
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -7,8 +8,10 @@ from src.db.sms_attendance import (
     AttendanceLeaveRequest,
     AttendanceStatus,
     LeaveRequestStatus,
+    PastoralConcern,
     StudentAttendance,
 )
+from src.db.sms_campus import ClassSection, StudentEnrollment
 from src.schemas.sms_attendance import (
     BatchRollCallRequest,
     LeaveRequestCreate,
@@ -22,6 +25,10 @@ from src.routers.sms_attendance import (
     submit_batch_roll_call,
     submit_leave_request,
     update_leave_request_status,
+)
+from src.services.sms.attendance import (
+    ABSENCE_STREAK_THRESHOLD,
+    get_consecutive_absence_streak,
 )
 
 
@@ -414,3 +421,357 @@ async def test_subscriber_survives_a_guardian_with_a_bad_address(engine):
         await _notify_guardians_of_absence_streak({"student_id": 960, "streak": 4})
 
     assert sorted(c.args[0] for c in mock_send.call_args_list) == ["broken@test.local", "ok@test.local"]
+
+
+# ── Enrolment is the roster ──
+
+
+async def _enrol(
+    db: AsyncSession,
+    *,
+    section_id: int,
+    student_id: int,
+    status: str = "active",
+    academic_year_id: int = 1,
+) -> None:
+    """Put a student on a section's register -- or take them off it."""
+    db.add(
+        StudentEnrollment(
+            student_id=student_id,
+            section_id=section_id,
+            academic_year_id=academic_year_id,
+            status=status,
+        )
+    )
+    await db.commit()
+
+
+async def _section_in_year(
+    db: AsyncSession, *, section_id: int, academic_year_id: int
+) -> None:
+    """A section belonging to one academic year, as rollover creates them."""
+    db.add(
+        ClassSection(
+            id=section_id,
+            campus_id=1,
+            academic_year_id=academic_year_id,
+            grade_level="Grade 9",
+            section_name=f"Section {section_id}",
+        )
+    )
+    await db.commit()
+
+
+async def _rows_in(db: AsyncSession, section_id: int) -> list:
+    res = await db.execute(
+        select(StudentAttendance).where(StudentAttendance.section_id == section_id)
+    )
+    return res.scalars().all()
+
+
+@pytest.mark.asyncio
+async def test_roll_call_refuses_a_student_who_is_not_on_the_register(db: AsyncSession):
+    """THE DEFECT. Authorising the SECTION proved the teacher may take this
+    register; it never proved the child was on it. Any id the client sent -- a
+    pupil from another school, a member of staff -- was written and then
+    counted, and the streak alert went to that family."""
+    section_id, on_register, stranger = 9701, 97011, 97012
+    await _enrol(db, section_id=section_id, student_id=on_register)
+
+    with pytest.raises(HTTPException) as exc:
+        await submit_batch_roll_call(
+            payload=BatchRollCallRequest(
+                section_id=section_id,
+                date=date(2026, 10, 20),
+                entries=[
+                    RollCallStudentEntry(student_id=stranger, status=AttendanceStatus.PRESENT)
+                ],
+                marked_by=50,
+            ),
+            session=db,
+            principal=_superadmin_principal(),
+        )
+
+    assert exc.value.status_code == 400
+    assert str(stranger) in exc.value.detail, "the refusal must name the id to fix"
+    assert await _rows_in(db, section_id) == [], "a refused register writes nothing"
+
+
+@pytest.mark.asyncio
+async def test_roll_call_refuses_a_student_who_has_left_the_section(db: AsyncSession):
+    """A child who transferred out last month is not on today's register."""
+    section_id, withdrawn = 9702, 97021
+    await _enrol(db, section_id=section_id, student_id=withdrawn, status="withdrawn")
+
+    with pytest.raises(HTTPException) as exc:
+        await submit_batch_roll_call(
+            payload=BatchRollCallRequest(
+                section_id=section_id,
+                date=date(2026, 10, 20),
+                entries=[
+                    RollCallStudentEntry(student_id=withdrawn, status=AttendanceStatus.PRESENT)
+                ],
+                marked_by=50,
+            ),
+            session=db,
+            principal=_superadmin_principal(),
+        )
+
+    assert exc.value.status_code == 400
+    assert await _rows_in(db, section_id) == []
+
+
+@pytest.mark.asyncio
+async def test_one_unenrolled_id_refuses_the_whole_register(db: AsyncSession):
+    """Reject the batch rather than skip the id: a register is submitted as a
+    unit and the teacher reads the response as 'the class is marked'. Silently
+    dropping one child would leave them believing it was recorded."""
+    section_id = 9703
+    for sid in (97031, 97032):
+        await _enrol(db, section_id=section_id, student_id=sid)
+
+    with pytest.raises(HTTPException) as exc:
+        await submit_batch_roll_call(
+            payload=BatchRollCallRequest(
+                section_id=section_id,
+                date=date(2026, 10, 21),
+                entries=[
+                    RollCallStudentEntry(student_id=97031, status=AttendanceStatus.PRESENT),
+                    RollCallStudentEntry(student_id=97032, status=AttendanceStatus.PRESENT),
+                    RollCallStudentEntry(student_id=97033, status=AttendanceStatus.PRESENT),
+                ],
+                marked_by=50,
+            ),
+            session=db,
+            principal=_superadmin_principal(),
+        )
+
+    assert exc.value.status_code == 400
+    assert await _rows_in(db, section_id) == [], "not even the enrolled two were written"
+
+
+@pytest.mark.asyncio
+async def test_a_section_with_no_enrolment_rows_is_still_markable(db: AsyncSession):
+    """The deliberate limit of the guard, pinned so it stays a decision rather
+    than an accident: no roster on file is not evidence of non-enrolment, so a
+    school that has not loaded enrolments can still take a register."""
+    response = await submit_batch_roll_call(
+        payload=BatchRollCallRequest(
+            section_id=9704,
+            date=date(2026, 10, 22),
+            entries=[
+                RollCallStudentEntry(student_id=97041, status=AttendanceStatus.PRESENT)
+            ],
+            marked_by=50,
+        ),
+        session=db,
+        principal=_superadmin_principal(),
+    )
+    assert response.total_recorded == 1
+
+
+# ── A streak is consecutive CALENDAR days ──
+
+
+@pytest.mark.asyncio
+async def test_a_stale_row_from_last_year_does_not_readmit_a_child_who_left(
+    db: AsyncSession,
+):
+    """Enrolment is per ACADEMIC YEAR, so the roster has to be read in the
+    section's own year. This child was active on this section last year and
+    withdrew for this one; reading the section's rows without the year finds
+    last year's 'active' and waves them onto today's register."""
+    section_id, student_id = 9708, 97081
+    await _section_in_year(db, section_id=section_id, academic_year_id=2026)
+    await _enrol(
+        db, section_id=section_id, student_id=student_id,
+        status="active", academic_year_id=2025,
+    )
+    await _enrol(
+        db, section_id=section_id, student_id=student_id,
+        status="withdrawn", academic_year_id=2026,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await submit_batch_roll_call(
+            payload=BatchRollCallRequest(
+                section_id=section_id,
+                date=date(2026, 10, 23),
+                entries=[
+                    RollCallStudentEntry(student_id=student_id, status=AttendanceStatus.PRESENT)
+                ],
+                marked_by=50,
+            ),
+            session=db,
+            principal=_superadmin_principal(),
+        )
+
+    assert exc.value.status_code == 400
+    assert await _rows_in(db, section_id) == []
+
+
+@pytest.mark.asyncio
+async def test_this_years_enrolment_is_what_counts(db: AsyncSession):
+    """The mirror image, pinned so year-scoping cannot over-reach: a child
+    withdrawn in an EARLIER year but active in the section's current year IS on
+    the register. An old row must not veto a current one."""
+    section_id, student_id = 9709, 97091
+    await _section_in_year(db, section_id=section_id, academic_year_id=2026)
+    await _enrol(
+        db, section_id=section_id, student_id=student_id,
+        status="withdrawn", academic_year_id=2025,
+    )
+    await _enrol(
+        db, section_id=section_id, student_id=student_id,
+        status="active", academic_year_id=2026,
+    )
+
+    response = await submit_batch_roll_call(
+        payload=BatchRollCallRequest(
+            section_id=section_id,
+            date=date(2026, 10, 24),
+            entries=[
+                RollCallStudentEntry(student_id=student_id, status=AttendanceStatus.PRESENT)
+            ],
+            marked_by=50,
+        ),
+        session=db,
+        principal=_superadmin_principal(),
+    )
+    assert response.total_recorded == 1
+
+
+@pytest.mark.asyncio
+async def test_a_section_rolled_forward_before_its_enrolments_is_still_markable(
+    db: AsyncSession,
+):
+    """The fallback, pinned: the section says 2026 but its enrolments are still
+    filed under 2025 (rollover half-applied). Filtering strictly would yield an
+    EMPTY roster, and an empty roster is authoritative -- every register for
+    that section would be refused. Fall back to the rows we do have."""
+    section_id, student_id = 9710, 97101
+    await _section_in_year(db, section_id=section_id, academic_year_id=2026)
+    await _enrol(
+        db, section_id=section_id, student_id=student_id,
+        status="active", academic_year_id=2025,
+    )
+
+    response = await submit_batch_roll_call(
+        payload=BatchRollCallRequest(
+            section_id=section_id,
+            date=date(2026, 10, 25),
+            entries=[
+                RollCallStudentEntry(student_id=student_id, status=AttendanceStatus.PRESENT)
+            ],
+            marked_by=50,
+        ),
+        session=db,
+        principal=_superadmin_principal(),
+    )
+    assert response.total_recorded == 1
+
+
+@pytest.mark.asyncio
+async def test_isolated_absences_weeks_apart_do_not_form_a_streak(db: AsyncSession):
+    """THE DEFECT. Three separate absences with no register taken in between
+    (a cover teacher, a school trip) used to read as '3 days running'."""
+    student_id, section_id = 97051, 9705
+    for day in (date(2026, 9, 4), date(2026, 9, 18), date(2026, 9, 29)):
+        db.add(
+            StudentAttendance(
+                student_id=student_id,
+                section_id=section_id,
+                date=day,
+                status=AttendanceStatus.ABSENT,
+                marked_by=1,
+            )
+        )
+    await db.commit()
+
+    streak = await get_consecutive_absence_streak(db, student_id, section_id)
+    assert streak == 1, f"three isolated absences counted as a run of {streak}"
+    assert streak < ABSENCE_STREAK_THRESHOLD
+
+
+@pytest.mark.asyncio
+async def test_three_consecutive_calendar_days_still_reach_the_threshold(db: AsyncSession):
+    """The alert must still fire for a genuine three-day absence."""
+    student_id, section_id = 97061, 9706
+    for offset in range(ABSENCE_STREAK_THRESHOLD):
+        db.add(
+            StudentAttendance(
+                student_id=student_id,
+                section_id=section_id,
+                date=date(2026, 9, 1) + timedelta(days=offset),
+                status=AttendanceStatus.ABSENT,
+                marked_by=1,
+            )
+        )
+    await db.commit()
+
+    assert (
+        await get_consecutive_absence_streak(db, student_id, section_id)
+        == ABSENCE_STREAK_THRESHOLD
+    )
+
+
+@pytest.mark.asyncio
+async def test_isolated_absences_do_not_escalate_to_the_family(db: AsyncSession):
+    """The harm, end to end: a third ISOLATED absence must not open a pastoral
+    concern or send 'absent 3 days in a row' to the child's family."""
+    from datetime import datetime as _dt
+    from unittest.mock import AsyncMock, patch
+
+    from src.db.sms_identity import StudentGuardian
+    from src.db.users import User
+
+    student_id, section_id = 97071, 9707
+    for day in (date(2026, 9, 4), date(2026, 9, 18)):
+        db.add(
+            StudentAttendance(
+                student_id=student_id,
+                section_id=section_id,
+                date=day,
+                status=AttendanceStatus.ABSENT,
+                marked_by=1,
+            )
+        )
+
+    db.add(
+        User(
+            id=97072, username="g9707", first_name="Parent", last_name="Seven",
+            email="g9707@test.local", password="x", user_uuid="uuid-97072",
+            creation_date=str(_dt.now()), update_date=str(_dt.now()),
+        )
+    )
+    await db.flush()
+    db.add(StudentGuardian(guardian_user_id=97072, student_id=student_id))
+    await db.commit()
+
+    with patch(
+        "src.routers.sms_attendance.raise_school_event", new=AsyncMock()
+    ) as mock_raise:
+        await submit_batch_roll_call(
+            payload=BatchRollCallRequest(
+                section_id=section_id,
+                date=date(2026, 9, 29),
+                entries=[
+                    RollCallStudentEntry(student_id=student_id, status=AttendanceStatus.ABSENT)
+                ],
+                marked_by=50,
+            ),
+            session=db,
+            principal=_superadmin_principal(),
+        )
+
+    # The family is still told about TODAY's absence -- they are just not told
+    # the child has been away for three days running.
+    mock_raise.assert_awaited_once()
+    assert mock_raise.await_args.kwargs["event_key"] == "attendance.absence_recorded"
+
+    concerns = (
+        await db.execute(
+            select(PastoralConcern).where(PastoralConcern.student_id == student_id)
+        )
+    ).scalars().all()
+    assert concerns == [], "an isolated absence must not open a pastoral concern"

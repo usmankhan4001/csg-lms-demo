@@ -33,6 +33,15 @@ from src.db.sms_campus import (
     StudentEnrollmentRead,
 )
 
+from src.db.sms_facilities import (
+    ClassroomType,
+    Classroom,
+    ClassroomBase,
+    ClassroomCreate,
+    ClassroomUpdate,
+    ClassroomRead,
+)
+
 from src.db.ems_roles import (
     ScopeLevel,
     ResourceDomain,
@@ -66,6 +75,19 @@ from src.db.sms_section_subject import (
     SectionSubjectReadDetailed,
 )
 
+from src.db.sms_curriculum import (
+    Program,
+    ProgramBase,
+    ProgramCreate,
+    ProgramUpdate,
+    ProgramRead,
+    SyllabusTopic,
+    SyllabusTopicBase,
+    SyllabusTopicCreate,
+    SyllabusTopicUpdate,
+    SyllabusTopicRead,
+)
+
 from src.db.sms_document_template import (
     SchoolBrandingSettings,
     SMSDocumentTemplate,
@@ -73,6 +95,14 @@ from src.db.sms_document_template import (
 
 from src.db.sms_audit_log import (
     SMSDocumentAuditLog,
+)
+
+from src.db.sms_transport import (
+    StudentTransportAssignment,
+    TransportRoute,
+    TransportRouteStop,
+    TransportVehicle,
+    VehicleTypeEnum,
 )
 
 __all__ = [
@@ -102,6 +132,13 @@ __all__ = [
     "StudentEnrollmentCreate",
     "StudentEnrollmentUpdate",
     "StudentEnrollmentRead",
+    # Facilities Models
+    "ClassroomType",
+    "Classroom",
+    "ClassroomBase",
+    "ClassroomCreate",
+    "ClassroomUpdate",
+    "ClassroomRead",
     # Curricular Bridge Models
     "SectionSubject",
     "SectionSubjectBase",
@@ -131,9 +168,26 @@ __all__ = [
     "DEFAULT_EMS_ROLE_SPECS",
     "seed_default_ems_roles",
     "seed_default_ems_roles_sync",
+    # Curriculum Masters (Programs & Syllabus Topics)
+    "Program",
+    "ProgramBase",
+    "ProgramCreate",
+    "ProgramUpdate",
+    "ProgramRead",
+    "SyllabusTopic",
+    "SyllabusTopicBase",
+    "SyllabusTopicCreate",
+    "SyllabusTopicUpdate",
+    "SyllabusTopicRead",
     # Document Engine & Branding Models
     "SchoolBrandingSettings",
     "SMSDocumentTemplate",
     "SMSDocumentAuditLog",
+    # Transport Fleet & Routes
+    "TransportVehicle",
+    "TransportRoute",
+    "TransportRouteStop",
+    "StudentTransportAssignment",
+    "VehicleTypeEnum",
 ]
 

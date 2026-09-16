@@ -24,19 +24,27 @@ record (that's StudentAttendance itself, unaffected either way).
 import asyncio
 import logging
 from collections import OrderedDict
-from typing import List
+from datetime import date
+from typing import List, Optional, Set
 
 from sqlalchemy import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.event_bus import bus
 from src.db.sms_attendance import AttendanceStatus, StudentAttendance
+from src.db.sms_campus import ClassSection, StudentEnrollment
 from src.db.sms_identity import StudentGuardian
 from src.db.users import User
 
 logger = logging.getLogger(__name__)
 
 ABSENCE_STREAK_THRESHOLD = 3
+
+# StudentEnrollment.status is free text ('active', 'transferred',
+# 'graduated', 'withdrawn' -- see db/sms_campus.py). Only 'active' puts a
+# child on a section's register; the other three are exactly the children a
+# register must not be taken for.
+ACTIVE_ENROLLMENT_STATUS = "active"
 
 # How bad a status is, for collapsing several period records into one verdict
 # for the day. ABSENT beats LATE beats EXCUSED beats PRESENT.
@@ -72,6 +80,69 @@ def collapse_to_daily_status(records) -> "OrderedDict":
     return worst
 
 
+async def get_active_roster(session: AsyncSession, section_id: int) -> Optional[Set[int]]:
+    """The ids of the students ACTIVELY enrolled in this section.
+
+    Returns None, not an empty set, when the section has NO enrolment rows at
+    all. Those are different facts and callers must not collapse them:
+
+      * a set (even an empty one) is an authoritative roster -- anyone absent
+        from it is not on the register;
+      * None means the school has no enrolment data for this section, so
+        "not in the roster" cannot be distinguished from "the roster was never
+        loaded". Refusing a register on that basis would stop a school taking
+        attendance at all, which is worse than the gap it closes. Absence of
+        data is not evidence of non-enrolment -- the same rule that keeps a
+        month with no register from being reported as 0%.
+
+    Deliberately reads every enrolment row for the section rather than
+    filtering on status in SQL, so that "has a roster" and "is on it" come
+    from one query and cannot disagree.
+    """
+    # ENROLMENT IS PER ACADEMIC YEAR. StudentEnrollment is unique on
+    # (student_id, academic_year_id), so a child who stays on the same section
+    # across a rollover has one row per year -- and a section that was never
+    # re-created carries LAST year's 'active' row next to THIS year's
+    # 'withdrawn' one. Filtering on section_id alone would read the stale row
+    # and wave through a child who left in August.
+    #
+    # The section's own year is the authority for which rows are current
+    # (ClassSection.academic_year_id, set by services/sms/academic_rollover.py).
+    section_year = (
+        await session.execute(
+            select(ClassSection.academic_year_id).where(ClassSection.id == section_id)
+        )
+    ).scalar_one_or_none()
+
+    rows = (
+        await session.execute(
+            select(
+                StudentEnrollment.student_id,
+                StudentEnrollment.status,
+                StudentEnrollment.academic_year_id,
+            ).where(StudentEnrollment.section_id == section_id)
+        )
+    ).all()
+    if not rows:
+        return None
+
+    if section_year is not None:
+        this_year = [row for row in rows if row[2] == section_year]
+        # Only fall back to the section's whole enrolment history when its own
+        # year has NO rows. A school mid-rollover (section rolled forward,
+        # enrolments not yet) would otherwise be handed an empty roster, and an
+        # empty set is authoritative -- every register would be refused. That
+        # outage is worse than the stale-row gap this fallback reopens.
+        if this_year:
+            rows = this_year
+
+    return {
+        student_id
+        for student_id, status, _academic_year_id in rows
+        if status == ACTIVE_ENROLLMENT_STATUS
+    }
+
+
 async def get_consecutive_absence_streak(
     session: AsyncSession,
     student_id: int,
@@ -98,6 +169,9 @@ async def get_consecutive_absence_streak(
 
     Day-level registers (period_id NULL) are unaffected: one row per date, so
     "every record that day is ABSENT" is the same test as before.
+
+    The run is also required to be CONTIGUOUS IN CALENDAR DAYS, not merely
+    contiguous in the rows returned. See the note in the body.
     """
     stmt = (
         select(StudentAttendance)
@@ -116,7 +190,7 @@ async def get_consecutive_absence_streak(
     # absent because of one missed period, and a child who attended five of six
     # periods was in school. A streak asks the opposite question, so a date
     # counts only when EVERY record for it is ABSENT.
-    fully_absent_by_date: "OrderedDict[object, bool]" = OrderedDict()
+    fully_absent_by_date: "OrderedDict[date, bool]" = OrderedDict()
     for record in records:
         is_absent = record.status == AttendanceStatus.ABSENT
         if record.date in fully_absent_by_date:
@@ -124,11 +198,29 @@ async def get_consecutive_absence_streak(
         else:
             fully_absent_by_date[record.date] = is_absent
 
+    # CALENDAR CONTIGUITY. The keys above are only the days a register was
+    # actually taken. Walking them as though they were consecutive counted a
+    # child absent on Fri 5 Sep and Mon 29 Sep -- nothing in between because
+    # of a cover teacher or a school trip -- as "absent 2 days running", and
+    # one more isolated absence emailed the family "absent 3 days in a row"
+    # for three absences weeks apart. A streak is a run of CALENDAR days, so
+    # a gap of more than one day ends it.
+    #
+    # LIMIT, and it is a real one: there is no school-calendar model in the
+    # schema, so a weekend or a holiday still breaks a run (Fri -> Mon is a
+    # three-day gap). That errs towards under-reporting rather than inventing
+    # a figure, which is the direction this codebase takes, but it does mean a
+    # genuine Mon/Tue/Wed absence either side of a closure goes undetected
+    # until something exists that says which days were school days.
     streak = 0
-    for fully_absent in fully_absent_by_date.values():
+    previous_date = None
+    for current_date, fully_absent in fully_absent_by_date.items():
         if not fully_absent:
             break
+        if previous_date is not None and (previous_date - current_date).days > 1:
+            break
         streak += 1
+        previous_date = current_date
     return streak
 
 

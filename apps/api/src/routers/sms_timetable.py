@@ -2,6 +2,7 @@ import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, select
+from sqlalchemy.exc import IntegrityError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.events.database import get_db_session
@@ -26,6 +27,7 @@ from src.schemas.sms_timetable import (
     TimetableConflictScanResponse,
     TimetableScheduleCreate,
     TimetableScheduleRead,
+    TimetableScheduleUpdate,
     TimetableSlotDetail,
     TimetableSubstitutionCreate,
     TimetableSubstitutionRead,
@@ -69,6 +71,18 @@ _SUBSTITUTION_MANAGER = ["SUPER_ADMIN", "SCHOOL_ADMIN", "TEACHER", "STAFF"]
 # substitution audience rather than the scheduler one.
 _CLASH_CHECKER = _SUBSTITUTION_MANAGER
 
+# The columns that make a slot what it is, i.e. the ones a clash is computed
+# over. Used to resolve an update's post-edit values before checking it.
+_SLOT_FIELDS = (
+    "section_id",
+    "course_id",
+    "teacher_id",
+    "day_of_week",
+    "period_id",
+    "room_number",
+    "academic_term_id",
+)
+
 from src.db.users import User
 from src.services.sms.school_events import (
     SUBSTITUTION_ASSIGNED,
@@ -78,6 +92,50 @@ from src.services.sms.school_events import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(require_sms_timetable_feature)])
+
+
+async def _raise_clash_conflict(
+    session: AsyncSession,
+    *,
+    section_id: int,
+    course_id: int,
+    teacher_id: int,
+    day_of_week: str,
+    period_id: int,
+    room_number: Optional[str],
+    academic_term_id: Optional[int],
+    exclude_schedule_id: Optional[int] = None,
+) -> None:
+    """Raise 409 naming the clash, after the database rejected a write.
+
+    The pre-check is a read-then-write, so by the time the INSERT/UPDATE is
+    refused the row that won the race is visible and the same detector that
+    builds the pre-check message can name it. If it is still not visible (a
+    concurrent writer that has not committed yet) fall back to a message that
+    at least says which slot was contested.
+    """
+    clashes = await detect_timetable_clashes(
+        session=session,
+        section_id=section_id,
+        course_id=course_id,
+        teacher_id=teacher_id,
+        day_of_week=day_of_week,
+        period_id=period_id,
+        room_number=room_number,
+        academic_term_id=academic_term_id,
+        exclude_schedule_id=exclude_schedule_id,
+    )
+    if clashes:
+        detail = "Cannot schedule slot due to conflict(s): " + "; ".join(
+            c.description for c in clashes
+        )
+    else:
+        detail = (
+            f"Cannot schedule slot: teacher {teacher_id} or section "
+            f"{section_id} is already timetabled on "
+            f"{day_of_week.upper()}, period {period_id}."
+        )
+    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
 
 # ── Class Periods ──
@@ -164,11 +222,15 @@ async def check_clashes_endpoint(
     response_model=TimetableScheduleRead,
     status_code=status.HTTP_201_CREATED,
     summary="Create Timetable Schedule Slot",
-    description="Create a timetable schedule entry after validating against conflicts.",
+    description=(
+        "Create a timetable schedule entry. Clashes are rejected: the "
+        "partial unique indexes on sms_timetable_schedule are the authority, "
+        "so there is no way to ask for a conflicting slot to be written "
+        "anyway."
+    ),
 )
 async def create_timetable_schedule(
     payload: TimetableScheduleCreate,
-    enforce_no_clash: bool = Query(True, description="Reject creation if clashes exist"),
     session: AsyncSession = Depends(get_db_session),
     principal: KeycloakUserPrincipal = Depends(require_roles(_SCHEDULER)),
 ) -> TimetableScheduleRead:
@@ -183,8 +245,11 @@ async def create_timetable_schedule(
             detail=f"Class period with ID {payload.period_id} does not exist.",
         )
 
-    # Check clashes
-    should_enforce = enforce_no_clash if isinstance(enforce_no_clash, bool) else True
+    # Pre-check, kept for the message: it names the clashing section, course
+    # and room, which a bare constraint violation cannot. It is NOT the guard
+    # -- it is a read-then-write, so a concurrent create can slip past it.
+    # The partial unique indexes on sms_timetable_schedule are what actually
+    # prevent the clash.
     clashes = await detect_timetable_clashes(
         session=session,
         section_id=payload.section_id,
@@ -196,7 +261,7 @@ async def create_timetable_schedule(
         academic_term_id=payload.academic_term_id,
     )
 
-    if should_enforce and clashes:
+    if clashes:
         descriptions = "; ".join([c.description for c in clashes])
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -213,7 +278,116 @@ async def create_timetable_schedule(
         academic_term_id=payload.academic_term_id,
     )
     session.add(schedule)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        # The database rejected the insert: either a concurrent create won the
+        # race the pre-check above could not see, or the slot clashes in a way
+        # only the constraint covers. Roll back and report it as a conflict
+        # rather than letting it surface as a 500.
+        await session.rollback()
+        await _raise_clash_conflict(
+            session=session,
+            section_id=payload.section_id,
+            course_id=payload.course_id,
+            teacher_id=payload.teacher_id,
+            day_of_week=day_str,
+            period_id=payload.period_id,
+            room_number=payload.room_number,
+            academic_term_id=payload.academic_term_id,
+        )
+    await session.refresh(schedule)
+    return TimetableScheduleRead.model_validate(schedule)
+
+
+@router.put(
+    "/schedules/{schedule_id}",
+    response_model=TimetableScheduleRead,
+    summary="Update Timetable Schedule Slot",
+    description=(
+        "Move or reassign an existing slot. Clashes are rejected exactly as on "
+        "create: the same check runs against the slot's NEW values, with the "
+        "slot itself excluded from its own comparison, and the partial unique "
+        "indexes remain the final authority -- so an edit cannot double-book a "
+        "teacher or a section any more than a create can."
+    ),
+    responses={
+        404: {"description": "Schedule or class period not found"},
+        409: {"description": "The updated slot clashes with an existing one"},
+    },
+)
+async def update_timetable_schedule(
+    schedule_id: int,
+    payload: TimetableScheduleUpdate,
+    session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(require_roles(_SCHEDULER)),
+) -> TimetableScheduleRead:
+    schedule = await session.get(TimetableSchedule, schedule_id)
+    if schedule is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Timetable schedule with ID {schedule_id} does not exist.",
+        )
+
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        return TimetableScheduleRead.model_validate(schedule)
+
+    # Resolve the slot as it WILL be, not as it is: a clash check against the
+    # stored values would wave through an edit that creates the conflict.
+    effective = {
+        name: changes.get(name, getattr(schedule, name)) for name in _SLOT_FIELDS
+    }
+    day_value = effective["day_of_week"]
+    day_str = day_value.value if isinstance(day_value, DayOfWeek) else str(day_value)
+    effective["day_of_week"] = day_str.upper()
+
+    if effective["period_id"] != schedule.period_id:
+        period_res = await session.execute(
+            select(ClassPeriod).where(ClassPeriod.id == effective["period_id"])
+        )
+        if not period_res.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Class period with ID {effective['period_id']} does not exist.",
+            )
+
+    clashes = await detect_timetable_clashes(
+        session=session,
+        section_id=effective["section_id"],
+        course_id=effective["course_id"],
+        teacher_id=effective["teacher_id"],
+        day_of_week=day_str,
+        period_id=effective["period_id"],
+        room_number=effective["room_number"],
+        academic_term_id=effective["academic_term_id"],
+        exclude_schedule_id=schedule_id,
+    )
+    if clashes:
+        descriptions = "; ".join([c.description for c in clashes])
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot schedule slot due to conflict(s): {descriptions}",
+        )
+
+    for name, value in effective.items():
+        setattr(schedule, name, value)
+
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        await _raise_clash_conflict(
+            session=session,
+            section_id=effective["section_id"],
+            course_id=effective["course_id"],
+            teacher_id=effective["teacher_id"],
+            day_of_week=day_str,
+            period_id=effective["period_id"],
+            room_number=effective["room_number"],
+            academic_term_id=effective["academic_term_id"],
+            exclude_schedule_id=schedule_id,
+        )
     await session.refresh(schedule)
     return TimetableScheduleRead.model_validate(schedule)
 
@@ -478,7 +652,7 @@ async def generate_timetable_endpoint(
     description=(
         "Reports double-bookings that ALREADY EXIST, as opposed to "
         "/check-clashes which asks whether one PROPOSED slot would conflict. "
-        "Needed because slots can be created with enforce_no_clash=false, and "
+        "Needed for rows written before the unique indexes existed, and "
         "because a later edit elsewhere can invalidate a slot that was sound "
         "when it was made."
     ),

@@ -111,7 +111,7 @@ async def test_timetable_conflict_solver_teacher_clash(db: AsyncSession):
     assert check_res.has_clash is True
     assert any(c.clash_type == ClashType.TEACHER_DOUBLE_BOOKED for c in check_res.clashes)
 
-    # Attempting to create schedule with enforce_no_clash=True raises 409
+    # Attempting to create the clashing schedule raises 409
     with pytest.raises(HTTPException) as exc_info:
         await create_timetable_schedule(
             payload=TimetableScheduleCreate(
@@ -123,7 +123,6 @@ async def test_timetable_conflict_solver_teacher_clash(db: AsyncSession):
                 room_number="Room 102",
                 academic_term_id=1,
             ),
-            enforce_no_clash=True,
             session=db,
         )
     assert exc_info.value.status_code == 409

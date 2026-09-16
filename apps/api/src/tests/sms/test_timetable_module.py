@@ -233,13 +233,15 @@ async def test_generation_writes_when_dry_run_is_explicitly_false(db: AsyncSessi
 @pytest.mark.asyncio
 async def test_conflict_scan_finds_an_existing_double_booking(db: AsyncSession):
     """/check-clashes asks about a PROPOSED slot. This asks whether the
-    timetable we already have is sound -- which matters because slots can be
-    created with enforce_no_clash disabled."""
+    timetable we already have is sound -- which still matters now that the
+    unique indexes reject a same-term clash on write: they are scoped by
+    whether academic_term_id is set, so a term-less slot booked against a
+    term-scoped one is a double-booking the database cannot see."""
     section_a = await _seed_section(db)
     section_b = await _seed_section(db)
     period_ids = await _seed_periods(db, campus_id=1, count=1)
 
-    for section_id in (section_a, section_b):
+    for section_id, term_id in ((section_a, 1), (section_b, None)):
         db.add(
             TimetableSchedule(
                 section_id=section_id,
@@ -247,6 +249,7 @@ async def test_conflict_scan_finds_an_existing_double_booking(db: AsyncSession):
                 teacher_id=11,  # same teacher, same slot, two sections
                 day_of_week="MONDAY",
                 period_id=period_ids[0],
+                academic_term_id=term_id,
             )
         )
     await db.commit()

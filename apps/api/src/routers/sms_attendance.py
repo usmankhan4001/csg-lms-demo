@@ -64,6 +64,7 @@ from src.services.notifications import resolve_guardians_of
 from src.services.sms.attendance import (
     ABSENCE_STREAK_THRESHOLD,
     collapse_to_daily_status,
+    get_active_roster,
     get_consecutive_absence_streak,
 )
 from src.services.sms.school_events import (
@@ -241,6 +242,37 @@ async def submit_batch_roll_call(
     # plain path/query dependency like require_own_student_or_privileged --
     # see school_ownership.py's module docstring.
     await assert_owns_section_or_privileged(principal, payload.section_id, session)
+
+    # ENROLMENT IS THE ROSTER. The check above proves the CALLER may take this
+    # register; it says nothing about who is on it. Without this, any id the
+    # client sent -- a child who transferred out last month, a student from
+    # another school, a member of staff -- was written to the register and then
+    # counted: the monthly percentage included them, and the absence-streak
+    # alert went to their family.
+    #
+    # REJECT THE WHOLE BATCH rather than dropping the unknown ids. A register
+    # is submitted as a unit and the teacher reads the response as "the class
+    # is marked"; silently skipping ids would leave them believing a child was
+    # recorded when they were not, which is the same class of fabrication as
+    # reporting a figure nobody measured. A 400 naming the ids is answerable --
+    # re-enrol the child, or take them off the register.
+    #
+    # A section with NO enrolment rows at all is not rejected: see
+    # get_active_roster. There is no roster to contradict, and blocking the
+    # register would stop a school that has not loaded enrolments from taking
+    # attendance at all.
+    roster = await get_active_roster(session, payload.section_id)
+    if roster is not None:
+        not_enrolled = sorted({entry.student_id for entry in payload.entries} - roster)
+        if not_enrolled:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Not actively enrolled in section {payload.section_id}: "
+                    f"{not_enrolled}. Remove them from the register, or "
+                    "re-enrol them before taking it."
+                ),
+            )
 
     student_ids = [entry.student_id for entry in payload.entries]
 
@@ -1043,6 +1075,24 @@ async def bulk_mark_range(
                 "roll-call for this section first."
             ),
         )
+
+    # Same roster check as roll-call, for the same reason: bulk-marking a
+    # child who left the section last term writes attendance for somebody who
+    # is not here, and a whole-section PRESENT sweep would then inflate the
+    # section's percentage. Rejected rather than skipped -- a bulk action that
+    # quietly covers only part of the section is worse than one that refuses.
+    roster = await get_active_roster(session, payload.section_id)
+    if roster is not None:
+        not_enrolled = sorted(set(student_ids) - roster)
+        if not_enrolled:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Not actively enrolled in section {payload.section_id}: "
+                    f"{not_enrolled}. Remove them from the request, or "
+                    "re-enrol them first."
+                ),
+            )
 
     dates = [
         payload.start_date + datetime.timedelta(days=offset) for offset in range(span_days)

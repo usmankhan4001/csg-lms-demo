@@ -15,6 +15,7 @@ from src.routers import (
     sms_attendance,
     sms_campus,
     sms_counseling,
+    sms_curriculum,
     sms_fees,
     sms_fee_webhooks,
     sms_financials,
@@ -44,12 +45,15 @@ from src.routers import (
     sms_pathways,
     sms_hostel,
     sms_inventory,
+    sms_facilities,
+    sms_transport,
     sms_section_subjects,
     sms_matriculation,
     sms_documents,
     sms_exports,
     live_classes,
     live_class_webhooks,
+    sms_live_class_attendance,
 )
 from src.routers import ems_roles
 from src.routers import mfa as mfa_router_module
@@ -683,6 +687,14 @@ v1_router.include_router(
     # path-based CSRF exemption for this same route.
 )
 
+# Live-class telemetry -> school attendance register. Carries its own
+# per-handler require_roles, so it is not double-gated at the mount.
+v1_router.include_router(
+    sms_live_class_attendance.router,
+    prefix="/live",
+    tags=["live-classes"],
+)
+
 v1_router.include_router(
     sms_financials.router,
     prefix="/sms/financials",
@@ -798,6 +810,21 @@ v1_router.include_router(
     tags=["sms-pathways"],
 )
 
+# Domain 1: Campuses & Classrooms. The router carries its own /sms/facilities
+# prefix, matching sms_events_facilities (a different module: venue booking).
+v1_router.include_router(
+    sms_facilities.router,
+    tags=["sms-facilities"],
+)
+
+# Curriculum Masters: Programs (boards/qualifications) and Syllabus Topics.
+# The router carries its own prefix (/sms/curriculum) and per-handler Keycloak
+# role gates, so it is mounted bare -- same shape as sms_pathways.
+v1_router.include_router(
+    sms_curriculum.router,
+    tags=["sms-curriculum"],
+)
+
 # M36 Hostel & Dormitory. The router was written, tested and campus-scoped but
 # never mounted, so all 19 endpoints were unreachable over HTTP. Its own
 # APIRouter already carries require_sms_hostel_feature.
@@ -812,6 +839,15 @@ v1_router.include_router(
     sms_inventory.router,
     prefix="/sms/inventory",
     tags=["sms-inventory"],
+)
+
+# M35 Transport Fleet & Routes. No sms_transport entry exists on AdminToggles,
+# so unlike hostel/inventory this router mounts without a feature-flag
+# dependency.
+v1_router.include_router(
+    sms_transport.router,
+    prefix="/sms/transport",
+    tags=["sms-transport"],
 )
 
 # CSG-EMS Dynamic RBAC & Role Management

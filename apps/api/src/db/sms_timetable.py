@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlmodel import Field, SQLModel
 
@@ -92,6 +93,62 @@ class TimetableSchedule(SQLModel, table=True):
             "period_id",
             "academic_term_id",
         ),
+        # ── Uniqueness, not just lookup ──
+        # A teacher cannot stand in front of two sections in one period, and a
+        # section cannot attend two lessons at once. Enforced here rather than
+        # only in the service because the service check is a read-then-write:
+        # two concurrent creates both see an empty slot and both insert.
+        #
+        # `academic_term_id` is nullable and NULL != NULL in SQL, so a single
+        # unique index would let unlimited duplicates through wherever the term
+        # is unset -- which is every school that does not run terms. Two
+        # partial indexes per key cover it: one for term-scoped rows, one for
+        # the term-less ones.
+        Index(
+            "uq_sms_tt_teacher_slot_term",
+            "teacher_id",
+            "day_of_week",
+            "period_id",
+            "academic_term_id",
+            unique=True,
+            postgresql_where=text("academic_term_id IS NOT NULL"),
+            sqlite_where=text("academic_term_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_sms_tt_teacher_slot_no_term",
+            "teacher_id",
+            "day_of_week",
+            "period_id",
+            unique=True,
+            postgresql_where=text("academic_term_id IS NULL"),
+            sqlite_where=text("academic_term_id IS NULL"),
+        ),
+        Index(
+            "uq_sms_tt_section_slot_term",
+            "section_id",
+            "day_of_week",
+            "period_id",
+            "academic_term_id",
+            unique=True,
+            postgresql_where=text("academic_term_id IS NOT NULL"),
+            sqlite_where=text("academic_term_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_sms_tt_section_slot_no_term",
+            "section_id",
+            "day_of_week",
+            "period_id",
+            unique=True,
+            postgresql_where=text("academic_term_id IS NULL"),
+            sqlite_where=text("academic_term_id IS NULL"),
+        ),
+        # Room is deliberately NOT constrained here. `room_number` is free
+        # text, and a slot carries no campus of its own (it reaches one only
+        # through period_id), so a unique index over it would reject "Room 1"
+        # at two different campuses in the same period -- a false clash -- while
+        # still missing "Room 1" against "room 1" at the same one, because the
+        # service compares case- and whitespace-insensitively and an index
+        # cannot. Room double-booking stays a service-level check.
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
