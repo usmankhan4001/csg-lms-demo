@@ -128,6 +128,32 @@ async def dispatch_webhooks(
     )
 
 
+def dispatch_event_task(
+    event_name: str,
+    org_id: int,
+    data: dict,
+    webhook_ids: Optional[List[int]] = None,
+) -> None:
+    """Synchronous / fire-and-forget helper that safely schedules webhook delivery onto the active asyncio event loop."""
+    try:
+        validate_event_data(event_name, data)
+        try:
+            loop = asyncio.get_running_loop()
+            task = loop.create_task(
+                _deliver_webhooks(event_name, org_id, data, webhook_ids)
+            )
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
+            task.add_done_callback(
+                lambda t: logger.error("Webhook delivery batch failed: %s", t.exception())
+                if not t.cancelled() and t.exception() else None
+            )
+        except RuntimeError:
+            pass
+    except Exception as e:
+        logger.warning("Failed to dispatch webhook event %s: %s", event_name, e)
+
+
 async def _deliver_webhooks(
     event_name: str,
     org_id: int,
