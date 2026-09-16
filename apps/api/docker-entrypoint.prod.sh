@@ -88,14 +88,14 @@ fi
 #
 # A deployment that refuses to start is a page at 3am. A deployment that starts
 # with the wrong schema is a corrupted database nobody notices for a week.
-echo "📦 [CSG-LMS] Executing Database Migrations (alembic upgrade head)..."
+echo "📦 [CSG-LMS] Executing Database Migrations (alembic upgrade heads)..."
 
 run_migrations() {
     if command -v alembic >/dev/null 2>&1; then
-        alembic upgrade head && return 0
+        alembic upgrade heads && return 0
         echo "⚠️  alembic on PATH failed; retrying via the python module..."
     fi
-    python -m alembic upgrade head
+    python -m alembic upgrade heads
 }
 
 if ! run_migrations; then

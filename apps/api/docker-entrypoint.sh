@@ -67,6 +67,13 @@ export PYTHONUNBUFFERED=1
 export PYTHONIOENCODING=utf-8
 
 # Get port from config or use default
+echo "Executing database migrations (alembic upgrade heads)..."
+if command -v alembic >/dev/null 2>&1; then
+    alembic upgrade heads || python -m alembic upgrade heads || true
+else
+    python -m alembic upgrade heads || true
+fi
+
 PORT=${LEARNHOUSE_PORT:-9000}
 HOST=${HOSTNAME:-0.0.0.0}
 

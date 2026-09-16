@@ -415,6 +415,18 @@ async def _bootstrap_schema():
         # Create all tables
         if not is_testing:
             await conn.run_sync(SQLModel.metadata.create_all)
+            try:
+                from sqlalchemy import text
+                # Self-healing DDL for schema evolution on existing tables
+                await conn.execute(text("ALTER TABLE apitoken ADD COLUMN IF NOT EXISTS scopes JSON DEFAULT '[]'::json"))
+                await conn.execute(text("ALTER TABLE apitoken ADD COLUMN IF NOT EXISTS rights JSON"))
+                await conn.execute(text("ALTER TABLE apitoken ADD COLUMN IF NOT EXISTS token_prefix VARCHAR(12) DEFAULT ''"))
+                await conn.execute(text("ALTER TABLE apitoken ADD COLUMN IF NOT EXISTS token_uuid VARCHAR(100) DEFAULT ''"))
+                await conn.execute(text("ALTER TABLE apitoken ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE"))
+                await conn.execute(text("ALTER TABLE apitoken ALTER COLUMN token_hash TYPE VARCHAR(255)"))
+            except Exception as schema_err:
+                logging.warning("Automatic column self-healing encountered an issue (non-fatal): %s", schema_err)
+
 
 
 async def connect_to_db(app: FastAPI):
