@@ -20,8 +20,10 @@ from src.schemas.sms_fees import (
     StudentFeeLedgerResponse,
     StudentFeeVoucherRead,
 )
+from src.services.webhooks.dispatch import dispatch_event_task
 
 logger = logging.getLogger(__name__)
+
 
 
 async def generate_vouchers_for_students(
@@ -137,7 +139,28 @@ async def process_fee_payment(
     session.add(voucher)
     await session.commit()
     await session.refresh(receipt)
+
+    # Dispatch fee.payment_received webhook
+    try:
+        dispatch_event_task(
+            org_id=1,
+            event_name="fee.payment_received",
+            data={
+                "voucher_id": voucher.id,
+                "voucher_number": voucher.voucher_no,
+                "student_id": voucher.student_id,
+                "amount_paid": float(payload.amount_paid),
+                "payment_method": payload.payment_method.value if hasattr(payload.payment_method, "value") else str(payload.payment_method),
+                "transaction_reference": payload.transaction_ref or receipt.receipt_no,
+                "remaining_balance": float(voucher.balance_amount),
+                "status": voucher.status.value if hasattr(voucher.status, "value") else str(voucher.status),
+            },
+        )
+    except Exception as e:
+        logger.warning("Failed to dispatch fee.payment_received webhook: %s", e)
+
     return receipt
+
 
 
 # ── Late fee accrual (M08) ──

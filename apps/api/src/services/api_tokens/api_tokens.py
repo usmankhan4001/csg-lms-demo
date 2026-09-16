@@ -177,6 +177,7 @@ async def create_api_token(
         token_hash=token_hash,
         org_id=org_id,
         rights=token_data.rights.model_dump() if isinstance(token_data.rights, Rights) else token_data.rights,
+        scopes=token_data.scopes or [],
         created_by_user_id=current_user.id,
         creation_date=now,
         update_date=now,
@@ -197,10 +198,12 @@ async def create_api_token(
         token_prefix=api_token.token_prefix,
         org_id=api_token.org_id,
         rights=api_token.rights,
+        scopes=api_token.scopes,
         created_by_user_id=api_token.created_by_user_id,
         creation_date=api_token.creation_date,
         expires_at=api_token.expires_at,
     )
+
 
 
 async def list_api_tokens(
@@ -419,10 +422,12 @@ async def regenerate_api_token(
         token_prefix=token.token_prefix,
         org_id=token.org_id,
         rights=token.rights,
+        scopes=token.scopes,
         created_by_user_id=token.created_by_user_id,
         creation_date=token.creation_date,
         expires_at=token.expires_at,
     )
+
 
 
 async def validate_api_token_for_auth(

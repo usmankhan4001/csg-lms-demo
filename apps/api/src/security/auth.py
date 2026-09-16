@@ -769,9 +769,11 @@ async def validate_api_token(
         username=f"api_token_{api_token.name}",
         org_id=api_token.org_id,
         rights=rights,
+        scopes=getattr(api_token, "scopes", None) or [],
         token_name=api_token.name,
         created_by_user_id=api_token.created_by_user_id,
     )
+
 
 
 async def validate_superadmin_api_token(

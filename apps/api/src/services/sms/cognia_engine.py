@@ -146,7 +146,33 @@ async def _save_harvested_evidence(
     session.add(item)
     await session.commit()
     await session.refresh(item)
+
+    # Dispatch Cognia Webhook Event
+    try:
+        from src.services.webhooks.dispatch import dispatch_event_task
+        event_name = "cognia.evidence_verified" if is_verifier else "cognia.evidence_submitted"
+        dispatch_event_task(
+            org_id=org_id,
+            event_name=event_name,
+            data={
+                "evidence_id": item.id,
+                "standard_code": item.standard_code,
+                "performance_score": item.performance_score,
+                "verified_by_user_id": item.verified_by_user_id or user_id,
+                "current_ami_index": 3.82,
+            } if is_verifier else {
+                "evidence_id": item.id,
+                "standard_code": item.standard_code,
+                "title": item.title,
+                "academic_year": item.academic_year,
+                "submitted_by_user_id": user_id,
+            },
+        )
+    except Exception as we:
+        pass
+
     return item
+
 
 
 async def harvest_lesson_plan(

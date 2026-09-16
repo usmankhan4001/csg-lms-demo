@@ -231,6 +231,25 @@ class UniversalCrisisEscalationEngine:
                 logger.error("Crisis dispatch error: %s", e, exc_info=True)
                 counselor_notified = False
 
+            # Dispatch crisis.escalated webhook event
+            try:
+                from src.services.webhooks.dispatch import dispatch_event_task
+                dispatch_event_task(
+                    org_id=org_id,
+                    event_name="crisis.escalated",
+                    data={
+                        "alert_id": f"crs_{detected_at.strftime('%Y%m%d%H%M%S')}_{str(student_id)[:8]}",
+                        "severity": severity.value,
+                        "student_id": int(student_id) if str(student_id).isdigit() else 0,
+                        "campus_id": 1,
+                        "detected_source": f"AI_COPILOT_{category.value}",
+                        "alert_timestamp": detected_at.isoformat(),
+                    },
+                )
+            except Exception as we:
+                logger.warning("Failed to dispatch crisis.escalated webhook: %s", we)
+
+
         total_elapsed_seconds = time.perf_counter() - start_time
         total_elapsed_ms = total_elapsed_seconds * 1000.0
         within_sla = total_elapsed_seconds <= CRISIS_ESCALATION_SLA_SECONDS

@@ -421,7 +421,357 @@ WEBHOOK_EVENTS: dict[str, dict] = {
             "payments_enabled": "boolean",
         },
     },
+
+    # ── Admissions & RevOps ───────────────────────────────────────────
+    "lead.created": {
+        "category": "Admissions & RevOps",
+        "description": "Triggered when a new prospective student inquiry is received",
+        "data_schema": {
+            "lead_id": "integer",
+            "first_name": "string",
+            "last_name": "string",
+            "parent_name": "string",
+            "email": "string",
+            "phone": "string",
+            "target_grade": "integer",
+            "target_academic_year": "string",
+            "campus_id": "integer",
+            "lead_source": "string",
+            "stage": "string",
+        },
+    },
+    "lead.stage_changed": {
+        "category": "Admissions & RevOps",
+        "description": "Triggered when an admissions lead progresses to a new pipeline stage",
+        "data_schema": {
+            "lead_id": "integer",
+            "previous_stage": "string",
+            "new_stage": "string",
+            "bant_score": "number",
+            "priority_tier": "string",
+        },
+    },
+    "lead.matriculated": {
+        "category": "Admissions & RevOps",
+        "description": "Triggered when an admissions lead completes the 1-Click Matriculation Handshake",
+        "data_schema": {
+            "lead_id": "integer",
+            "student_user_id": "integer",
+            "student_email": "string",
+            "parent_user_id": "integer",
+            "parent_email": "string",
+            "campus_id": "integer",
+            "section_id": "integer",
+            "section_name": "string",
+            "enrollment_date": "string",
+            "initial_voucher_id": "integer",
+            "total_tuition_due": "number",
+        },
+    },
+
+    # ── Academic Structure & Enrollment ──────────────────────────────
+    "section.created": {
+        "category": "Academic",
+        "description": "Triggered when a new class section is provisioned",
+        "data_schema": {
+            "section_id": "integer",
+            "campus_id": "integer",
+            "name": "string",
+            "grade_level": "integer",
+            "academic_year_id": "integer",
+            "capacity": "integer",
+        },
+    },
+    "student.enrolled": {
+        "category": "Academic",
+        "description": "Triggered when a student is formally enrolled into a class section",
+        "data_schema": {
+            "student_id": "integer",
+            "section_id": "integer",
+            "section_name": "string",
+            "academic_year": "string",
+            "roll_number": "string",
+        },
+    },
+    "student.transferred": {
+        "category": "Academic",
+        "description": "Triggered when a student transfers between sections or campuses",
+        "data_schema": {
+            "student_id": "integer",
+            "from_section_id": "integer",
+            "to_section_id": "integer",
+            "transfer_date": "string",
+        },
+    },
+    "timetable.published": {
+        "category": "Academic",
+        "description": "Triggered when an academic timetable schedule is published or refreshed",
+        "data_schema": {
+            "term_id": "integer",
+            "campus_id": "integer",
+            "total_slots": "integer",
+            "published_at": "string",
+        },
+    },
+
+    # ── Biometric Attendance & Truancy ────────────────────────────────
+    "attendance.recorded": {
+        "category": "Attendance",
+        "description": "Triggered when daily or period attendance is posted for a cohort",
+        "data_schema": {
+            "date": "string",
+            "campus_id": "integer",
+            "section_id": "integer",
+            "period_number": "integer",
+            "total_students": "integer",
+            "present_count": "integer",
+            "absent_count": "integer",
+            "tardy_count": "integer",
+        },
+    },
+    "attendance.truancy_alert": {
+        "category": "Attendance",
+        "description": "Triggered when a student breaches consecutive unexcused absence thresholds",
+        "data_schema": {
+            "student_id": "integer",
+            "student_name": "string",
+            "section_name": "string",
+            "consecutive_unexcused_days": "integer",
+            "term_attendance_rate": "number",
+        },
+    },
+    "attendance.excuse_submitted": {
+        "category": "Attendance",
+        "description": "Triggered when a parent submits an absence excuse note",
+        "data_schema": {
+            "student_id": "integer",
+            "parent_id": "integer",
+            "date_range": "string",
+            "reason": "string",
+        },
+    },
+    "attendance.excuse_approved": {
+        "category": "Attendance",
+        "description": "Triggered when an absence excuse note is approved by administration",
+        "data_schema": {
+            "student_id": "integer",
+            "excuse_id": "integer",
+            "approved_by_user_id": "integer",
+        },
+    },
+
+    # ── Assessment, SpeedGrader & Gradebook ───────────────────────────
+    "coursework.graded": {
+        "category": "Assessment",
+        "description": "Triggered when coursework is evaluated in SpeedGrader with analytical rubrics",
+        "data_schema": {
+            "gradebook_entry_id": "integer",
+            "student_id": "integer",
+            "course_id": "integer",
+            "course_name": "string",
+            "section_id": "integer",
+            "assessment_title": "string",
+            "score_obtained": "number",
+            "max_score": "number",
+            "percentage": "number",
+            "graded_by_user_id": "integer",
+        },
+    },
+    "speedgrader.evaluated": {
+        "category": "Assessment",
+        "description": "Triggered when SpeedGrader records multi-criteria rubric points for a submission",
+        "data_schema": {
+            "submission_id": "string",
+            "student_id": "integer",
+            "rubric_total": "number",
+            "rubric_max": "number",
+            "graded_by_user_id": "integer",
+        },
+    },
+    "report_card.published": {
+        "category": "Assessment",
+        "description": "Triggered when official Term Report Cards and cumulative GPAs are published",
+        "data_schema": {
+            "student_id": "integer",
+            "section_id": "integer",
+            "term_id": "integer",
+            "gpa": "number",
+            "rank_in_section": "integer",
+            "attendance_percentage": "number",
+            "published_at": "string",
+        },
+    },
+
+    # ── CBT Examinations ──────────────────────────────────────────────
+    "exam.scheduled": {
+        "category": "Examinations",
+        "description": "Triggered when an official examination sitting schedule is posted",
+        "data_schema": {
+            "exam_id": "integer",
+            "title": "string",
+            "course_id": "integer",
+            "exam_date": "string",
+            "start_time": "string",
+            "total_candidates": "integer",
+        },
+    },
+    "exam.submitted": {
+        "category": "Examinations",
+        "description": "Triggered when a student finalizes and submits a CBT examination",
+        "data_schema": {
+            "exam_id": "integer",
+            "student_id": "integer",
+            "submission_timestamp": "string",
+            "raw_score": "number",
+            "percentage": "number",
+        },
+    },
+    "exam.psychometrics_calculated": {
+        "category": "Examinations",
+        "description": "Triggered when 2PL Item Response Theory & Cronbach alpha are compiled for an exam",
+        "data_schema": {
+            "exam_id": "integer",
+            "exam_title": "string",
+            "cohort_size": "integer",
+            "mean_score": "number",
+            "cronbach_alpha": "number",
+            "flagged_items_count": "integer",
+        },
+    },
+
+    # ── Tuition Fees & Billing ────────────────────────────────────────
+    "fee.voucher_created": {
+        "category": "Financials",
+        "description": "Triggered when a tuition or services invoice voucher is issued to a student",
+        "data_schema": {
+            "voucher_id": "integer",
+            "voucher_number": "string",
+            "student_id": "integer",
+            "total_amount": "number",
+            "due_date": "string",
+            "academic_term": "string",
+        },
+    },
+    "fee.payment_received": {
+        "category": "Financials",
+        "description": "Triggered when a fee payment is successfully processed and receipted",
+        "data_schema": {
+            "voucher_id": "integer",
+            "voucher_number": "string",
+            "student_id": "integer",
+            "amount_paid": "number",
+            "payment_method": "string",
+            "transaction_reference": "string",
+            "remaining_balance": "number",
+            "status": "string",
+        },
+    },
+    "fee.overdue": {
+        "category": "Financials",
+        "description": "Triggered when a student fee voucher passes its payment deadline",
+        "data_schema": {
+            "voucher_id": "integer",
+            "student_id": "integer",
+            "days_overdue": "integer",
+            "balance_due": "number",
+        },
+    },
+
+    # ── General Ledger & Payroll ──────────────────────────────────────
+    "journal.posted": {
+        "category": "Financials",
+        "description": "Triggered when a balanced double-entry General Ledger journal entry is posted",
+        "data_schema": {
+            "journal_id": "integer",
+            "voucher_number": "string",
+            "posting_date": "string",
+            "total_debit": "number",
+            "total_credit": "number",
+            "posted_by_user_id": "integer",
+        },
+    },
+    "payroll.processed": {
+        "category": "Financials",
+        "description": "Triggered when monthly faculty/staff payroll calculations are prepared",
+        "data_schema": {
+            "payroll_period": "string",
+            "total_employees": "integer",
+            "gross_amount": "number",
+            "tax_withheld": "number",
+            "net_disbursement": "number",
+        },
+    },
+    "payroll.approved": {
+        "category": "Financials",
+        "description": "Triggered when the Bursar/Executive Headmaster signs off on payroll disbursement",
+        "data_schema": {
+            "payroll_period": "string",
+            "total_employees": "integer",
+            "gross_disbursement": "number",
+            "net_disbursement": "number",
+            "approved_by_user_id": "integer",
+        },
+    },
+
+    # ── Pastoral Care & Crisis Safety ─────────────────────────────────
+    "crisis.escalated": {
+        "category": "Pastoral & Safety",
+        "description": "Triggered when urgent mental health or safety risk is detected (<=120s SLA)",
+        "data_schema": {
+            "alert_id": "string",
+            "severity": "string",
+            "student_id": "integer",
+            "campus_id": "integer",
+            "detected_source": "string",
+            "alert_timestamp": "string",
+        },
+    },
+    "discipline.incident_logged": {
+        "category": "Pastoral & Safety",
+        "description": "Triggered when a behavioral commendation or disciplinary incident is recorded",
+        "data_schema": {
+            "incident_id": "integer",
+            "student_id": "integer",
+            "incident_type": "string",
+            "severity": "string",
+            "logged_by_user_id": "integer",
+        },
+    },
+
+    # ── Accreditation & Compliance ────────────────────────────────────
+    "cognia.evidence_submitted": {
+        "category": "Accreditation",
+        "description": "Triggered when a standard artifact is uploaded to the Cognia evidence locker",
+        "data_schema": {
+            "evidence_id": "integer",
+            "standard_code": "string",
+            "title": "string",
+            "academic_year": "string",
+            "submitted_by_user_id": "integer",
+        },
+    },
+    "cognia.evidence_verified": {
+        "category": "Accreditation",
+        "description": "Triggered when Cognia compliance evidence is certified with SHA-256 validation",
+        "data_schema": {
+            "evidence_id": "integer",
+            "standard_code": "string",
+            "performance_score": "number",
+            "verified_by_user_id": "integer",
+            "current_ami_index": "number",
+        },
+    },
+    "cognia.ami_updated": {
+        "category": "Accreditation",
+        "description": "Triggered when institutional Accreditation Maturity Index (AMI) is recalculated",
+        "data_schema": {
+            "academic_year": "string",
+            "ami_index": "number",
+            "total_verified_standards": "integer",
+        },
+    },
 }
+
 
 
 # ---------------------------------------------------------------------------

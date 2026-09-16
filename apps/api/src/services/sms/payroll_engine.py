@@ -437,4 +437,25 @@ class ProgressivePayrollEngine:
         for s in created_slips:
             await session.refresh(s)
 
+        # Dispatch payroll.processed webhook
+        try:
+            from src.services.webhooks.dispatch import dispatch_event_task
+            total_gross = sum(s.gross_salary for s in created_slips)
+            total_tax = sum(s.tax_deduction for s in created_slips)
+            total_net = sum(s.net_salary for s in created_slips)
+            dispatch_event_task(
+                org_id=1,
+                event_name="payroll.processed",
+                data={
+                    "payroll_period": f"{payload.year}-{payload.month:02d}",
+                    "total_employees": len(created_slips),
+                    "gross_amount": float(total_gross),
+                    "tax_withheld": float(total_tax),
+                    "net_disbursement": float(total_net),
+                },
+            )
+        except Exception as we:
+            logger.warning("Failed to dispatch payroll.processed webhook: %s", we)
+
         return created_slips
+

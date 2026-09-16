@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 
@@ -224,3 +224,25 @@ async def api_regenerate_api_token(
     return await regenerate_api_token(
         request, db_session, org_id, token_uuid, current_user
     )
+
+
+@router.get(
+    "/api-tokens/scopes",
+    summary="Get standard API token scopes",
+    description="Returns the comprehensive catalog of all available granular API token scopes grouped by domain.",
+)
+@router.get(
+    "/{org_id}/api-tokens/scopes",
+    summary="Get organization API token scopes",
+    description="Returns the comprehensive catalog of all available granular API token scopes grouped by domain.",
+)
+async def api_get_available_scopes(
+    org_id: Optional[int] = None,
+) -> dict:
+    """Return all valid API token scopes with metadata."""
+    from src.db.api_tokens import VALID_API_SCOPES
+    return {
+        "scopes": VALID_API_SCOPES,
+        "total": len(VALID_API_SCOPES),
+    }
+

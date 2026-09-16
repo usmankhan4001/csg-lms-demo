@@ -58,6 +58,8 @@ from src.security.school_ownership import (
     get_own_teacher_section_ids,
     require_own_student_or_privileged,
 )
+from src.services.webhooks.dispatch import dispatch_event_task
+
 from src.services.notifications import resolve_guardians_of
 from src.services.sms.attendance import (
     ABSENCE_STREAK_THRESHOLD,
@@ -325,6 +327,31 @@ async def submit_batch_roll_call(
     await session.commit()
     for rec in saved_records:
         await session.refresh(rec)
+
+    # Dispatch attendance.recorded webhook
+    try:
+        org_id = (principal.raw_claims or {}).get("org_id") or 1
+        present_cnt = sum(1 for e in payload.entries if e.status == AttendanceStatus.PRESENT)
+        absent_cnt = sum(1 for e in payload.entries if e.status == AttendanceStatus.ABSENT)
+        tardy_cnt = sum(1 for e in payload.entries if e.status == AttendanceStatus.LATE)
+        
+        dispatch_event_task(
+            org_id=org_id,
+            event_name="attendance.recorded",
+            data={
+                "date": payload.date.isoformat() if hasattr(payload.date, "isoformat") else str(payload.date),
+                "campus_id": 1,
+                "section_id": payload.section_id,
+                "period_number": payload.period_id or 1,
+                "total_students": len(payload.entries),
+                "present_count": present_cnt,
+                "absent_count": absent_cnt,
+                "tardy_count": tardy_cnt,
+            },
+        )
+    except Exception as e:
+        logger.warning("Failed to dispatch attendance.recorded webhook: %s", e)
+
 
     # Absence-streak alerts are supplementary: the attendance record itself is
     # already committed above and is the record of truth. A notification

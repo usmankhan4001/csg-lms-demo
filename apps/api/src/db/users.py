@@ -149,8 +149,10 @@ class APITokenUser(SQLModel):
     username: str = "api_token"
     org_id: int  # CRITICAL: Organization scope - token can only access this org
     rights: Optional[dict] = None  # Token's rights/permissions
+    scopes: list[str] = Field(default_factory=list)  # Granular resource scopes
     token_name: str = ""
     created_by_user_id: int = 0  # User who created the token
+
 
 
 class SuperadminAPITokenUser(SQLModel):

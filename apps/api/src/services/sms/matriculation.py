@@ -60,8 +60,10 @@ from src.db.sms_revops import (
 from src.db.user_organizations import UserOrganization
 from src.db.users import User
 from src.security.security import security_hash_password
+from src.services.webhooks.dispatch import dispatch_event_task
 
 logger = logging.getLogger(__name__)
+
 
 LEARNER_ROLE_ID = 4
 
@@ -643,8 +645,60 @@ async def execute_matriculation_handshake(
     await db_session.refresh(parent_user)
     await db_session.refresh(enrollment)
     await db_session.refresh(installment_plan)
-    for v in vouchers:
-        await db_session.refresh(v)
+    # Dispatch Webhook Events
+    try:
+        initial_voucher_id = vouchers[0].id if vouchers else None
+        total_fee = sum(v.total_amount for v in vouchers)
+        
+        # 1. lead.matriculated
+        dispatch_event_task(
+            org_id=org_id,
+            event_name="lead.matriculated",
+            data={
+                "lead_id": lead.id,
+                "student_user_id": student_user.id,
+                "student_email": student_user.email,
+                "parent_user_id": parent_user.id,
+                "parent_email": parent_user.email,
+                "campus_id": campus.id,
+                "section_id": section.id,
+                "section_name": f"{section.grade_level} {section.section_name}",
+                "enrollment_date": now_iso[:10],
+                "initial_voucher_id": initial_voucher_id,
+                "total_tuition_due": total_fee,
+            },
+        )
+
+        # 2. student.enrolled
+        dispatch_event_task(
+            org_id=org_id,
+            event_name="student.enrolled",
+            data={
+                "student_id": student_user.id,
+                "section_id": section.id,
+                "section_name": f"{section.grade_level} {section.section_name}",
+                "academic_year": year.name,
+                "roll_number": enrollment.roll_number or f"RN-{student_user.id:04d}",
+            },
+        )
+
+        # 3. fee.voucher_created for initial voucher
+        if vouchers:
+            v0 = vouchers[0]
+            dispatch_event_task(
+                org_id=org_id,
+                event_name="fee.voucher_created",
+                data={
+                    "voucher_id": v0.id,
+                    "voucher_number": v0.voucher_no or f"VOUCH-{v0.id}",
+                    "student_id": student_user.id,
+                    "total_amount": float(v0.total_amount),
+                    "due_date": v0.due_date or now_iso[:10],
+                    "academic_term": year.name,
+                },
+            )
+    except Exception as e:
+        logger.warning("Failed to dispatch matriculation webhooks: %s", e)
 
     logger.info(
         "Matriculation Handshake executed for lead_id=%s: student_id=%s parent_id=%s vouchers=%d",
@@ -653,6 +707,7 @@ async def execute_matriculation_handshake(
         parent_user.id,
         len(vouchers),
     )
+
 
     return MatriculationHandshakeResult(
         lead=lead,
