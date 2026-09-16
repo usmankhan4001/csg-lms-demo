@@ -103,5 +103,5 @@ class CogniaEvidenceItem(SQLModel, table=True):
     verified_by_user_id: Optional[int] = Field(default=None)
     verified_at: Optional[datetime] = Field(default=None)
 
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
