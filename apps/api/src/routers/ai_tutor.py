@@ -21,6 +21,7 @@ from src.core.keycloak_auth import (
     SCHOOL_ADMIN,
     SUPER_ADMIN,
     PSYCHOLOGIST,
+    get_current_user_principal,
     get_optional_user_principal,
     require_roles,
 )
@@ -32,10 +33,11 @@ from src.services.ai.socratic_tutor import (
     stream_socratic_guidance,
     check_tutor_daily_rate_limit,
 )
-from src.services.ai.base import get_chat_session_history, save_message_to_history
+from src.services.ai.base import get_chat_session_history, save_message_to_history, chat_session_belongs_to_user
 from src.services.ai.crisis_classifier import classify_prompt_safety, log_safety_incident
 from src.db.sms_ai_consent import AIConsentType
 from src.services.sms.ai_consent import may_screen_for_crisis, resolve_consent
+from src.security.school_ownership import get_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -322,18 +324,49 @@ async def api_socratic_tutor_chat(
     )
 
 
+def _may_read_tutor_session(principal: KeycloakUserPrincipal, session_uuid: str) -> bool:
+    """Entitlement to read one tutor transcript: own it, or safeguarding.
+
+    A tutor transcript is where a child's crisis disclosure actually lives, in
+    their own words, so the privileged side is `_SAFEGUARDING` -- the same
+    reasoning as that constant, not general staff oversight.
+    """
+    # has_any_role() already satisfies SUPER_ADMIN.
+    if principal.has_any_role(_SAFEGUARDING):
+        return True
+
+    user_id = get_user_id(principal)
+    if user_id is None:
+        return False
+
+    # NOTE: this treats a session with NO stored metadata as ownable, so it is
+    # only as strong as the attribution written by save_message_to_history.
+    return chat_session_belongs_to_user(session_uuid, user_id)
+
+
 @router.get(
     "/history",
     response_model=SocraticHistoryResponse,
     summary="Get Socratic Chat Session History",
     description="Retrieve stored conversation turns for a Socratic tutor session.",
+    responses={404: {"description": "Session not found"}},
 )
 async def api_get_socratic_history(
     session_uuid: str = Query(..., description="UUID of the chat session"),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ):
     """
     GET /api/v1/ai/tutor/history - Retrieve conversation history for a tutor session
     """
+    # 404, never 403: a tutor transcript is where a child's crisis disclosure
+    # lives, so an unentitled caller must not be able to tell a real session
+    # uuid from a wrong one.
+    if not _may_read_tutor_session(principal, session_uuid):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chat session not found",
+        )
+
     session_data = get_chat_session_history(session_uuid)
     return SocraticHistoryResponse(
         session_uuid=session_data.get("aichat_uuid", session_uuid),

@@ -11,7 +11,8 @@ segregation, and Redis-backed daily rate limiting.
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
-from fastapi import HTTPException, status
+from fastapi import FastAPI, HTTPException, status
+from httpx import ASGITransport, AsyncClient
 
 from src.db.ai_models import (
     AISafetyIncident,
@@ -51,15 +52,19 @@ from src.routers.ai_tutor import (
     api_socratic_tutor_chat,
     api_get_socratic_history,
     api_list_safety_flags,
+    router as tutor_router,
 )
+from src.core.events.database import get_db_session
 from src.core.keycloak_auth import (
     KeycloakUserPrincipal,
+    PSYCHOLOGIST,
     TEACHER,
     SCHOOL_ADMIN,
     STUDENT,
     SUPER_ADMIN,
     require_roles,
 )
+
 
 
 def _row(**kwargs):
@@ -275,14 +280,63 @@ class TestAITutorRouter:
 
     @pytest.mark.asyncio
     async def test_history_endpoint(self):
-        with patch("src.routers.ai_tutor.get_chat_session_history") as mock_hist:
+        owner = KeycloakUserPrincipal(
+            sub="student_1",
+            roles=[STUDENT],
+            email="student@csg.edu",
+            org_id=1,
+            raw_claims={"lh_user_id": 42},
+        )
+        with patch("src.routers.ai_tutor.get_chat_session_history") as mock_hist, patch(
+            "src.routers.ai_tutor.chat_session_belongs_to_user", return_value=True
+        ):
             mock_hist.return_value = {
                 "aichat_uuid": "sess_123",
                 "message_history": [{"role": "user", "content": "hello"}],
             }
-            resp = await api_get_socratic_history(session_uuid="sess_123")
+            resp = await api_get_socratic_history(session_uuid="sess_123", principal=owner)
             assert resp.session_uuid == "sess_123"
             assert len(resp.message_history) == 1
+
+    @pytest.mark.asyncio
+    async def test_history_endpoint_404s_for_another_students_session(self):
+        """404, never 403: the response must not confirm the session exists."""
+        other_student = KeycloakUserPrincipal(
+            sub="student_2",
+            roles=[STUDENT],
+            email="other@csg.edu",
+            org_id=1,
+            raw_claims={"lh_user_id": 43},
+        )
+        with patch("src.routers.ai_tutor.chat_session_belongs_to_user", return_value=False):
+            with pytest.raises(HTTPException) as exc_info:
+                await api_get_socratic_history(
+                    session_uuid="sess_123", principal=other_student
+                )
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.asyncio
+    async def test_history_endpoint_allows_a_safeguarding_role(self):
+        """A counsellor following up a disclosure is entitled to the transcript."""
+        counsellor = KeycloakUserPrincipal(
+            sub="counsellor_1",
+            roles=[PSYCHOLOGIST],
+            email="counsellor@csg.edu",
+            org_id=1,
+            raw_claims={"lh_user_id": 7},
+        )
+        with patch("src.routers.ai_tutor.get_chat_session_history") as mock_hist, patch(
+            "src.routers.ai_tutor.chat_session_belongs_to_user", return_value=False
+        ) as mock_owns:
+            mock_hist.return_value = {
+                "aichat_uuid": "sess_123",
+                "message_history": [{"role": "user", "content": "hello"}],
+            }
+            resp = await api_get_socratic_history(
+                session_uuid="sess_123", principal=counsellor
+            )
+        assert resp.session_uuid == "sess_123"
+        assert not mock_owns.called
 
     @pytest.mark.asyncio
     async def test_safety_flags_role_protection(self):
@@ -327,6 +381,51 @@ class TestAITutorRouter:
             await checker(student_principal)
         assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
 
+
+# ---------------------------------------------------------------------------
+# 5b. GET /ai/tutor/history access control
+#
+# The session uuid is the Redis key and is echoed to the client in every SSE
+# frame, so holding one was enough to read a named child's whole transcript --
+# crisis disclosures included -- with no authentication at all.
+# ---------------------------------------------------------------------------
+
+class TestTutorHistoryRequiresAuthentication:
+    @pytest.fixture
+    def app(self):
+        app = FastAPI()
+        app.include_router(tutor_router, prefix="/api/v1/ai")
+        app.dependency_overrides[get_db_session] = lambda: AsyncMock()
+        yield app
+        app.dependency_overrides.clear()
+
+    @pytest.fixture
+    async def client(self, app):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as c:
+            yield c
+
+    @pytest.mark.asyncio
+    async def test_unauthenticated_caller_is_rejected(self, client):
+        # No credentials at all: the real get_authenticated_user dependency
+        # refuses before the endpoint body runs.
+        response = await client.get(
+            "/api/v1/ai/tutor/history?session_uuid=sess_123"
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    @pytest.mark.asyncio
+    async def test_unauthenticated_caller_never_reaches_redis(self, client):
+        """Rejected at the dependency, before the transcript is looked up."""
+        with patch("src.routers.ai_tutor.get_chat_session_history") as mock_hist:
+            response = await client.get(
+                "/api/v1/ai/tutor/history?session_uuid=sess_123"
+            )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert not mock_hist.called
 
 # ---------------------------------------------------------------------------
 # 6. Content-Relevance & Age/Grade Guardrails (content_guardrails.py)

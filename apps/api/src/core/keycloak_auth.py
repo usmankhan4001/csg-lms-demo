@@ -117,10 +117,34 @@ class KeycloakSettings:
             return f"-----BEGIN PUBLIC KEY-----\n{cleaned}\n-----END PUBLIC KEY-----"
         return cleaned
 
+    # SECURITY: this was the hardcoded fallback for `shared_secret` below. It
+    # is published in the repository, so any deployment still using it lets
+    # anyone mint a token for any role (including SUPER_ADMIN) offline. It is
+    # kept only so an explicitly-configured copy of it can be rejected too.
+    INSECURE_DEFAULT_SECRET = "dev_jwt_secret_key_change_in_production"
+
     @property
     def shared_secret(self) -> Optional[str]:
-        """Fallback symmetric secret for testing/development."""
-        return os.getenv("KEYCLOAK_SECRET_KEY", os.getenv("AUTH_JWT_SECRET_KEY", "dev_jwt_secret_key_change_in_production"))
+        """
+        Explicitly configured symmetric secret, or `None` when unconfigured.
+
+        SECURITY: this used to fall back to a secret hardcoded in this file.
+        The HMAC branch of `decode_and_verify_token` verifies HS256 tokens
+        against it with no network call and no Keycloak server involved, so a
+        defaulted value is equivalent to no authentication at all. There is
+        deliberately no default: unset (or empty, or still set to the old
+        published default) means "no HMAC verification available", and
+        `decode_and_verify_token` refuses HS* tokens instead. This mirrors
+        config.py, which hard-fails the boot when the app's own JWT secret is
+        missing (config/config.py:279).
+        """
+        secret = os.getenv("KEYCLOAK_SECRET_KEY") or os.getenv("AUTH_JWT_SECRET_KEY")
+        if not secret or not secret.strip():
+            return None
+        secret = secret.strip()
+        if secret == self.INSECURE_DEFAULT_SECRET:
+            return None
+        return secret
 
 
 settings = KeycloakSettings()
@@ -183,6 +207,47 @@ def is_hmac_dev_verification_active() -> bool:
         or server_url.startswith("https://127.0.0.1")
     )
     return is_local
+
+
+# `LEARNHOUSE_ENV` is the project's own environment marker -- see
+# config/config.py (`os.environ.get("LEARNHOUSE_ENV", "dev")`) and the
+# `LEARNHOUSE_ENV: production` / `LEARNHOUSE_ENV: dev` entries in
+# docker-compose.prod.yml / dokploy-compose.yml / docker-compose.local.yml.
+_DEVELOPMENT_ENVS = frozenset({"", "dev", "development", "local", "test", "testing"})
+
+
+def warn_if_hmac_active_outside_development() -> None:
+    """
+    Log a startup warning when the HMAC/shared-secret token path is live in an
+    environment that is not marked as development.
+
+    This is a warning, not a hard failure, on purpose: the token-decoding path
+    is dormant (see `get_current_user_principal`) and this must not change the
+    behaviour of the live authentication path. It exists so a misconfigured
+    production deployment leaves a visible trace in the logs instead of
+    silently accepting self-minted tokens.
+    """
+    if os.getenv("LEARNHOUSE_ENV", "dev").strip().lower() in _DEVELOPMENT_ENVS:
+        return
+    if not (settings.shared_secret and is_hmac_dev_verification_active()):
+        return
+
+    logger.warning(
+        "SECURITY: Keycloak HMAC (shared-secret) token verification is ACTIVE "
+        "with LEARNHOUSE_ENV=%r. HS256 tokens are then verified against "
+        "KEYCLOAK_SECRET_KEY / AUTH_JWT_SECRET_KEY with no Keycloak server "
+        "involved, so anyone holding that secret can mint a token for any "
+        "role -- including SUPER_ADMIN -- over data belonging to children. "
+        "Point KEYCLOAK_URL / KEYCLOAK_JWKS_URL at the real Keycloak server "
+        "(or pin KEYCLOAK_PUBLIC_KEY) and leave the shared secret unset.",
+        os.getenv("LEARNHOUSE_ENV"),
+    )
+
+
+# Emitted at import time: every router that depends on
+# `get_current_user_principal` imports this module, so this runs once during
+# application startup.
+warn_if_hmac_active_outside_development()
 
 
 def get_jwks_client() -> jwt.PyJWKClient:
@@ -402,7 +467,21 @@ def decode_and_verify_token(token: str) -> KeycloakUserPrincipal:
                             headers={"WWW-Authenticate": "Bearer error=\"invalid_token\""},
                         )
         elif alg.startswith("HS"):
-            # Symmetric secret fallback
+            # Symmetric secret. SECURITY: refuse instead of falling back to a
+            # default -- `settings.shared_secret` is None unless one was
+            # explicitly configured, and verifying against a secret baked into
+            # this repository would let anyone mint a token for any role.
+            if not settings.shared_secret:
+                logger.warning(
+                    "Rejected an HS* bearer token: no Keycloak shared secret is "
+                    "configured (set KEYCLOAK_SECRET_KEY or AUTH_JWT_SECRET_KEY "
+                    "explicitly if this deployment is meant to accept HMAC tokens)."
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="HMAC token verification is not configured on this server",
+                    headers={"WWW-Authenticate": "Bearer error=\"invalid_token\""},
+                )
             signing_key = settings.shared_secret
         else:
             raise HTTPException(

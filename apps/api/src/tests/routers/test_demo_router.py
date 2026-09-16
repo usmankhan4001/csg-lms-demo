@@ -10,7 +10,7 @@ from src.db.demo_state import DEMO_STATE_ID, DemoState, DemoStateEnum
 from src.db.organizations import Organization
 from src.db.user_organizations import UserOrganization
 from src.db.users import AnonymousUser
-from src.routers.demo import demo_status, enter_demo
+from src.routers.demo import demo_status, enter_demo, seed_sms_demo_endpoint
 from src.security.rbac.constants import ADMIN_ROLE_ID
 
 
@@ -151,6 +151,35 @@ async def test_entering_while_provisioning_is_a_409(db, demo_on, admin_user):
     with pytest.raises(HTTPException) as exc:
         await enter_demo(db_session=db, current_user=admin_user)
     assert exc.value.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# seeding
+# ---------------------------------------------------------------------------
+
+async def test_seeding_rejects_anonymous_callers(db, demo_on):
+    """The seeder mints a known-password platform superadmin.
+
+    Anonymous here meant anyone could create that account in any org and then
+    log in as it, which is a takeover of every tenant rather than a demo.
+    """
+    with pytest.raises(HTTPException) as exc:
+        await seed_sms_demo_endpoint(db_session=db, current_user=AnonymousUser())
+    assert exc.value.status_code == 401
+
+
+async def test_seeding_requires_a_superadmin(db, demo_on, admin_user):
+    """Org admins are not enough: the seeded account outranks them."""
+    with pytest.raises(HTTPException) as exc:
+        await seed_sms_demo_endpoint(db_session=db, current_user=admin_user)
+    assert exc.value.status_code == 403
+
+
+async def test_seeding_a_disabled_demo_is_a_404(db, admin_user, monkeypatch):
+    monkeypatch.delenv("LEARNHOUSE_DEMO_ENABLED", raising=False)
+    with pytest.raises(HTTPException) as exc:
+        await seed_sms_demo_endpoint(db_session=db, current_user=admin_user)
+    assert exc.value.status_code == 404
 
 
 # ---------------------------------------------------------------------------

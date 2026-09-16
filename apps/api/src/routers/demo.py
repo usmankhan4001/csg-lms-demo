@@ -179,7 +179,33 @@ async def seed_sms_demo_endpoint(
     db_session: AsyncSession = Depends(get_db_session),
     current_user: PublicUser | AnonymousUser = Depends(get_current_user),
 ):
-    """Seed comprehensive demo data for SMS and embedded Learnhouse LMS."""
+    """Seed comprehensive demo data for SMS and embedded Learnhouse LMS.
+
+    Superadmin-only, and only while the demo flag is on. The seeder mints a
+    known-password platform superadmin (admin@csg.edu) in whichever org it is
+    pointed at, so an open call is a full takeover of every tenant — the
+    caller has to already outrank the account it creates.
+    """
+    if not flags.demo_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="The demo is not available on this instance.",
+        )
+
+    if isinstance(current_user, AnonymousUser) or not getattr(current_user, "id", None):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sign in to seed the demo.",
+        )
+
+    # Deliberately not "org owner": the seeded account outranks any org admin,
+    # so letting one call this would be a privilege escalation, not a demo.
+    if not getattr(current_user, "is_superadmin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Superadmin access required.",
+        )
+
     from src.services.demo.sms_demo_seeder import seed_sms_demo_data
 
     result = await seed_sms_demo_data(db_session, org_slug=org_slug)

@@ -2,7 +2,7 @@ import datetime
 import uuid
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, desc, select
+from sqlalchemy import and_, desc, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.core.events.database import get_db_session
@@ -11,6 +11,7 @@ from src.core.keycloak_auth import (
     get_current_user_principal,
     require_roles,
 )
+from src.db.sms_campus import Campus, ClassSection, StudentEnrollment
 from src.db.sms_live_class import (
     LiveClassAttendanceLog,
     LiveClassSession,
@@ -36,6 +37,8 @@ from src.schemas.sms_live_class import (
 )
 from src.security.school_ownership import (
     assert_owns_section_or_privileged,
+    get_user_id,
+    require_org_id,
     resolve_scoped_campus_id,
 )
 from src.services.sms import live_class_schedule as lc_schedule
@@ -69,6 +72,27 @@ async def create_live_class_session(
     session: AsyncSession = Depends(get_db_session),
     principal: KeycloakUserPrincipal = Depends(require_roles(_CLASS_STAFF)),
 ) -> LiveClassSessionWithTokenResponse:
+    caller_id = get_user_id(principal)
+    is_admin = principal.is_superadmin or principal.has_any_role(list(_HOST_ROLES))
+
+    # A teacher opening a room is its host. Honouring payload.teacher_id for
+    # them would put a colleague's name on a room they control -- the same
+    # shape as `schedule_live_class` below, which already refuses it.
+    if is_admin and payload.teacher_id is not None:
+        teacher_id = payload.teacher_id
+    elif caller_id is not None:
+        teacher_id = caller_id
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot resolve the hosting teacher from your session.",
+        )
+
+    # The section is not just a label: it is what makes this room somebody's
+    # class, and what attendance and enrolment hang off.
+    if payload.section_id is not None:
+        await assert_owns_section_or_privileged(principal, payload.section_id, session)
+
     room_name = payload.room_name or f"class-{uuid.uuid4().hex[:10]}"
     start_time = payload.start_time or datetime.datetime.now(datetime.timezone.utc)
 
@@ -85,7 +109,7 @@ async def create_live_class_session(
 
     live_session = LiveClassSession(
         title=payload.title,
-        teacher_id=payload.teacher_id,
+        teacher_id=teacher_id,
         section_id=payload.section_id,
         course_id=payload.course_id,
         room_name=room_name,
@@ -107,8 +131,8 @@ async def create_live_class_session(
     config = get_livekit_config()
     token = generate_livekit_token(
         room_name=room_name,
-        participant_id=str(payload.teacher_id),
-        participant_name=f"Teacher #{payload.teacher_id}",
+        participant_id=str(teacher_id),
+        participant_name=f"Teacher #{teacher_id}",
         is_teacher=True,
         can_publish=True,
         can_subscribe=True,
@@ -150,6 +174,113 @@ def _caller_identity(principal: KeycloakUserPrincipal, payload) -> str:
     return str(caller_id) if caller_id is not None else str(payload.participant_id)
 
 
+# ---------------------------------------------------------------------------
+# Who may be in a room at all.
+#
+# A room is a teacher, a section and a name -- `LiveClassSession` carries no
+# tenant columns of its own, so "is this class at my school" has to be derived
+# from the section it belongs to. Without it, any authenticated user anywhere
+# could name any room and be handed a token into it.
+# ---------------------------------------------------------------------------
+
+
+def _not_found() -> HTTPException:
+    """A class the caller is not entitled to is indistinguishable from one
+    that does not exist -- never 403, which would confirm it is real."""
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND, detail="Live class not found"
+    )
+
+
+async def _session_scope(
+    session: AsyncSession, live: LiveClassSession
+) -> "tuple[Optional[int], Optional[int]]":
+    """The (org_id, campus_id) this class belongs to, or (None, None).
+
+    Derived section -> campus -> org. A class with no section (a course-only
+    or ad-hoc room) has no tenant this data can establish, and None here means
+    exactly that: unknown, not "every tenant".
+    """
+    if live.section_id is None:
+        return None, None
+    row = (
+        await session.execute(
+            select(ClassSection.campus_id, Campus.org_id)
+            .join(Campus, Campus.id == ClassSection.campus_id)
+            .where(ClassSection.id == live.section_id)
+        )
+    ).first()
+    if row is None:
+        return None, None
+    return row[1], row[0]
+
+
+async def _assert_session_in_scope(
+    session: AsyncSession,
+    principal: KeycloakUserPrincipal,
+    live: LiveClassSession,
+) -> None:
+    """Refuse a class belonging to another school, or another campus of it."""
+    if principal.is_superadmin:
+        return
+    org_id = require_org_id(principal)
+    session_org, session_campus = await _session_scope(session, live)
+    if session_org is not None and session_org != org_id:
+        raise _not_found()
+    if (
+        session_campus is not None
+        and resolve_scoped_campus_id(principal, session_campus) != session_campus
+    ):
+        raise _not_found()
+
+
+async def _caller_is_enrolled(
+    session: AsyncSession,
+    live: LiveClassSession,
+    student_user_id: Optional[int],
+) -> bool:
+    """Active enrolment in the section this class belongs to.
+
+    Holding the STUDENT role is not membership: a student at this school is
+    not entitled into every classroom in it. A class with no section has no
+    roster to test against, so this refuses rather than guesses -- the same
+    rule `student_may_view_recording` already applies to recordings.
+    """
+    if live.section_id is None or student_user_id is None:
+        return False
+    row = (
+        await session.execute(
+            select(StudentEnrollment.id).where(
+                and_(
+                    StudentEnrollment.section_id == live.section_id,
+                    StudentEnrollment.student_id == student_user_id,
+                    StudentEnrollment.status == "active",
+                )
+            )
+        )
+    ).first()
+    return row is not None
+
+
+async def _assert_may_enter_room(
+    session: AsyncSession,
+    principal: KeycloakUserPrincipal,
+    live: LiveClassSession,
+) -> None:
+    """Who may hold a token for a room: its host, or a student enrolled in
+    the section it belongs to.
+
+    Nothing else -- not the STUDENT role, not knowing the room name. Everyone
+    else gets 404.
+    """
+    await _assert_session_in_scope(session, principal, live)
+    if _caller_is_host(principal, live):
+        return
+    if await _caller_is_enrolled(session, live, get_user_id(principal)):
+        return
+    raise _not_found()
+
+
 @router.post(
     "/rooms/{room_name}/token",
     response_model=LiveClassTokenResponse,
@@ -169,6 +300,12 @@ async def get_participant_token(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Live class room '{room_name}' not found",
         )
+
+    # A token admits the holder to a room full of children, so it is the
+    # tightest check in this file: the caller must be this room's host, or
+    # enrolled in the section it belongs to. Being merely authenticated -- at
+    # any school -- is not enough, and neither is knowing the room name.
+    await _assert_may_enter_room(session, principal, live_session)
 
     if not live_session.is_active:
         raise HTTPException(
@@ -311,6 +448,7 @@ async def list_active_live_rooms(
     course_id: Optional[int] = Query(None, description="Filter by course ID"),
     teacher_id: Optional[int] = Query(None, description="Filter by teacher user ID"),
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(require_roles(_CLASS_STAFF)),
 ) -> List[LiveClassSessionRead]:
     conditions = [LiveClassSession.is_active.is_(True)]
     if isinstance(section_id, int):
@@ -319,6 +457,28 @@ async def list_active_live_rooms(
         conditions.append(LiveClassSession.course_id == course_id)
     if isinstance(teacher_id, int):
         conditions.append(LiveClassSession.teacher_id == teacher_id)
+
+    # Tenant scoping. A room has no org of its own, so it is scoped by the
+    # section it belongs to -- plus the caller's own rooms, so a teacher still
+    # sees an ad-hoc room they opened without a section.
+    if not principal.is_superadmin:
+        org_id = require_org_id(principal)
+        campus_stmt = select(Campus.id).where(Campus.org_id == org_id)
+        scoped_campus = resolve_scoped_campus_id(principal, None)
+        if scoped_campus is not None:
+            campus_stmt = campus_stmt.where(Campus.id == scoped_campus)
+        campus_ids = (await session.execute(campus_stmt)).scalars().all()
+        section_ids = (
+            await session.execute(
+                select(ClassSection.id).where(ClassSection.campus_id.in_(campus_ids))
+            )
+        ).scalars().all()
+        conditions.append(
+            or_(
+                LiveClassSession.section_id.in_(section_ids),
+                LiveClassSession.teacher_id == get_user_id(principal),
+            )
+        )
 
     stmt = select(LiveClassSession).where(and_(*conditions)).order_by(desc(LiveClassSession.start_time))
     active_sessions = (await session.execute(stmt)).scalars().all()
@@ -385,6 +545,7 @@ async def end_live_class_session(
 async def get_room_attendance_logs(
     room_name: str,
     session: AsyncSession = Depends(get_db_session),
+    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
 ) -> List[LiveClassAttendanceLogRead]:
     stmt = select(LiveClassSession).where(LiveClassSession.room_name == room_name)
     live_session = (await session.execute(stmt)).scalars().first()
@@ -394,12 +555,28 @@ async def get_room_attendance_logs(
             detail=f"Live class room '{room_name}' not found",
         )
 
-    log_stmt = (
-        select(LiveClassAttendanceLog)
-        .where(LiveClassAttendanceLog.session_id == live_session.id)
-        .order_by(desc(LiveClassAttendanceLog.joined_at))
+    await _assert_session_in_scope(session, principal, live_session)
+
+    log_stmt = select(LiveClassAttendanceLog).where(
+        LiveClassAttendanceLog.session_id == live_session.id
     )
-    logs = (await session.execute(log_stmt)).scalars().all()
+
+    # Who was in the room, and for how long, is a register of children. A host
+    # sees the whole room; anyone else sees only their own line.
+    if not _caller_is_host(principal, live_session):
+        caller_id = get_user_id(principal)
+        if caller_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot resolve your identity for attendance.",
+            )
+        log_stmt = log_stmt.where(LiveClassAttendanceLog.student_id == caller_id)
+
+    logs = (
+        await session.execute(
+            log_stmt.order_by(desc(LiveClassAttendanceLog.joined_at))
+        )
+    ).scalars().all()
     return [LiveClassAttendanceLogRead.model_validate(l) for l in logs]
 
 
@@ -613,9 +790,12 @@ async def list_live_classes(
 async def get_live_class(
     class_id: int,
     session: AsyncSession = Depends(get_db_session),
-    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+    principal: KeycloakUserPrincipal = Depends(require_roles(_CLASS_STAFF)),
 ) -> LiveClassDetailRead:
     live = await _load_class_or_404(session, class_id)
+    # The id alone used to be enough to read any class at any school: its room
+    # name, teacher, section and recording URL. Scope it to the caller's own.
+    await _assert_session_in_scope(session, principal, live)
     return await _to_detail_read(session, live, principal)
 
 

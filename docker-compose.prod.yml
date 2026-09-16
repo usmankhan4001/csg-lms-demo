@@ -206,6 +206,106 @@ services:
           memory: 512M
 
   # ==============================================================================
+  # 4b. ARQ BACKGROUND WORKER (SCHEDULED JOBS)
+  # ==============================================================================
+  # Same image and environment as `api`, running arq instead of uvicorn. Without
+  # this process NOTHING in WorkerSettings.cron_jobs ever fires: the weekly
+  # parent digest, the hourly nurture advance, the 09:00 fee reminders, and --
+  # the one that silently loses data -- the 15-minute drain that is the ONLY
+  # thing delivering a quiet-hours notification. Without it every deferred
+  # message is written as "queued" and never sent, while the API healthcheck
+  # stays green because the API itself is genuinely fine.
+  worker:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile.prod
+    image: csg-lms/worker:latest
+    container_name: csg-lms-worker
+    restart: unless-stopped
+    # The image ENTRYPOINT (docker-entrypoint.prod.sh) waits for Postgres/Redis,
+    # runs `alembic upgrade head` and then `exec uvicorn ...`, ignoring CMD
+    # entirely -- so it MUST be overridden here or this container would boot a
+    # second API server and no worker. arq resolves from the image WORKDIR
+    # (/app) and the venv on PATH, as documented in src/core/worker.py.
+    entrypoint: ["/bin/bash", "-c"]
+    command: ["exec arq src.core.worker.WorkerSettings"]
+    # Deliberately a full copy of the `api` environment rather than a subset:
+    # the worker reads the same config -- LEARNHOUSE_REDIS_CONNECTION_STRING
+    # for the arq queue, the SQL connection string for every job, RESEND and
+    # the AI keys for digest/nurture mail. Keep the two blocks in sync.
+    environment:
+      LEARNHOUSE_ENV: production
+      LEARNHOUSE_PORT: 9000
+      WORKERS: ${WORKERS:-4}
+      LEARNHOUSE_SQL_CONNECTION_STRING: postgresql+asyncpg://${POSTGRES_USER:-learnhouse}:${POSTGRES_PASSWORD:-change_me_secure_postgres_password}@postgres:5432/${POSTGRES_DB:-learnhouse}
+      LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD:-change_me_secure_redis_password}@redis:6379/0
+      LEARNHOUSE_REDIS_CONNECTION_STRING: redis://:${REDIS_PASSWORD:-change_me_secure_redis_password}@redis:6379/0
+      LEARNHOUSE_URL: ${APP_URL:-${LEARNHOUSE_URL:-https://${APP_DOMAIN:-app.csginfotech.com}}}
+      KEYCLOAK_URL: ${KEYCLOAK_URL:-https://${KEYCLOAK_DOMAIN:-auth.csginfotech.com}}
+      KEYCLOAK_SERVER_URL: http://keycloak:8080
+      KEYCLOAK_REALM: csg-lms
+      KEYCLOAK_CLIENT_ID: csg-lms-api
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/csg-lms/protocol/openid-connect/certs
+      KEYCLOAK_ISSUER: ${KEYCLOAK_URL:-https://${KEYCLOAK_DOMAIN:-auth.csginfotech.com}}/realms/csg-lms
+      KEYCLOAK_VERIFY_SIGNATURE: "true"
+      LEARNHOUSE_AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:-change_me_jwt_secret_key_minimum_64_chars}
+      AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:-change_me_jwt_secret_key_minimum_64_chars}
+      COLLAB_INTERNAL_KEY: ${COLLAB_INTERNAL_KEY:-change_me_collab_internal_key_minimum_32_chars}
+      LEARNHOUSE_MEDIA_SECRET_KEY: ${LEARNHOUSE_MEDIA_SECRET_KEY:-change_me_media_secret_key}
+      # AI Provider API Keys
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      # S3 / CDN Storage
+      LEARNHOUSE_STORAGE_TYPE: ${LEARNHOUSE_STORAGE_TYPE:-local}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:-}
+      S3_PUBLIC_DOMAIN: ${S3_PUBLIC_DOMAIN:-}
+      # Email
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-notifications@csginfotech.com}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-CSG-LMS}
+      # Sentry
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      # Tinybird Analytics (Pillar 2 / Admin Insights)
+      LEARNHOUSE_TINYBIRD_API_URL: ${LEARNHOUSE_TINYBIRD_API_URL:-http://tinybird-mock:8080}
+      LEARNHOUSE_TINYBIRD_INGEST_TOKEN: ${LEARNHOUSE_TINYBIRD_INGEST_TOKEN:-mock_ingest_token}
+      LEARNHOUSE_TINYBIRD_READ_TOKEN: ${LEARNHOUSE_TINYBIRD_READ_TOKEN:-mock_read_token}
+      # LiveKit Real-Time Video
+      LIVEKIT_URL: ${LIVEKIT_URL:-wss://${LIVEKIT_DOMAIN:-${LIVEKIT_HOSTNAME:-livekit.csginfotech.com}}}
+      LIVEKIT_INTERNAL_URL: ws://livekit:7880
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Process liveness ONLY -- deliberately not the API's /api/v1/health. The
+    # worker serves no HTTP, so an HTTP probe would either fail forever or,
+    # worse, report on the API while the worker is dead. This proves the arq
+    # process is alive; it does NOT prove jobs are running. The real signal is
+    # the hourly "arq worker healthcheck tick" log line -- alert on its ABSENCE.
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'arq src.core.worker.WorkerSettings' >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - csg-network
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+        reservations:
+          memory: 256M
+
+  # ==============================================================================
   # 5. LIVEKIT REAL-TIME WEBRTC MEDIA SERVER
   # ==============================================================================
   livekit:

@@ -37,3 +37,11 @@ node_modules
 
 # Runtime output
 logs
+
+# Dev-only tooling - must not ship in the production image.
+# scripts/mint_dev_keycloak_token.py mints a Keycloak-shaped JWT for an
+# arbitrary role (including SUPER_ADMIN); with `docker exec` in a production
+# container that is identity forgery with no session at all. Nothing in the
+# build or in docker-entrypoint.prod.sh uses scripts/ (migrations run via
+# `alembic upgrade head`), so excluding it is safe.
+scripts
