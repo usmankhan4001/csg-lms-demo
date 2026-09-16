@@ -31,12 +31,18 @@ def _single_tenancy_origin_regex(config) -> str:
     (with or without a ``www.`` prefix, any scheme/port), plus localhost as a
     fallback so local/dev flows keep working.
     """
+    allowed_regexp = getattr(config.hosting_config, "allowed_regexp", None) or os.environ.get("LEARNHOUSE_ALLOWED_REGEXP")
+    if allowed_regexp:
+        return allowed_regexp
+
     hosts = set()
     for cfg_value in (
         getattr(config.hosting_config, "frontend_domain", None),
         getattr(config.hosting_config, "domain", None),
         os.environ.get("LEARNHOUSE_URL"),
         os.environ.get("APP_URL"),
+        os.environ.get("NEXT_PUBLIC_LEARNHOUSE_DOMAIN"),
+        os.environ.get("NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL"),
     ):
         host = _host_from(cfg_value)
         # Exclude only the loopback hosts themselves (added separately below).
@@ -47,15 +53,18 @@ def _single_tenancy_origin_regex(config) -> str:
             hosts.add(host)
 
     allowed_origins = getattr(config.hosting_config, "allowed_origins", None) or []
+    if isinstance(allowed_origins, str):
+        allowed_origins = [o.strip() for o in allowed_origins.split(",") if o.strip()]
+    env_allowed_origins = os.environ.get("LEARNHOUSE_ALLOWED_ORIGINS")
+    if env_allowed_origins:
+        allowed_origins.extend([o.strip() for o in env_allowed_origins.split(",") if o.strip()])
+
     for origin in allowed_origins:
         host = _host_from(origin)
         if host and host not in ("localhost", "127.0.0.1"):
             hosts.add(host)
 
     if not hosts:
-        allowed_regexp = getattr(config.hosting_config, "allowed_regexp", None)
-        if allowed_regexp:
-            return allowed_regexp
         return _SINGLE_TENANCY_LOCALHOST_REGEX
 
     host_patterns = []
