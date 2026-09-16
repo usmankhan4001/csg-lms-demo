@@ -131,17 +131,64 @@ async def resolve_school_principal(
     somehow has the cookie) falls straight through to resolving `current_user`
     normally -- fail safe, never fail open.
     """
-    if isinstance(current_user, (APITokenUser, SuperadminAPITokenUser)):
-        # API tokens have no school-role concept -- there was never a way to
-        # mint a Keycloak-shaped token for one either, so this is not a
-        # regression, just made explicit rather than silently mismatched.
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="API tokens are not supported for SMS endpoints",
-        )
-
-    effective_user: PublicUser = current_user
+    effective_user: PublicUser
     impersonated_by_user_id: Optional[int] = None
+    token_org_id: Optional[int] = None
+    is_api_token = False
+    api_token_scopes: list = []
+    api_token_rights: Optional[dict] = None
+
+    if isinstance(current_user, SuperadminAPITokenUser):
+        is_api_token = True
+        target = await db_session.get(User, current_user.created_by_user_id) if current_user.created_by_user_id else None
+        if target is not None:
+            effective_user = PublicUser(
+                id=target.id,
+                username=target.username,
+                first_name=target.first_name,
+                last_name=target.last_name,
+                email=target.email,
+                user_uuid=target.user_uuid,
+                email_verified=target.email_verified,
+                is_superadmin=True,
+            )
+        else:
+            effective_user = PublicUser(
+                id=1,
+                username=current_user.username,
+                first_name="Superadmin",
+                last_name="API",
+                user_uuid=current_user.user_uuid,
+                is_superadmin=True,
+            )
+    elif isinstance(current_user, APITokenUser):
+        is_api_token = True
+        token_org_id = current_user.org_id
+        api_token_scopes = current_user.scopes or []
+        api_token_rights = current_user.rights
+        target = await db_session.get(User, current_user.created_by_user_id) if current_user.created_by_user_id else None
+        if target is not None:
+            effective_user = PublicUser(
+                id=target.id,
+                username=target.username,
+                first_name=target.first_name,
+                last_name=target.last_name,
+                email=target.email,
+                user_uuid=target.user_uuid,
+                email_verified=target.email_verified,
+                is_superadmin=target.is_superadmin,
+            )
+        else:
+            effective_user = PublicUser(
+                id=0,
+                username=current_user.username,
+                first_name="API",
+                last_name="Token",
+                user_uuid=current_user.user_uuid,
+                is_superadmin=False,
+            )
+    else:
+        effective_user = current_user
 
     if request is not None and current_user.is_superadmin:
         payload = decode_impersonation_cookie(request.cookies.get(IMPERSONATION_COOKIE_NAME))
@@ -169,8 +216,12 @@ async def resolve_school_principal(
     roles = {g.role.value if hasattr(g.role, "value") else str(g.role) for g in grants}
     if effective_user.is_superadmin:
         roles.add(SUPER_ADMIN)
+    if is_api_token and not roles:
+        roles.add(SCHOOL_ADMIN)
 
     org_id = next((g.org_id for g in grants if g.org_id), None)
+    if token_org_id is not None:
+        org_id = token_org_id
     campus_id = next((g.campus_id for g in grants if g.campus_id), None)
     if org_id is None and effective_user.is_superadmin:
         org_id = await _get_default_org_id(db_session)
@@ -178,6 +229,10 @@ async def resolve_school_principal(
     raw_claims: dict = {"lh_user_id": effective_user.id}
     if impersonated_by_user_id is not None:
         raw_claims["impersonated_by_user_id"] = impersonated_by_user_id
+    if is_api_token:
+        raw_claims["is_api_token"] = True
+        raw_claims["token_scopes"] = api_token_scopes
+        raw_claims["token_rights"] = api_token_rights
 
     # --- EMS (dynamic RBAC) assignments -----------------------------------
     #
