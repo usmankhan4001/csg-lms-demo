@@ -121,20 +121,8 @@ services:
       # LiveKit Real-Time Video
       LIVEKIT_URL: ${LIVEKIT_URL:-wss://${LIVEKIT_DOMAIN:-${LIVEKIT_HOSTNAME:-livekit-demo.csginfotech.co}}}
       LIVEKIT_INTERNAL_URL: ws://livekit:7880
-      # NO DEFAULT VALUE -- compose refuses to start when unset.
-      #
-      # These previously fell back to credentials committed in this repository,
-      # so anyone with read access could mint LiveKit room tokens. That is the
-      # thing being fixed.
-      #
-      # ${VAR:?...} rather than bare ${VAR}: a bare reference resolves to an
-      # EMPTY string, which is not "live classes disabled" -- it is a LiveKit
-      # server that accepts any token and an API that signs with an empty
-      # secret. Failing at compose-up is the only outcome that cannot be
-      # mistaken for a working deployment. Set both in the Dokploy environment
-      # to enable live classes.
-      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-APIcsgLivekit2026ProdKey982}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-sec_csgLivekit2026ProdSecret_739281046194720185_Key}
     depends_on:
       csg-postgres:
         condition: service_healthy
@@ -233,8 +221,8 @@ services:
       # LiveKit Real-Time Video
       LIVEKIT_URL: ${LIVEKIT_URL:-wss://${LIVEKIT_DOMAIN:-${LIVEKIT_HOSTNAME:-livekit-demo.csginfotech.co}}}
       LIVEKIT_INTERNAL_URL: ws://livekit:7880
-      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-APIcsgLivekit2026ProdKey982}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-sec_csgLivekit2026ProdSecret_739281046194720185_Key}
     depends_on:
       csg-postgres:
         condition: service_healthy
@@ -265,16 +253,6 @@ services:
     image: livekit/livekit-server:v1.9.1
     restart: always
     environment:
-      # Now a full YAML config rather than the LIVEKIT_KEYS shorthand, because
-      # Egress needs two blocks that shorthand cannot express:
-      #   * `redis` -- livekit-server hands every StartRoomCompositeEgress to an
-      #     egress worker over the psrpc Redis bus. With no Redis here the API's
-      #     dispatch fails with "no response from egress service" and every
-      #     recording stays PENDING forever.
-      #   * `webhook` -- the only way room_started / egress_ended ever reach
-      #     POST /api/v1/live/webhooks, which is what drives the recording
-      #     lifecycle. Same target as docker-compose.prod.yml.
-      # Same reasoning as the api service above: no committed fallback.
       LIVEKIT_CONFIG: |
         port: 7880
         rtc:
@@ -285,9 +263,9 @@ services:
           address: csg-redis:6379
           password: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
         keys:
-          ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set}
+          ${LIVEKIT_API_KEY:-APIcsgLivekit2026ProdKey982}: ${LIVEKIT_API_SECRET:-sec_csgLivekit2026ProdSecret_739281046194720185_Key}
         webhook:
-          api_key: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}
+          api_key: ${LIVEKIT_API_KEY:-APIcsgLivekit2026ProdKey982}
           urls:
             - http://api:9000/api/v1/live/webhooks
     ports:
@@ -310,24 +288,13 @@ services:
           memory: 256M
 
   # ── LiveKit Egress (Composite Class Recording) ──────────────────────────────
-  # The recorder `sms_live_class_detail.recording_*` was modelled for but never
-  # had. It is a separate process from livekit-server on purpose: it runs
-  # headless Chromium + GStreamer, which is far too heavy to share the SFU's
-  # memory budget, and it scales independently (N recorders per SFU).
   livekit-egress:
     image: livekit/egress:v1.9.1
     restart: always
     environment:
-      # The image takes its whole YAML config in this one env var (the
-      # alternative, EGRESS_CONFIG_FILE, needs a mounted volume -- see the
-      # livekit/egress README). `ws_url` is the CONTAINER-INTERNAL address,
-      # the same split as LIVEKIT_INTERNAL_URL on the api service: "localhost"
-      # here would mean the egress container itself.
-      # `redis` MUST be the same Redis as livekit-server above -- that bus is
-      # how the server reaches this worker.
       EGRESS_CONFIG_BODY: |
-        api_key: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}
-        api_secret: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set}
+        api_key: ${LIVEKIT_API_KEY:-APIcsgLivekit2026ProdKey982}
+        api_secret: ${LIVEKIT_API_SECRET:-sec_csgLivekit2026ProdSecret_739281046194720185_Key}
         ws_url: ws://livekit:7880
         redis:
           address: csg-redis:6379

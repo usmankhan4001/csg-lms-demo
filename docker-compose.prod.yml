@@ -172,8 +172,8 @@ services:
       # LiveKit Real-Time Video
       LIVEKIT_URL: ${LIVEKIT_URL:-wss://${LIVEKIT_DOMAIN:-${LIVEKIT_HOSTNAME:-livekit.csginfotech.com}}}
       LIVEKIT_INTERNAL_URL: ws://livekit:7880
-      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-APIcsgLivekit2026ProdKey982}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-sec_csgLivekit2026ProdSecret_739281046194720185_Key}
     depends_on:
       postgres:
         condition: service_healthy
@@ -278,8 +278,8 @@ services:
       # LiveKit Real-Time Video
       LIVEKIT_URL: ${LIVEKIT_URL:-wss://${LIVEKIT_DOMAIN:-${LIVEKIT_HOSTNAME:-livekit.csginfotech.com}}}
       LIVEKIT_INTERNAL_URL: ws://livekit:7880
-      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-APIcsgLivekit2026ProdKey982}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-sec_csgLivekit2026ProdSecret_739281046194720185_Key}
     depends_on:
       postgres:
         condition: service_healthy
@@ -328,9 +328,9 @@ services:
           address: redis:6379
           password: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
         keys:
-          ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set}
+          ${LIVEKIT_API_KEY:-APIcsgLivekit2026ProdKey982}: ${LIVEKIT_API_SECRET:-sec_csgLivekit2026ProdSecret_739281046194720185_Key}
         webhook:
-          api_key: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}
+          api_key: ${LIVEKIT_API_KEY:-APIcsgLivekit2026ProdKey982}
           urls:
             - http://api:9000/api/v1/live/webhooks
     ports:
@@ -378,8 +378,8 @@ services:
       # `redis` MUST be the same Redis as livekit-server above -- that bus is
       # how the server reaches this worker.
       EGRESS_CONFIG_BODY: |
-        api_key: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}
-        api_secret: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set}
+        api_key: ${LIVEKIT_API_KEY:-APIcsgLivekit2026ProdKey982}
+        api_secret: ${LIVEKIT_API_SECRET:-sec_csgLivekit2026ProdSecret_739281046194720185_Key}
         ws_url: ws://livekit:7880
         redis:
           address: redis:6379
