@@ -15,15 +15,11 @@
  * bridge -- so it takes the token directly as a parameter instead.
  */
 
-import { getConfig } from '@services/config/config'
+import { getAPIUrl } from '@services/config/config'
 import { bucketRealmRole } from '@/components/navigation/types'
 
 const ROLE_COOKIE_NAME = 'LH_role'
 const ROLE_COOKIE_MAX_AGE = 60 * 60 * 24 * 7 // 7 days -- generously outlives a session; harmless since it's not a security boundary
-
-function getBackendUrl(): string {
-  return getConfig('NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL', 'http://localhost:1338').replace(/\/+$/, '')
-}
 
 function setRoleCookie(role: string): void {
   document.cookie = `${ROLE_COOKIE_NAME}=${role}; Path=/; Max-Age=${ROLE_COOKIE_MAX_AGE}; SameSite=Lax`
@@ -37,7 +33,8 @@ export function clearRoleCookie(): void {
  * post-login redirect to today's `/home` fallback, not to a broken app. */
 export async function refreshSchoolRoleCookie(accessToken: string): Promise<void> {
   try {
-    const res = await fetch(`${getBackendUrl()}/api/v1/sms/me`, {
+    const base = getAPIUrl().replace(/\/+$/, '')
+    const res = await fetch(`${base}/sms/me`, {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
     })
     if (!res.ok) return

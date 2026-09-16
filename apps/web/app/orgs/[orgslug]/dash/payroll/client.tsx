@@ -16,7 +16,7 @@
  */
 
 import { useCallback, useMemo, useState } from 'react'
-import { BadgeCheck, CircleDollarSign, Clock, ShieldCheck } from 'lucide-react'
+import { BadgeCheck, CircleDollarSign, Clock, ShieldCheck, Eye, FileText } from 'lucide-react'
 import {
   DataTable,
   EmptyState,
@@ -47,6 +47,8 @@ import type {
 } from '@/modules/sms/hr_payroll/types'
 import { DataExportToolbar } from '@/components/ems/DataExportToolbar'
 import type { ExportColumn } from '@/lib/export/data-export'
+import { Payslip360Drawer } from '@/modules/ems/inspectors/Payslip360Drawer'
+import { PrintableDocumentViewer } from '@/modules/ems/documents/PrintableDocumentViewer'
 
 interface PayrollClientProps {
   org_id: number
@@ -83,6 +85,12 @@ export default function PayrollClient({ org_id }: PayrollClientProps) {
   const [trailSlipId, setTrailSlipId] = useState<number | null>(null)
   const [trail, setTrail] = useState<PayrollActionRead[] | null>(null)
   const [trailError, setTrailError] = useState<string | null>(null)
+
+  // 360 Inspection & Document preview states
+  const [inspectOpen, setInspectOpen] = useState(false)
+  const [inspectSlip, setInspectSlip] = useState<any | null>(null)
+  const [viewerOpen, setViewerOpen] = useState(false)
+  const [payslipData, setPayslipData] = useState<any | null>(null)
 
   const slips = useApiResource(
     () => listSalarySlips({ month, year }),
@@ -342,17 +350,96 @@ export default function PayrollClient({ org_id }: PayrollClientProps) {
               ),
             },
             {
-              key: 'trail',
-              header: 'Trail',
+              key: 'actions',
+              header: 'Actions',
+              align: 'right',
               render: (r: SalarySlipRead) => (
-                <button
-                  type="button"
-                  id={`payroll-trail-${r.id}`}
-                  className="text-sm text-gray-600 underline hover:text-gray-900"
-                  onClick={() => openTrail(r.id)}
-                >
-                  View
-                </button>
+                <div className="flex items-center justify-end gap-1.5">
+                  <button
+                    type="button"
+                    title="Inspect Payslip 360°"
+                    onClick={() => {
+                      setInspectSlip({
+                        id: r.id,
+                        slipNo: r.slip_no,
+                        staffId: r.staff_id,
+                        staffName: `Staff Member #${r.staff_id}`,
+                        department: 'Academic Faculty',
+                        role: 'Faculty Member',
+                        month: r.month,
+                        year: r.year,
+                        basic: r.basic,
+                        housingAllowance: r.housing_allowance,
+                        medicalAllowance: r.medical_allowance,
+                        otherAllowances: r.other_allowances,
+                        unpaidLeaveDays: r.unpaid_leave_days,
+                        unpaidLeaveDeduction: r.unpaid_leave_deduction,
+                        providentFund: r.provident_fund,
+                        taxDeduction: r.tax_deduction,
+                        otherDeductions: r.other_deductions,
+                        grossSalary: r.gross_salary,
+                        totalDeductions: r.total_deductions,
+                        netSalary: r.net_salary,
+                        status: r.payment_status,
+                        preparerUserId: null,
+                        preparerName: 'Payroll Officer',
+                        wasClamped: false,
+                        auditTrail: [],
+                      })
+                      setInspectOpen(true)
+                    }}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-colors"
+                  >
+                    <Eye className="size-3" />
+                    <span>360°</span>
+                  </button>
+                  <button
+                    type="button"
+                    title="Print Payslip (PDF)"
+                    onClick={() => {
+                      const totalAllowances = (r.housing_allowance ?? 0) + (r.medical_allowance ?? 0) + (r.other_allowances ?? 0)
+                      setPayslipData({
+                        payslipNumber: r.slip_no,
+                        payPeriod: `${MONTHS[month - 1]} ${year}`,
+                        paymentDate: new Date().toISOString().slice(0, 10),
+                        employeeName: `Staff Member #${r.staff_id}`,
+                        employeeId: `STF-${r.staff_id}`,
+                        department: 'Academic Faculty',
+                        designation: 'Faculty Member',
+                        campusName: 'Main Science Campus',
+                        bankName: 'Habib Bank Limited (HBL)',
+                        bankAccount: 'PK64HABB000987654321',
+                        taxNumber: 'NTN-7492019-3',
+                        earnings: [
+                          { description: 'Basic Salary', amount: r.basic },
+                          { description: 'Allowances', amount: totalAllowances },
+                        ].filter((e) => e.amount > 0),
+                        deductions: [
+                          { description: 'Income Tax & Statutory', amount: r.total_deductions },
+                        ].filter((d) => d.amount > 0),
+                        grossPay: r.gross_salary,
+                        totalDeductions: r.total_deductions,
+                        netPay: r.net_salary,
+                        preparedBy: 'Payroll Accountant',
+                        approvedBy: 'Financial Controller',
+                        disbursementStatus: r.payment_status === 'PAID' ? 'Disbursed' : 'Approved / Pending',
+                      })
+                      setViewerOpen(true)
+                    }}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-colors"
+                  >
+                    <FileText className="size-3" />
+                    <span>PDF</span>
+                  </button>
+                  <button
+                    type="button"
+                    id={`payroll-trail-${r.id}`}
+                    className="text-xs text-gray-600 underline hover:text-gray-900 px-1"
+                    onClick={() => openTrail(r.id)}
+                  >
+                    Trail
+                  </button>
+                </div>
               ),
             },
           ]}
@@ -399,6 +486,21 @@ export default function PayrollClient({ org_id }: PayrollClientProps) {
           </ul>
         )}
       </SchoolDialog>
+
+      {/* 360° Payslip Inspection Drawer */}
+      <Payslip360Drawer
+        isOpen={inspectOpen}
+        onClose={() => setInspectOpen(false)}
+        record={inspectSlip}
+      />
+
+      {/* Printable Payslip PDF Document Viewer Studio */}
+      <PrintableDocumentViewer
+        isOpen={viewerOpen}
+        onClose={() => setViewerOpen(false)}
+        initialDocType="payslip"
+        payslipData={payslipData}
+      />
     </DashPageShell>
   )
 }

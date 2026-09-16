@@ -31,13 +31,8 @@
  * than hide the whole sidebar over a features fetch that didn't load.
  */
 
-import { getConfig } from '@services/config/config'
+import { getAPIUrl, getConfig } from '@services/config/config'
 
-// See lib/api/api-client.ts's getBackendUrl() for why this must be read live
-// via getConfig() rather than a frozen `process.env.X` module constant.
-function getBackendUrl(): string {
-  return (getConfig('NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL', 'http://localhost:1338')).replace(/\/+$/, '')
-}
 function getOrgSlugDefault(): string {
   return getConfig('NEXT_PUBLIC_ORG_SLUG', 'default')
 }
@@ -53,7 +48,8 @@ export type ResolvedFeatureMap = Record<string, ResolvedFeature>
 
 export async function fetchOrgResolvedFeatures(orgSlug: string = getOrgSlugDefault()): Promise<ResolvedFeatureMap | null> {
   try {
-    const res = await fetch(`${getBackendUrl()}/api/v1/orgs/slug/${encodeURIComponent(orgSlug)}`, {
+    const base = getAPIUrl().replace(/\/+$/, '')
+    const res = await fetch(`${base}/orgs/slug/${encodeURIComponent(orgSlug)}`, {
       headers: { Accept: 'application/json' },
       cache: 'no-store',
     })

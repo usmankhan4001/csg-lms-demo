@@ -16,19 +16,10 @@
  */
 
 import { authReadyPromise, getActiveAccessToken } from './session-token-bridge'
-import { getConfig } from '@services/config/config'
+import { getAPIUrl } from '@services/config/config'
 
-// NOT a frozen module-level constant: this file runs in the browser, and
-// `getConfig()` reads `window.__RUNTIME_CONFIG__` (populated at container
-// startup by server-wrapper.js, see that file + layout.tsx's
-// `<script src="/runtime-config.js">`). A plain
-// `process.env.NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL` reference here would get
-// permanently inlined to whatever (or nothing) was set at `next build` time
-// -- which is exactly what silently pointed every SMS module fetch at the
-// `http://localhost:1338` fallback in every real deployment so far, since
-// none of them export that var at build time, only at container runtime.
-function getBackendUrl(): string {
-  return (getConfig('NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL', 'http://localhost:1338')).replace(/\/+$/, '')
+function getApiBaseUrl(): string {
+  return getAPIUrl().replace(/\/+$/, '')
 }
 
 export type ApiErrorKind = 'network' | 'unauthenticated' | 'permission_denied' | 'not_found' | 'validation' | 'server' | 'unknown'
@@ -94,7 +85,9 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     headers.set('Authorization', `Bearer ${token}`)
   }
 
-  const url = `${getBackendUrl()}/api/v1${path.startsWith('/') ? path : `/${path}`}`
+  const base = getApiBaseUrl()
+  const cleanPath = path.startsWith('/') ? path : `/${path}`
+  const url = `${base}${cleanPath}`
 
   let response: Response
   try {

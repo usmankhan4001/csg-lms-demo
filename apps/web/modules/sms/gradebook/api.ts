@@ -5,7 +5,7 @@
 
 import { ApiError, apiGet, apiPost, toQueryString } from '@/lib/api/api-client'
 import { authReadyPromise, getActiveAccessToken } from '@/lib/api/session-token-bridge'
-import { getConfig } from '@services/config/config'
+import { getAPIUrl } from '@services/config/config'
 import type {
   AssessmentPlanCreate,
   BatchDraftRequest,
@@ -108,10 +108,10 @@ export function sendReportCard(reportCardId: number): Promise<TermReportCardReco
  */
 export async function downloadReportCardPdf(reportCardId: number, filename?: string): Promise<void> {
   await authReadyPromise
-  const base = (getConfig('NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL', 'http://localhost:1338')).replace(/\/+$/, '')
+  const base = getAPIUrl().replace(/\/+$/, '')
   const token = getActiveAccessToken()
 
-  const response = await fetch(`${base}/api/v1/sms/gradebook/report-card/${reportCardId}/pdf`, {
+  const response = await fetch(`${base}/sms/gradebook/report-card/${reportCardId}/pdf`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
 

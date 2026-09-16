@@ -10,7 +10,7 @@
 
 import { ApiError, apiFetch, apiGet, apiPatch, apiPost, toQueryString } from '@/lib/api/api-client'
 import { authReadyPromise, getActiveAccessToken } from '@/lib/api/session-token-bridge'
-import { getConfig } from '@services/config/config'
+import { getAPIUrl } from '@services/config/config'
 import type {
   ApplicationCreatePayload,
   ApplicationDetailRead,
@@ -110,10 +110,10 @@ export function verifyDocument(
  */
 export async function downloadDocument(documentId: number, filename?: string): Promise<void> {
   await authReadyPromise
-  const base = getConfig('NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL', 'http://localhost:1338').replace(/\/+$/, '')
+  const base = getAPIUrl().replace(/\/+$/, '')
   const token = getActiveAccessToken()
 
-  const response = await fetch(`${base}/api/v1/sms/admissions/documents/${documentId}/content`, {
+  const response = await fetch(`${base}/sms/admissions/documents/${documentId}/content`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
 

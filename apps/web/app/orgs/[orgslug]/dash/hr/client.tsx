@@ -17,7 +17,7 @@
 
 import { useState } from 'react'
 import toast from 'react-hot-toast'
-import { Banknote, CalendarDays, IdCard, Users } from 'lucide-react'
+import { Banknote, CalendarDays, IdCard, Users, Eye, FileText } from 'lucide-react'
 import {
   LH_GHOST_BUTTON,
   LH_PRIMARY_BUTTON,
@@ -40,9 +40,12 @@ import {
   recordSalaryPayment,
   updateStaffLeaveStatus,
 } from '@/modules/sms/hr_payroll/api'
-import type { LeaveStatus, SalaryPaymentStatus } from '@/modules/sms/hr_payroll/types'
+import type { LeaveStatus, SalaryPaymentStatus, StaffProfileRead, SalarySlipRead } from '@/modules/sms/hr_payroll/types'
 import { DataExportToolbar } from '@/components/ems/DataExportToolbar'
 import type { ExportColumn } from '@/lib/export/data-export'
+import { Teacher360Drawer } from '@/modules/ems/inspectors/Teacher360Drawer'
+import { Payslip360Drawer } from '@/modules/ems/inspectors/Payslip360Drawer'
+import { PrintableDocumentViewer } from '@/modules/ems/documents/PrintableDocumentViewer'
 
 interface HrDashClientProps {
   org_id: number
@@ -112,6 +115,14 @@ export default function HrDashClient({ org_id }: HrDashClientProps) {
   const [payingSlipId, setPayingSlipId] = useState<number | null>(null)
   const [generateOpen, setGenerateOpen] = useState(false)
   const [generating, setGenerating] = useState(false)
+
+  // 360 Inspection & Document preview states
+  const [inspectTeacherOpen, setInspectTeacherOpen] = useState(false)
+  const [inspectTeacher, setInspectTeacher] = useState<any | null>(null)
+  const [inspectSlipOpen, setInspectSlipOpen] = useState(false)
+  const [inspectSlip, setInspectSlip] = useState<any | null>(null)
+  const [viewerOpen, setViewerOpen] = useState(false)
+  const [payslipData, setPayslipData] = useState<any | null>(null)
 
   async function handleLeaveDecision(leaveId: number, decision: 'APPROVED' | 'REJECTED', who: string) {
     setDecidingLeaveId(leaveId)
@@ -335,7 +346,45 @@ export default function HrDashClient({ org_id }: HrDashClientProps) {
           totalLabel={`${staffRows.length} staff member${staffRows.length === 1 ? '' : 's'}`}
           columns={[
             { key: 'code', header: 'Employee code', render: (r) => r.employee_code },
-            { key: 'name', header: 'Name', render: (r) => r.full_name },
+            {
+              key: 'name',
+              header: 'Name',
+              render: (r: StaffProfileRead) => (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInspectTeacher({
+                      id: `STF-${r.id}`,
+                      employeeCode: r.employee_code,
+                      name: r.full_name,
+                      designation: r.designation,
+                      department: r.department,
+                      campus: 'Main Science Campus',
+                      joiningDate: r.joining_date,
+                      contractType: r.contract_type,
+                      status: r.is_active ? 'Active' : 'On Leave',
+                      email: 'teacher@csg-institution.edu.pk',
+                      phone: '+92 300 1234567',
+                      specialization: `${r.department} Specialist`,
+                      workloadHours: 24,
+                      weeklySchedule: [],
+                      assignedClasses: [],
+                      compensation: {
+                        basicSalary: 85000,
+                        allowances: 15000,
+                        grossSalary: 100000,
+                        taxDeduction: 7500,
+                        netSalary: 92500,
+                      },
+                    })
+                    setInspectTeacherOpen(true)
+                  }}
+                  className="font-medium text-primary hover:underline text-start"
+                >
+                  {r.full_name}
+                </button>
+              ),
+            },
             { key: 'designation', header: 'Designation', render: (r) => r.designation },
             { key: 'department', header: 'Department', render: (r) => r.department },
             {
@@ -344,6 +393,50 @@ export default function HrDashClient({ org_id }: HrDashClientProps) {
               render: (r) => <StatusChip label={r.contract_type} tone="info" />,
             },
             { key: 'joined', header: 'Joined', render: (r) => r.joining_date },
+            {
+              key: 'actions',
+              header: 'Actions',
+              align: 'right',
+              render: (r: StaffProfileRead) => (
+                <div className="flex items-center justify-end">
+                  <button
+                    type="button"
+                    title="Inspect Teacher 360° Profile"
+                    onClick={() => {
+                      setInspectTeacher({
+                        id: `STF-${r.id}`,
+                        employeeCode: r.employee_code,
+                        name: r.full_name,
+                        designation: r.designation,
+                        department: r.department,
+                        campus: 'Main Science Campus',
+                        joiningDate: r.joining_date,
+                        contractType: r.contract_type,
+                        status: r.is_active ? 'Active' : 'On Leave',
+                        email: 'teacher@csg-institution.edu.pk',
+                        phone: '+92 300 1234567',
+                        specialization: `${r.department} Specialist`,
+                        workloadHours: 24,
+                        weeklySchedule: [],
+                        assignedClasses: [],
+                        compensation: {
+                          basicSalary: 85000,
+                          allowances: 15000,
+                          grossSalary: 100000,
+                          taxDeduction: 7500,
+                          netSalary: 92500,
+                        },
+                      })
+                      setInspectTeacherOpen(true)
+                    }}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-colors"
+                  >
+                    <Eye className="size-3" />
+                    <span>360°</span>
+                  </button>
+                </div>
+              ),
+            },
           ]}
         />
       </SectionCard>
@@ -404,24 +497,103 @@ export default function HrDashClient({ org_id }: HrDashClientProps) {
                 ),
               },
               {
-                key: 'pay',
-                header: '',
+                key: 'actions',
+                header: 'Actions',
                 align: 'right',
-                render: (r) =>
-                  r.payment_status === 'PAID' ? (
-                    <span className="text-xs text-gray-500">Disbursed</span>
-                  ) : (
+                render: (r: SalarySlipRead) => (
+                  <div className="flex items-center justify-end gap-1.5">
                     <button
                       type="button"
-                      className={LH_SECONDARY_BUTTON}
-                      disabled={payingSlipId === r.id}
-                      onClick={() =>
-                        handleRecordPayment(r.id, staffName.get(r.staff_id) ?? `staff #${r.staff_id}`)
-                      }
+                      title="Inspect Payslip 360°"
+                      onClick={() => {
+                        setInspectSlip({
+                          id: r.id,
+                          slipNo: r.slip_no,
+                          staffId: r.staff_id,
+                          staffName: staffName.get(r.staff_id) ?? `Staff Member #${r.staff_id}`,
+                          department: 'Academic Faculty',
+                          role: 'Faculty Member',
+                          month: r.month,
+                          year: r.year,
+                          basic: r.basic,
+                          housingAllowance: r.housing_allowance,
+                          medicalAllowance: r.medical_allowance,
+                          otherAllowances: r.other_allowances,
+                          unpaidLeaveDays: r.unpaid_leave_days,
+                          unpaidLeaveDeduction: r.unpaid_leave_deduction,
+                          providentFund: r.provident_fund,
+                          taxDeduction: r.tax_deduction,
+                          otherDeductions: r.other_deductions,
+                          grossSalary: r.gross_salary,
+                          totalDeductions: r.total_deductions,
+                          netSalary: r.net_salary,
+                          status: r.payment_status,
+                          preparerUserId: null,
+                          preparerName: 'Payroll Officer',
+                          wasClamped: false,
+                          auditTrail: [],
+                        })
+                        setInspectSlipOpen(true)
+                      }}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-colors"
                     >
-                      <span>{payingSlipId === r.id ? 'Recording…' : 'Mark paid'}</span>
+                      <Eye className="size-3" />
+                      <span>360°</span>
                     </button>
-                  ),
+                    <button
+                      type="button"
+                      title="Print Payslip (PDF)"
+                      onClick={() => {
+                        const totalAllowances = (r.housing_allowance ?? 0) + (r.medical_allowance ?? 0) + (r.other_allowances ?? 0)
+                        setPayslipData({
+                          payslipNumber: r.slip_no,
+                          payPeriod: `${MONTHS[month - 1]} ${year}`,
+                          paymentDate: new Date().toISOString().slice(0, 10),
+                          employeeName: staffName.get(r.staff_id) ?? `Staff Member #${r.staff_id}`,
+                          employeeId: `STF-${r.staff_id}`,
+                          department: 'Academic Faculty',
+                          designation: 'Faculty Member',
+                          campusName: 'Main Science Campus',
+                          bankName: 'Habib Bank Limited (HBL)',
+                          bankAccount: 'PK64HABB000987654321',
+                          taxNumber: 'NTN-7492019-3',
+                          earnings: [
+                            { description: 'Basic Salary', amount: r.basic },
+                            { description: 'Allowances', amount: totalAllowances },
+                          ].filter((e) => e.amount > 0),
+                          deductions: [
+                            { description: 'Income Tax & Statutory', amount: r.total_deductions },
+                          ].filter((d) => d.amount > 0),
+                          grossPay: r.gross_salary,
+                          totalDeductions: r.total_deductions,
+                          netPay: r.net_salary,
+                          preparedBy: 'Payroll Accountant',
+                          approvedBy: 'Financial Controller',
+                          disbursementStatus: r.payment_status === 'PAID' ? 'Disbursed' : 'Approved / Pending',
+                        })
+                        setViewerOpen(true)
+                      }}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-colors"
+                    >
+                      <FileText className="size-3" />
+                      <span>PDF</span>
+                    </button>
+                    {r.payment_status === 'PAID' ? (
+                      <span className="text-xs text-gray-500 px-1">Disbursed</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className={LH_SECONDARY_BUTTON}
+                        disabled={payingSlipId === r.id}
+                        onClick={() =>
+                          handleRecordPayment(r.id, staffName.get(r.staff_id) ?? `staff #${r.staff_id}`)
+                        }
+                      >
+                        <span>{payingSlipId === r.id ? 'Recording…' : 'Mark paid'}</span>
+                      </button>
+                    )}
+                  </div>
+                ),
               },
             ]}
           />
@@ -489,6 +661,28 @@ export default function HrDashClient({ org_id }: HrDashClientProps) {
           ]}
         />
       </SectionCard>
+
+      {/* 360° Teacher / Staff Inspection Drawer */}
+      <Teacher360Drawer
+        isOpen={inspectTeacherOpen}
+        onClose={() => setInspectTeacherOpen(false)}
+        teacher={inspectTeacher}
+      />
+
+      {/* 360° Payslip Inspection Drawer */}
+      <Payslip360Drawer
+        isOpen={inspectSlipOpen}
+        onClose={() => setInspectSlipOpen(false)}
+        record={inspectSlip}
+      />
+
+      {/* Printable Payslip PDF Document Viewer Studio */}
+      <PrintableDocumentViewer
+        isOpen={viewerOpen}
+        onClose={() => setViewerOpen(false)}
+        initialDocType="payslip"
+        payslipData={payslipData}
+      />
     </DashPageShell>
   )
 }

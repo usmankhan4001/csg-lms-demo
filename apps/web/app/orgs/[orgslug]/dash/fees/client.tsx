@@ -17,7 +17,7 @@
 
 import { useState } from 'react'
 import toast from 'react-hot-toast'
-import { BadgeDollarSign, FilePlus2, Receipt, Wallet } from 'lucide-react'
+import { BadgeDollarSign, FilePlus2, Receipt, Wallet, Eye, FileText } from 'lucide-react'
 import {
   LH_GHOST_BUTTON,
   LH_INPUT,
@@ -44,9 +44,11 @@ import {
   listVouchers,
 } from '@/modules/sms/fees/api'
 import { PayVoucherDialog } from '@/modules/sms/fees/components/PayVoucherDialog'
-import type { VoucherStatus } from '@/modules/sms/fees/types'
+import type { VoucherStatus, StudentFeeVoucherRead } from '@/modules/sms/fees/types'
 import { DataExportToolbar } from '@/components/ems/DataExportToolbar'
 import type { ExportColumn } from '@/lib/export/data-export'
+import { FeeVoucher360Drawer } from '@/modules/ems/inspectors/FeeVoucher360Drawer'
+import { PrintableDocumentViewer } from '@/modules/ems/documents/PrintableDocumentViewer'
 
 const STATUS_TONE: Record<VoucherStatus, StatusTone> = {
   PAID: 'positive',
@@ -416,6 +418,12 @@ export default function FeesDashClient({ org_id }: FeesDashClientProps) {
   const [accruing, setAccruing] = useState(false)
   const [accrualNote, setAccrualNote] = useState<string | null>(null)
 
+  // 360 Inspection & Document preview states
+  const [inspectOpen, setInspectOpen] = useState(false)
+  const [inspectVoucher, setInspectVoucher] = useState<any | null>(null)
+  const [viewerOpen, setViewerOpen] = useState(false)
+  const [feeSlipData, setFeeSlipData] = useState<any | null>(null)
+
   const campuses = useApiResource(() => listCampuses({ orgId: org_id, isActive: true }), [org_id], {
     isEmpty: (d) => d.length === 0,
   })
@@ -671,28 +679,118 @@ export default function FeesDashClient({ org_id }: FeesDashClientProps) {
                 render: (r) => <StatusChip label={r.status} tone={STATUS_TONE[r.status] ?? 'neutral'} />,
               },
               {
-                key: 'collect',
-                header: '',
+                key: 'actions',
+                header: 'Actions',
                 align: 'right',
-                render: (r) =>
-                  r.balance_amount > 0 && r.status !== 'CANCELLED' ? (
-                    <PayVoucherDialog
-                      voucher={r}
-                      onPaid={vouchers.refetch}
-                      trigger={
-                        <button type="button" className={LH_SECONDARY_BUTTON}>
-                          <span>Collect</span>
-                        </button>
-                      }
-                    />
-                  ) : (
-                    <span className="text-xs text-gray-500">Settled</span>
-                  ),
+                render: (r: StudentFeeVoucherRead) => (
+                  <div className="flex items-center justify-end gap-1.5">
+                    <button
+                      type="button"
+                      title="Inspect Voucher 360°"
+                      onClick={() => {
+                        setInspectVoucher({
+                          id: `VCH-${r.id}`,
+                          voucherNo: r.voucher_no,
+                          studentId: `STU-${r.student_id}`,
+                          studentName: `Student #${r.student_id}`,
+                          rollNo: `RN-${r.student_id}`,
+                          gradeSection: 'Grade 10 - Section A',
+                          campus: 'Main Science Campus',
+                          issueDate: r.issue_date,
+                          dueDate: r.due_date,
+                          status: r.status,
+                          totalAmount: r.total_amount,
+                          paidAmount: r.paid_amount,
+                          balanceAmount: r.balance_amount,
+                          lateFeeApplied: r.late_fee_applied ?? 0,
+                          lineItems: [
+                            { description: 'Tuition Fee', amount: r.tuition_fee, category: 'Tuition' },
+                            { description: 'Transport Fee', amount: r.transport_fee, category: 'Transport' },
+                            { description: 'Laboratory Fee', amount: r.lab_fee, category: 'Lab' },
+                            { description: 'Other Charges', amount: r.other_fee, category: 'Other' },
+                          ].filter((item) => item.amount > 0),
+                          installments: [],
+                          transactions: [],
+                        })
+                        setInspectOpen(true)
+                      }}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-colors"
+                    >
+                      <Eye className="size-3" />
+                      <span>360°</span>
+                    </button>
+                    <button
+                      type="button"
+                      title="Print 3-Part Bank Slip (PDF)"
+                      onClick={() => {
+                        setFeeSlipData({
+                          voucherNo: r.voucher_no,
+                          issueDate: r.issue_date,
+                          dueDate: r.due_date,
+                          validUntil: r.due_date,
+                          studentName: `Student #${r.student_id}`,
+                          studentId: `STU-${r.student_id}`,
+                          rollNo: `RN-${r.student_id}`,
+                          gradeSection: 'Grade 10 - Section A',
+                          campusName: 'Main Science Campus',
+                          feeMonth: 'Current Billing Cycle',
+                          tuitionFee: r.tuition_fee,
+                          transportFee: r.transport_fee,
+                          labFee: r.lab_fee,
+                          otherFee: r.other_fee,
+                          discount: r.discount,
+                          fine: r.fine,
+                          lateFee: r.late_fee_applied ?? 0,
+                          totalAmount: r.total_amount,
+                          payableByDueDate: r.total_amount,
+                          payableAfterDueDate: r.total_amount + (r.late_fee_applied ?? 500),
+                          bankName: 'Habib Bank Limited (HBL)',
+                          accountTitle: 'CSG Educational Systems Ltd',
+                          accountNumber: 'PK64HABB00012345678901',
+                          barcodeValue: r.voucher_no.replace(/[^0-9]/g, '') || '849204810294',
+                        })
+                        setViewerOpen(true)
+                      }}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 transition-colors"
+                    >
+                      <FileText className="size-3" />
+                      <span>PDF</span>
+                    </button>
+                    {r.balance_amount > 0 && r.status !== 'CANCELLED' ? (
+                      <PayVoucherDialog
+                        voucher={r}
+                        onPaid={vouchers.refetch}
+                        trigger={
+                          <button type="button" className={LH_SECONDARY_BUTTON}>
+                            <span>Collect</span>
+                          </button>
+                        }
+                      />
+                    ) : (
+                      <span className="text-xs text-gray-500 px-1">Settled</span>
+                    )}
+                  </div>
+                ),
               },
             ]}
           />
         )}
       </SectionCard>
+
+      {/* 360° Fee Voucher Drawer */}
+      <FeeVoucher360Drawer
+        isOpen={inspectOpen}
+        onClose={() => setInspectOpen(false)}
+        voucher={inspectVoucher}
+      />
+
+      {/* 3-Part Bank Slip Document Viewer Studio */}
+      <PrintableDocumentViewer
+        isOpen={viewerOpen}
+        onClose={() => setViewerOpen(false)}
+        initialDocType="bank_slip"
+        feeData={feeSlipData}
+      />
     </DashPageShell>
   )
 }
