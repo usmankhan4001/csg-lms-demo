@@ -293,26 +293,26 @@ export default function SchoolDashboardHome() {
   const canTeach = canAdminister || isTeacher
   const canBackOffice = canAdminister || isSchoolStaff
 
-  // A plain Learnhouse org admin with no school role gets the untouched
-  // Learnhouse dashboard: granting the first SMS role requires those screens.
-  const isPureLearnhouse = noSchoolRole
+  // SMS-first: all administrators and school staff see the school operations dashboard
+  const isPureLearnhouse = false
 
   const showAttendance = isEnabled('sms_attendance') && canTeach
   const showGradebook = isEnabled('sms_gradebook') && canTeach
   const showTimetable = isEnabled('sms_timetable') && canTeach
   const showFees = isEnabled('sms_fees') && canBackOffice
   const showAdmissions = isEnabled('revops') && canAdminister
+  const showCampus = canAdminister
 
   const quickActions: QuickAction[] = [
     showAttendance && { href: '/dash/attendance', label: 'Take register', icon: CalendarCheck },
     showGradebook && { href: '/dash/gradebook', label: 'Enter marks', icon: GraduationCap },
     showTimetable && { href: '/dash/timetable', label: 'Timetable', icon: CalendarClock },
-    showFees && { href: '/dash/fees', label: 'Fees', icon: Wallet },
     showAdmissions && { href: '/dash/admissions', label: 'Admissions', icon: UserPlus },
+    showFees && { href: '/dash/fees', label: 'Fees', icon: Wallet },
+    showCampus && { href: '/dash/campus', label: 'Campus', icon: BookOpen },
   ].filter(Boolean) as QuickAction[]
 
-  // Wait for /sms/me before deciding which dashboard to render, otherwise a
-  // school admin sees the Learnhouse home flash first.
+  // Wait for /sms/me before deciding which dashboard to render
   const roleResolved = checked
 
   return (
@@ -324,14 +324,14 @@ export default function SchoolDashboardHome() {
               <h1 className="text-2xl font-bold text-gray-900">
                 Welcome back{username ? `, ${username}` : ''}
               </h1>
-              {org?.name && <p className="mt-1.5 text-xs text-gray-400">{org.name}</p>}
+              {org?.name && <p className="mt-1.5 text-xs text-gray-400">{org.name} • School Management Console</p>}
             </div>
             <QuickActions actions={quickActions} />
           </div>
 
-          {roleResolved && !isPureLearnhouse && (
+          {roleResolved && (
             <div className="space-y-6">
-              {/* Whole-school figures: admin only, because the endpoint is. */}
+              {/* Whole-school figures: admin only */}
               {canAdminister && <SchoolOverviewStats />}
 
               {/* Attendance flags. Teachers see their own sections only. */}

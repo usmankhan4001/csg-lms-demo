@@ -437,6 +437,134 @@ function DashLeftMenu() {
               onClick={() => track(AnalyticsEvent.DashboardNavClicked, { section: 'home' })}
             />
 
+            {/* 1. ACADEMIC CORE (SMS) */}
+            {(showCampus || showTimetable || showAttendance || showGradebook || showExams) && !isCollapsed && (
+              <div className={SCHOOL_GROUP_HEADING}>Academic Core</div>
+            )}
+            {showCampus && (
+              <MenuLink
+                href="/dash/campus"
+                icon={<Buildings size={20} weight="fill" />}
+                label="Campus &amp; Sections"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/campus')}
+              />
+            )}
+            {showTimetable && (
+              <MenuLink
+                href="/dash/timetable"
+                icon={<CalendarBlank size={20} weight="fill" />}
+                label="Timetable"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/timetable')}
+              />
+            )}
+            {showAttendance && (
+              <MenuLink
+                href="/dash/attendance"
+                icon={<CalendarCheck size={20} weight="fill" />}
+                label="Attendance"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/attendance')}
+              />
+            )}
+            {showGradebook && (
+              <MenuLink
+                href="/dash/gradebook"
+                icon={<GraduationCap size={20} weight="fill" />}
+                label="Gradebook"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/gradebook')}
+              />
+            )}
+            {showExams && (
+              <MenuLink
+                href="/dash/exams"
+                icon={<Exam size={20} weight="fill" />}
+                label="Exams &amp; CBT"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/exams')}
+              />
+            )}
+
+            {/* 2. ADMISSIONS & STUDENTS (SMS) */}
+            {(showAdmissions || showAlumni || showDiscipline || showCounseling) && !isCollapsed && (
+              <div className={SCHOOL_GROUP_HEADING}>Admissions &amp; Students</div>
+            )}
+            {showAdmissions && (
+              <MenuLink
+                href="/dash/admissions"
+                icon={<UserPlus size={20} weight="fill" />}
+                label="Admissions"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/admissions')}
+              />
+            )}
+            {showAlumni && (
+              <MenuLink
+                href="/dash/alumni"
+                icon={<Student size={20} weight="fill" />}
+                label="Alumni"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/alumni')}
+              />
+            )}
+            {showDiscipline && (
+              <MenuLink
+                href="/dash/discipline"
+                icon={<Scales size={20} weight="fill" />}
+                label="Discipline"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/discipline')}
+              />
+            )}
+            {showCounseling && (
+              <MenuLink
+                href="/dash/counseling"
+                icon={<Heartbeat size={20} weight="fill" />}
+                label="Counselling"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/counseling')}
+              />
+            )}
+
+            {/* 3. FINANCE & STAFF (SMS) */}
+            {(showFees || showFinancials || showHr) && !isCollapsed && (
+              <div className={SCHOOL_GROUP_HEADING}>Finance &amp; Staff</div>
+            )}
+            {showFees && (
+              <MenuLink
+                href="/dash/fees"
+                icon={<Receipt size={20} weight="fill" />}
+                label="Fees"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/fees')}
+              />
+            )}
+            {showFinancials && (
+              <MenuLink
+                href="/dash/financials"
+                icon={<Bank size={20} weight="fill" />}
+                label="Financials"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/financials')}
+              />
+            )}
+            {showHr && (
+              <MenuLink
+                href="/dash/hr"
+                icon={<IdentificationBadge size={20} weight="fill" />}
+                label="Staff &amp; Payroll"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/hr')}
+              />
+            )}
+
+            {/* 4. LEARNING & ACADEMIC DELIVERY (LMS ENGINE) */}
+            {!isCollapsed && (
+              <div className={SCHOOL_GROUP_HEADING}>Learning &amp; Delivery</div>
+            )}
+
             {/* Courses with hover menu */}
             <HoverMenu
               content={
@@ -581,6 +709,43 @@ function DashLeftMenu() {
               })()}
             </HoverMenu>
             </div>
+
+            {showLiveClasses && (
+              <MenuLink
+                href="/dash/live-classes"
+                icon={<VideoCamera size={20} weight="fill" />}
+                label="Live Classes"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/live-classes')}
+              />
+            )}
+            {showPathways && (
+              <MenuLink
+                href="/dash/pathways"
+                icon={<Compass size={20} weight="fill" />}
+                label="Pathways"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/pathways')}
+              />
+            )}
+            {showCertificates && (
+              <MenuLink
+                href="/dash/certificates-manager"
+                icon={<SealCheck size={20} weight="fill" />}
+                label="Certificates"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/certificates-manager')}
+              />
+            )}
+            {showGamification && (
+              <MenuLink
+                href="/dash/gamification"
+                icon={<Trophy size={20} weight="fill" />}
+                label="Gamification"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/gamification')}
+              />
+            )}
             {showLibrary && (
               <MenuLink
                 href="/dash/library"
@@ -626,180 +791,10 @@ function DashLeftMenu() {
                 active={isActivePath('/dash/playgrounds')}
               />
             )}
-            {/* School (SMS) modules, grouped under a heading so they read as
-                one system rather than nine loose entries beside Learnhouse's
-                own. Each is gated on its resolved_features flag AND the
-                viewer's school role. Ordered to follow the school day: set up
-                the campus, admit students, run the timetable, take
-                attendance, mark work, then the back office. The heading is
-                suppressed when collapsed (icons only) and when the viewer can
-                see none of them. */}
-            {/* Grouped into the four jobs a school actually has, rather than
-                one flat list of thirteen: set the school up, teach, handle
-                money, and the rest. Each heading hides when the viewer can
-                see nothing under it (role-gated) and when collapsed to icons. */}
-            {(showSchoolSettings || showRoles || showReports || showCampus || showFacilities || showAdmissions || showAlumni || showRevOpsInsights) && !isCollapsed && (
-              <div className={SCHOOL_GROUP_HEADING}>School setup</div>
-            )}
-            {showSchoolSettings && (
-              <MenuLink
-                href="/dash/school-settings"
-                icon={<Gear size={20} weight="fill" />}
-                label="School settings"
-                isCollapsed={isCollapsed}
-                active={isActivePath('/dash/school-settings')}
-              />
-            )}
-            {showRoles && (
-              <MenuLink
-                href="/dash/school-settings/roles"
-                icon={<ShieldCheck size={20} weight="fill" />}
-                label="Roles &amp; Permissions"
-                isCollapsed={isCollapsed}
-                active={isActivePath('/dash/school-settings/roles')}
-              />
-            )}
-            {showCampus && (
-              <MenuLink
-                href="/dash/campus"
-                icon={<Buildings size={20} weight="fill" />}
-                label="Campus"
-                isCollapsed={isCollapsed}
-                active={isActivePath('/dash/campus')}
-              />
-            )}
-            {showFacilities && (
-              <MenuLink
-                href="/dash/facilities"
-                icon={<Warehouse size={20} weight="fill" />}
-                label="Facilities"
-                isCollapsed={isCollapsed}
-                active={isActivePath('/dash/facilities')}
-              />
-            )}
-            {showAdmissions && (
-              <MenuLink
-                href="/dash/admissions"
-                icon={<UserPlus size={20} weight="fill" />}
-                label="Admissions"
-                isCollapsed={isCollapsed}
-                active={isActivePath('/dash/admissions')}
-              />
-            )}
-            {showAlumni && (
-              <MenuLink
-                href="/dash/alumni"
-                icon={<Student size={20} weight="fill" />}
-                label="Alumni"
-                isCollapsed={isCollapsed}
-                active={isActivePath('/dash/alumni')}
-              />
-            )}
-            {showRevOpsInsights && (
-              <MenuLink
-                href="/dash/revops"
-                icon={<ChartLineUp size={20} weight="fill" />}
-                label="Admissions Insights"
-                isCollapsed={isCollapsed}
-                active={isActivePath('/dash/revops')}
-              />
-            )}
-            {showReports && (
-              <MenuLink
-                href="/dash/reports"
-                icon={<ChartBar size={20} weight="fill" />}
-                label="Reports"
-                isCollapsed={isCollapsed}
-                active={isActivePath('/dash/reports')}
-              />
-            )}
-            {/* showCounseling belongs here: its entries render inside this
-                group, but it was missing from the condition -- so a
-                PSYCHOLOGIST holding no teaching role saw Counselling floating
-                under no heading at all. */}
-            {(showTimetable ||
-              showAttendance ||
-              showGradebook ||
-              showExams ||
-              showLiveClasses ||
-              showPathways ||
-              showGamification ||
-              showCertificates ||
-              showAiTutor ||
-              showCounseling ||
-              showDiscipline) &&
-              !isCollapsed && <div className={SCHOOL_GROUP_HEADING}>Teaching</div>}
-            {showTimetable && (
-              <MenuLink
-                href="/dash/timetable"
-                icon={<CalendarBlank size={20} weight="fill" />}
-                label="Timetable"
-                isCollapsed={isCollapsed}
-                active={isActivePath('/dash/timetable')}
-              />
-            )}
-            {showAttendance && (
-              <MenuLink
-                href="/dash/attendance"
-                icon={<CalendarCheck size={20} weight="fill" />}
-                label="Attendance"
-                isCollapsed={isCollapsed}
-                active={isActivePath('/dash/attendance')}
-              />
-            )}
-            {showGradebook && (
-              <MenuLink
-                href="/dash/gradebook"
-                icon={<GraduationCap size={20} weight="fill" />}
-                label="Gradebook"
-                isCollapsed={isCollapsed}
-                active={isActivePath('/dash/gradebook')}
-              />
-            )}
-            {showExams && (
-              <MenuLink
-                href="/dash/exams"
-                icon={<Exam size={20} weight="fill" />}
-                label="Exams"
-                isCollapsed={isCollapsed}
-                active={isActivePath('/dash/exams')}
-              />
-            )}
-            {showLiveClasses && (
-              <MenuLink
-                href="/dash/live-classes"
-                icon={<VideoCamera size={20} weight="fill" />}
-                label="Live Classes"
-                isCollapsed={isCollapsed}
-                active={isActivePath('/dash/live-classes')}
-              />
-            )}
-            {showPathways && (
-              <MenuLink
-                href="/dash/pathways"
-                icon={<Compass size={20} weight="fill" />}
-                label="Pathways"
-                isCollapsed={isCollapsed}
-                active={isActivePath('/dash/pathways')}
-              />
-            )}
-            {showGamification && (
-              <MenuLink
-                href="/dash/gamification"
-                icon={<Trophy size={20} weight="fill" />}
-                label="Gamification"
-                isCollapsed={isCollapsed}
-                active={isActivePath('/dash/gamification')}
-              />
-            )}
-            {showCertificates && (
-              <MenuLink
-                href="/dash/certificates-manager"
-                icon={<SealCheck size={20} weight="fill" />}
-                label="Certificates"
-                isCollapsed={isCollapsed}
-                active={isActivePath('/dash/certificates-manager')}
-              />
+
+            {/* 5. INTELLIGENCE & OPERATIONS */}
+            {(showAiTutor || showRevOpsInsights || showSchoolLibrary || showMessages || showReports) && !isCollapsed && (
+              <div className={SCHOOL_GROUP_HEADING}>Intelligence &amp; Operations</div>
             )}
             {showAiTutor && (
               <MenuLink
@@ -810,56 +805,14 @@ function DashLeftMenu() {
                 active={isActivePath('/dash/ai-tutor')}
               />
             )}
-            {showCounseling && (
+            {showRevOpsInsights && (
               <MenuLink
-                href="/dash/counseling"
-                icon={<Heartbeat size={20} weight="fill" />}
-                label="Counselling"
+                href="/dash/revops"
+                icon={<ChartLineUp size={20} weight="fill" />}
+                label="Admissions Insights"
                 isCollapsed={isCollapsed}
-                active={isActivePath('/dash/counseling')}
+                active={isActivePath('/dash/revops')}
               />
-            )}
-            {showDiscipline && (
-              <MenuLink
-                href="/dash/discipline"
-                icon={<Scales size={20} weight="fill" />}
-                label="Discipline"
-                isCollapsed={isCollapsed}
-                active={isActivePath('/dash/discipline')}
-              />
-            )}
-            {(showFees || showFinancials || showHr) && !isCollapsed && (
-              <div className={SCHOOL_GROUP_HEADING}>Finance &amp; staff</div>
-            )}
-            {showFees && (
-              <MenuLink
-                href="/dash/fees"
-                icon={<Receipt size={20} weight="fill" />}
-                label="Fees"
-                isCollapsed={isCollapsed}
-                active={isActivePath('/dash/fees')}
-              />
-            )}
-            {showFinancials && (
-              <MenuLink
-                href="/dash/financials"
-                icon={<Bank size={20} weight="fill" />}
-                label="Financials"
-                isCollapsed={isCollapsed}
-                active={isActivePath('/dash/financials')}
-              />
-            )}
-            {showHr && (
-              <MenuLink
-                href="/dash/hr"
-                icon={<IdentificationBadge size={20} weight="fill" />}
-                label="Staff & Payroll"
-                isCollapsed={isCollapsed}
-                active={isActivePath('/dash/hr')}
-              />
-            )}
-            {(showSchoolLibrary || showMessages) && !isCollapsed && (
-              <div className={SCHOOL_GROUP_HEADING}>Resources</div>
             )}
             {showSchoolLibrary && (
               <MenuLink
@@ -877,6 +830,47 @@ function DashLeftMenu() {
                 label="Messages"
                 isCollapsed={isCollapsed}
                 active={isActivePath('/dash/messages')}
+              />
+            )}
+            {showReports && (
+              <MenuLink
+                href="/dash/reports"
+                icon={<ChartBar size={20} weight="fill" />}
+                label="Reports &amp; AMI"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/reports')}
+              />
+            )}
+
+            {/* 6. SCHOOL GOVERNANCE & SETTINGS */}
+            {(showSchoolSettings || showRoles || showFacilities) && !isCollapsed && (
+              <div className={SCHOOL_GROUP_HEADING}>School Governance</div>
+            )}
+            {showSchoolSettings && (
+              <MenuLink
+                href="/dash/school-settings"
+                icon={<Gear size={20} weight="fill" />}
+                label="School Settings"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/school-settings')}
+              />
+            )}
+            {showRoles && (
+              <MenuLink
+                href="/dash/school-settings/roles"
+                icon={<ShieldCheck size={20} weight="fill" />}
+                label="Roles &amp; Permissions"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/school-settings/roles')}
+              />
+            )}
+            {showFacilities && (
+              <MenuLink
+                href="/dash/facilities"
+                icon={<Warehouse size={20} weight="fill" />}
+                label="Facilities"
+                isCollapsed={isCollapsed}
+                active={isActivePath('/dash/facilities')}
               />
             )}
             {/* Users with hover menu */}

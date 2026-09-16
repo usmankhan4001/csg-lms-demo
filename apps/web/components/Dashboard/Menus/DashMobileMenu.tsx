@@ -155,22 +155,14 @@ function DashMobileMenu() {
     canAdminister &&
     (isEnabled('sms_attendance') || isEnabled('sms_gradebook') || isEnabled('sms_timetable'))
 
-  const showSchoolSetupGroup =
-    showSchoolSettings || showRoles || showReports || showCampus || showFacilities || showAdmissions || showAlumni || showRevOpsInsights
-  const showTeachingGroup =
-    showTimetable ||
-    showAttendance ||
-    showGradebook ||
-    showExams ||
-    showLiveClasses ||
-    showPathways ||
-    showGamification ||
-    showCertificates ||
-    showAiTutor ||
-    showCounseling ||
-    showDiscipline
+  const showAcademicCoreGroup =
+    showCampus || showTimetable || showAttendance || showGradebook || showExams
+  const showAdmissionsStudentsGroup =
+    showAdmissions || showAlumni || showDiscipline || showCounseling
   const showFinanceGroup = showFees || showFinancials || showHr
-  const showResourcesGroup = showSchoolLibrary || showMessages
+  const showIntelligenceOpsGroup =
+    showAiTutor || showRevOpsInsights || showSchoolLibrary || showMessages || showReports
+  const showGovernanceGroup = showSchoolSettings || showRoles || showFacilities
 
   const isActive = (path: string) => {
     if (path === '/dash') return pathname === '/dash' || pathname === '/dash/'
@@ -193,10 +185,13 @@ function DashMobileMenu() {
       >
         <div
           className="flex items-center gap-0.5 px-1.5 py-1.5 bg-[#111113]/90 backdrop-blur-xl rounded-full"
-          style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.3)' }}
+          style={{
+            boxShadow: '0 4px 24px rgba(0,0,0,0.35)',
+            border: '1px solid rgba(255,255,255,0.08)',
+          }}
         >
-          {/* LearnHouse logo — links to home */}
           <Link
+            onClick={close}
             href="/dash"
             className="flex items-center justify-center px-2.5 py-2.5 rounded-full transition-all duration-200"
             aria-label={t('common.home')}
@@ -208,25 +203,27 @@ function DashMobileMenu() {
               style={{ filter: 'brightness(0) invert(1)' }}
             />
           </Link>
-          {/* Progressive reveal — more icons as viewport widens */}
-          <PillLink href="/dash/courses" icon={<BookOpen size={18} weight="fill" />} active={isActive('/dash/courses')} className="hidden min-[340px]:flex" />
-          <PillLink href="/dash/assignments" icon={<Files size={18} weight="fill" />} active={isActive('/dash/assignments')} className="hidden min-[390px]:flex" />
-          <PillLink href="/dash/users/settings/users" icon={<Users size={18} weight="fill" />} active={isActive('/dash/users')} className="hidden min-[430px]:flex" />
-          {isEnabled('communities') && (
-            <PillLink href="/dash/communities" icon={<ChatsCircle size={18} weight="fill" />} active={isActive('/dash/communities')} className="hidden min-[470px]:flex" />
+          {/* Progressive reveal — SMS core first */}
+          {showAttendance && (
+            <PillLink href="/dash/attendance" icon={<CalendarCheck size={18} weight="fill" />} active={isActive('/dash/attendance')} className="hidden min-[340px]:flex" />
           )}
-          {isEnabled('podcasts') && (
-            <PillLink href="/dash/podcasts" icon={<Headphones size={18} weight="fill" />} active={isActive('/dash/podcasts')} className="hidden min-[510px]:flex" />
+          {showGradebook && (
+            <PillLink href="/dash/gradebook" icon={<GraduationCap size={18} weight="fill" />} active={isActive('/dash/gradebook')} className="hidden min-[390px]:flex" />
           )}
-          {isEnabled('boards') && (
-            <PillLink href="/dash/boards" icon={<ChalkboardSimple size={18} weight="fill" />} active={isActive('/dash/boards')} className="hidden min-[550px]:flex" />
+          {showTimetable && (
+            <PillLink href="/dash/timetable" icon={<CalendarBlank size={18} weight="fill" />} active={isActive('/dash/timetable')} className="hidden min-[430px]:flex" />
           )}
-          {isEnabled('playgrounds') && (
-            <PillLink href="/dash/playgrounds" icon={<Cube size={18} weight="fill" />} active={isActive('/dash/playgrounds')} className="hidden min-[590px]:flex" />
+          <PillLink href="/dash/courses" icon={<BookOpen size={18} weight="fill" />} active={isActive('/dash/courses')} className="hidden min-[470px]:flex" />
+          <PillLink href="/dash/assignments" icon={<Files size={18} weight="fill" />} active={isActive('/dash/assignments')} className="hidden min-[510px]:flex" />
+          {showAdmissions && (
+            <PillLink href="/dash/admissions" icon={<UserPlus size={18} weight="fill" />} active={isActive('/dash/admissions')} className="hidden min-[550px]:flex" />
           )}
-          <PillLink href="/dash/analytics" icon={<ChartBar size={18} weight="fill" />} active={isActive('/dash/analytics')} className="hidden min-[630px]:flex" />
-          <PillLink href="/dash/org/settings/general" icon={<Buildings size={18} weight="fill" />} active={isActive('/dash/org')} className="hidden min-[670px]:flex" />
-          <PillLink href="/dash/developers/api" icon={<Code size={18} weight="fill" />} active={isActive('/dash/developers')} className="hidden min-[710px]:flex" />
+          {showFees && (
+            <PillLink href="/dash/fees" icon={<Receipt size={18} weight="fill" />} active={isActive('/dash/fees')} className="hidden min-[590px]:flex" />
+          )}
+          <PillLink href="/dash/users/settings/users" icon={<Users size={18} weight="fill" />} active={isActive('/dash/users')} className="hidden min-[630px]:flex" />
+          <PillLink href="/dash/analytics" icon={<ChartBar size={18} weight="fill" />} active={isActive('/dash/analytics')} className="hidden min-[670px]:flex" />
+          <PillLink href="/dash/org/settings/general" icon={<Buildings size={18} weight="fill" />} active={isActive('/dash/org')} className="hidden min-[710px]:flex" />
           {isEnabled('payments') && (
             <PillLink href="/dash/payments/overview" icon={<CurrencyCircleDollar size={18} weight="fill" />} active={isActive('/dash/payments')} className="hidden min-[750px]:flex" />
           )}
@@ -319,53 +316,63 @@ function DashMobileMenu() {
               {/* Nav items */}
               <div className="py-2 px-2 max-h-[52vh] overflow-y-auto overscroll-contain space-y-px">
                 <PanelItem href="/dash" icon={<House size={15} weight="fill" />} label={t('common.home')} active={isActive('/dash')} onClick={close} />
-                <PanelItem href="/dash/courses" icon={<BookOpen size={15} weight="fill" />} label={t('courses.courses')} active={isActive('/dash/courses')} onClick={close} />
-                {isEnabled('folders') && <PanelItem href="/dash/library" icon={<FolderSimple size={15} weight="fill" />} label={t('library.library')} active={isActive('/dash/library')} onClick={close} />}
-                <PanelItem href="/dash/assignments" icon={<Files size={15} weight="fill" />} label={t('common.assignments')} active={isActive('/dash/assignments')} onClick={close} />
-                <PanelItem href="/dash/users/settings/users" icon={<Users size={15} weight="fill" />} label={t('common.users')} active={isActive('/dash/users')} onClick={close} />
-                {isEnabled('communities') && <PanelItem href="/dash/communities" icon={<ChatsCircle size={15} weight="fill" />} label={t('communities.title')} active={isActive('/dash/communities')} onClick={close} />}
-                {isEnabled('podcasts') && <PanelItem href="/dash/podcasts" icon={<Headphones size={15} weight="fill" />} label={t('podcasts.podcasts')} active={isActive('/dash/podcasts')} onClick={close} />}
-                {isEnabled('boards') && <PanelItem href="/dash/boards" icon={<ChalkboardSimple size={15} weight="fill" />} label="Boards" active={isActive('/dash/boards')} onClick={close} />}
-                {isEnabled('playgrounds') && <PanelItem href="/dash/playgrounds" icon={<Cube size={15} weight="fill" />} label="Playgrounds" active={isActive('/dash/playgrounds')} onClick={close} />}
-                {isEnabled('payments') && <PanelItem href="/dash/payments/overview" icon={<CurrencyCircleDollar size={15} weight="fill" />} label={t('common.payments')} active={isActive('/dash/payments')} onClick={close} />}
-                <PanelItem href="/dash/analytics" icon={<ChartBar size={15} weight="fill" />} label="Analytics" active={isActive('/dash/analytics')} onClick={close} />
-                <PanelItem href="/dash/org/settings/general" icon={<Buildings size={15} weight="fill" />} label={t('common.organization')} active={isActive('/dash/org')} onClick={close} />
-                <PanelItem href="/dash/developers/api" icon={<Code size={15} weight="fill" />} label={t('dashboard.developers.breadcrumb', { defaultValue: 'Developers' })} active={isActive('/dash/developers')} onClick={close} />
 
-                {/* School (SMS) modules, grouped as on desktop: set the school
-                    up, teach, handle money, then the rest. Each heading hides
-                    when role-gating leaves nothing beneath it. */}
-                {showSchoolSetupGroup && <PanelHeading label="School setup" />}
-                {showSchoolSettings && <PanelItem href="/dash/school-settings" icon={<Gear size={15} weight="fill" />} label="School settings" active={isActive('/dash/school-settings')} onClick={close} />}
-                {showRoles && <PanelItem href="/dash/school-settings/roles" icon={<ShieldCheck size={15} weight="fill" />} label="Roles & Permissions" active={isActive('/dash/school-settings/roles')} onClick={close} />}
-                {showReports && <PanelItem href="/dash/reports" icon={<ChartBar size={15} weight="fill" />} label="Reports" active={isActive('/dash/reports')} onClick={close} />}
-                {showCampus && <PanelItem href="/dash/campus" icon={<Buildings size={15} weight="fill" />} label="Campus" active={isActive('/dash/campus')} onClick={close} />}
-                {showFacilities && <PanelItem href="/dash/facilities" icon={<Warehouse size={15} weight="fill" />} label="Facilities" active={isActive('/dash/facilities')} onClick={close} />}
-                {showAdmissions && <PanelItem href="/dash/admissions" icon={<UserPlus size={15} weight="fill" />} label="Admissions" active={isActive('/dash/admissions')} onClick={close} />}
-                {showAlumni && <PanelItem href="/dash/alumni" icon={<Student size={15} weight="fill" />} label="Alumni" active={isActive('/dash/alumni')} onClick={close} />}
-                {showRevOpsInsights && <PanelItem href="/dash/revops" icon={<ChartLineUp size={15} weight="fill" />} label="Admissions Insights" active={isActive('/dash/revops')} onClick={close} />}
-
-                {showTeachingGroup && <PanelHeading label="Teaching" />}
+                {/* 1. Academic Core (SMS) */}
+                {showAcademicCoreGroup && <PanelHeading label="Academic Core" />}
+                {showCampus && <PanelItem href="/dash/campus" icon={<Buildings size={15} weight="fill" />} label="Campus & Sections" active={isActive('/dash/campus')} onClick={close} />}
                 {showTimetable && <PanelItem href="/dash/timetable" icon={<CalendarBlank size={15} weight="fill" />} label="Timetable" active={isActive('/dash/timetable')} onClick={close} />}
                 {showAttendance && <PanelItem href="/dash/attendance" icon={<CalendarCheck size={15} weight="fill" />} label="Attendance" active={isActive('/dash/attendance')} onClick={close} />}
                 {showGradebook && <PanelItem href="/dash/gradebook" icon={<GraduationCap size={15} weight="fill" />} label="Gradebook" active={isActive('/dash/gradebook')} onClick={close} />}
-                {showExams && <PanelItem href="/dash/exams" icon={<Exam size={15} weight="fill" />} label="Exams" active={isActive('/dash/exams')} onClick={close} />}
-                {showLiveClasses && <PanelItem href="/dash/live-classes" icon={<VideoCamera size={15} weight="fill" />} label="Live Classes" active={isActive('/dash/live-classes')} onClick={close} />}
-                {showPathways && <PanelItem href="/dash/pathways" icon={<Compass size={15} weight="fill" />} label="Pathways" active={isActive('/dash/pathways')} onClick={close} />}
-                {showGamification && <PanelItem href="/dash/gamification" icon={<Trophy size={15} weight="fill" />} label="Gamification" active={isActive('/dash/gamification')} onClick={close} />}
-                {showCertificates && <PanelItem href="/dash/certificates-manager" icon={<SealCheck size={15} weight="fill" />} label="Certificates" active={isActive('/dash/certificates-manager')} onClick={close} />}
-                {showAiTutor && <PanelItem href="/dash/ai-tutor" icon={<Robot size={15} weight="fill" />} label="AI Tutor" active={isActive('/dash/ai-tutor')} onClick={close} />}
-                {showCounseling && <PanelItem href="/dash/counseling" icon={<Heartbeat size={15} weight="fill" />} label="Counselling" active={isActive('/dash/counseling')} onClick={close} />}
-                {showDiscipline && <PanelItem href="/dash/discipline" icon={<Scales size={15} weight="fill" />} label="Discipline" active={isActive('/dash/discipline')} onClick={close} />}
+                {showExams && <PanelItem href="/dash/exams" icon={<Exam size={15} weight="fill" />} label="Exams & CBT" active={isActive('/dash/exams')} onClick={close} />}
 
-                {showFinanceGroup && <PanelHeading label="Finance & staff" />}
+                {/* 2. Admissions & Students (SMS) */}
+                {showAdmissionsStudentsGroup && <PanelHeading label="Admissions & Students" />}
+                {showAdmissions && <PanelItem href="/dash/admissions" icon={<UserPlus size={15} weight="fill" />} label="Admissions" active={isActive('/dash/admissions')} onClick={close} />}
+                {showAlumni && <PanelItem href="/dash/alumni" icon={<Student size={15} weight="fill" />} label="Alumni" active={isActive('/dash/alumni')} onClick={close} />}
+                {showDiscipline && <PanelItem href="/dash/discipline" icon={<Scales size={15} weight="fill" />} label="Discipline" active={isActive('/dash/discipline')} onClick={close} />}
+                {showCounseling && <PanelItem href="/dash/counseling" icon={<Heartbeat size={15} weight="fill" />} label="Counselling" active={isActive('/dash/counseling')} onClick={close} />}
+
+                {/* 3. Finance & Staff (SMS) */}
+                {showFinanceGroup && <PanelHeading label="Finance & Staff" />}
                 {showFees && <PanelItem href="/dash/fees" icon={<Receipt size={15} weight="fill" />} label="Fees" active={isActive('/dash/fees')} onClick={close} />}
                 {showFinancials && <PanelItem href="/dash/financials" icon={<Bank size={15} weight="fill" />} label="Financials" active={isActive('/dash/financials')} onClick={close} />}
                 {showHr && <PanelItem href="/dash/hr" icon={<IdentificationBadge size={15} weight="fill" />} label="Staff & Payroll" active={isActive('/dash/hr')} onClick={close} />}
 
-                {showResourcesGroup && <PanelHeading label="Resources" />}
+                {/* 4. Learning & Academic Delivery (LMS Engine) */}
+                <PanelHeading label="Learning & Delivery" />
+                <PanelItem href="/dash/courses" icon={<BookOpen size={15} weight="fill" />} label={t('courses.courses')} active={isActive('/dash/courses')} onClick={close} />
+                <PanelItem href="/dash/assignments" icon={<Files size={15} weight="fill" />} label={t('common.assignments')} active={isActive('/dash/assignments')} onClick={close} />
+                {showLiveClasses && <PanelItem href="/dash/live-classes" icon={<VideoCamera size={15} weight="fill" />} label="Live Classes" active={isActive('/dash/live-classes')} onClick={close} />}
+                {showPathways && <PanelItem href="/dash/pathways" icon={<Compass size={15} weight="fill" />} label="Pathways" active={isActive('/dash/pathways')} onClick={close} />}
+                {showCertificates && <PanelItem href="/dash/certificates-manager" icon={<SealCheck size={15} weight="fill" />} label="Certificates" active={isActive('/dash/certificates-manager')} onClick={close} />}
+                {showGamification && <PanelItem href="/dash/gamification" icon={<Trophy size={15} weight="fill" />} label="Gamification" active={isActive('/dash/gamification')} onClick={close} />}
+                {isEnabled('folders') && <PanelItem href="/dash/library" icon={<FolderSimple size={15} weight="fill" />} label={t('library.library')} active={isActive('/dash/library')} onClick={close} />}
+                {isEnabled('communities') && <PanelItem href="/dash/communities" icon={<ChatsCircle size={15} weight="fill" />} label={t('communities.title')} active={isActive('/dash/communities')} onClick={close} />}
+                {isEnabled('podcasts') && <PanelItem href="/dash/podcasts" icon={<Headphones size={15} weight="fill" />} label={t('podcasts.podcasts')} active={isActive('/dash/podcasts')} onClick={close} />}
+                {isEnabled('boards') && <PanelItem href="/dash/boards" icon={<ChalkboardSimple size={15} weight="fill" />} label="Boards" active={isActive('/dash/boards')} onClick={close} />}
+                {isEnabled('playgrounds') && <PanelItem href="/dash/playgrounds" icon={<Cube size={15} weight="fill" />} label="Playgrounds" active={isActive('/dash/playgrounds')} onClick={close} />}
+
+                {/* 5. Intelligence & Operations */}
+                {showIntelligenceOpsGroup && <PanelHeading label="Intelligence & Operations" />}
+                {showAiTutor && <PanelItem href="/dash/ai-tutor" icon={<Robot size={15} weight="fill" />} label="AI Tutor" active={isActive('/dash/ai-tutor')} onClick={close} />}
+                {showRevOpsInsights && <PanelItem href="/dash/revops" icon={<ChartLineUp size={15} weight="fill" />} label="Admissions Insights" active={isActive('/dash/revops')} onClick={close} />}
                 {showSchoolLibrary && <PanelItem href="/dash/school-library" icon={<Books size={15} weight="fill" />} label="School Library" active={isActive('/dash/school-library')} onClick={close} />}
                 {showMessages && <PanelItem href="/dash/messages" icon={<ChatCircle size={15} weight="fill" />} label="Messages" active={isActive('/dash/messages')} onClick={close} />}
+                {showReports && <PanelItem href="/dash/reports" icon={<ChartBar size={15} weight="fill" />} label="Reports & AMI" active={isActive('/dash/reports')} onClick={close} />}
+
+                {/* 6. School Governance */}
+                {showGovernanceGroup && <PanelHeading label="School Governance" />}
+                {showSchoolSettings && <PanelItem href="/dash/school-settings" icon={<Gear size={15} weight="fill" />} label="School settings" active={isActive('/dash/school-settings')} onClick={close} />}
+                {showRoles && <PanelItem href="/dash/school-settings/roles" icon={<ShieldCheck size={15} weight="fill" />} label="Roles & Permissions" active={isActive('/dash/school-settings/roles')} onClick={close} />}
+                {showFacilities && <PanelItem href="/dash/facilities" icon={<Warehouse size={15} weight="fill" />} label="Facilities" active={isActive('/dash/facilities')} onClick={close} />}
+
+                {/* 7. Platform Settings */}
+                <PanelHeading label="Platform" />
+                <PanelItem href="/dash/users/settings/users" icon={<Users size={15} weight="fill" />} label={t('common.users')} active={isActive('/dash/users')} onClick={close} />
+                {isEnabled('payments') && <PanelItem href="/dash/payments/overview" icon={<CurrencyCircleDollar size={15} weight="fill" />} label={t('common.payments')} active={isActive('/dash/payments')} onClick={close} />}
+                <PanelItem href="/dash/analytics" icon={<ChartBar size={15} weight="fill" />} label="Analytics" active={isActive('/dash/analytics')} onClick={close} />
+                <PanelItem href="/dash/org/settings/general" icon={<Buildings size={15} weight="fill" />} label={t('common.organization')} active={isActive('/dash/org')} onClick={close} />
+                <PanelItem href="/dash/developers/api" icon={<Code size={15} weight="fill" />} label={t('dashboard.developers.breadcrumb', { defaultValue: 'Developers' })} active={isActive('/dash/developers')} onClick={close} />
 
                 <div className="h-px bg-white/[0.05] mx-2 my-1.5" />
 
