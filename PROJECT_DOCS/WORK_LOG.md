@@ -121,7 +121,7 @@ The machinery existed; the controls did not.
 | `7268112` | Module toggles a school admin can actually flip |
 | `1910d60` | School settings — grading scales and fee policy were hardcoded Python constants |
 
-Eleven feature toggles were enforced by the backend and **nothing could change
+Thirteen feature toggles were enforced by the backend and **nothing could change
 them** — disabling a module meant hand-editing org config JSON in Postgres.
 
 ---
@@ -212,7 +212,11 @@ Two screens remain honest stubs because the backend does not exist for them.
 
 ## Testing
 
-Backend test count over the session: **465 → 707**, all passing.
+Backend test count over the session: **465 → 707**, all passing. Since then the
+suite has grown to **7007 collected tests** (`pytest --collect-only -q`), and it
+is no longer all green: `src/tests/security` alone reports **20 failed, 1436
+passed, 4 skipped**, all in file-storage/content-hardening and anti-fabrication
+tests outside the school layer.
 
 Three separate tests were found **asserting flaws as expected behaviour**:
 

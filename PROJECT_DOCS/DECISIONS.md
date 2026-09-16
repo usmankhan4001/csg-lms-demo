@@ -316,7 +316,10 @@ definitions live once in `apps/web/lib/school-modules.ts`.
 Attendance sat beside History, Absence notes, At-risk and Bulk marking as though
 they were peers.
 
-**Consequence.** 41 entries; the school section went 31 → 16. **Per-tab gating
+**Consequence.** 41 entries when it landed; the sidebar has since grown again —
+`DashLeftMenu.tsx` carries **49 unique `/dash/*` hrefs** as of 2026-09-16 (52
+distinct href strings if the `/dash` root and two dynamic course/assignment links
+are counted). The school section went 31 → 16. **Per-tab gating
 survived**: a teacher opening Timetable still cannot see Generate. The module
 root matches *exactly*, not by prefix — a prefix match would leave "Roll-call"
 lit while you are on History. A module resolving to fewer than two visible tabs

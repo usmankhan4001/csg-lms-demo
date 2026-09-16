@@ -260,7 +260,9 @@ erDiagram
 
 ## 5. Comprehensive Feature & Module Matrix
 
-| Module | UI Routes | API Prefix | Role Access | Feature Flag | Core DB Tables |
+> **Note on the "Role Access" column (corrected 2026-09-16):** these are **frontend access levels**, not API role gating. `administer` / `teach` / `backOffice` / `counsel` are the levels computed by `useSchoolAccess()` in `apps/web/lib/school-access.ts`, and they decide whether a nav item or tab is *shown*. Actual authorization is enforced independently per endpoint by `require_roles()` and the `school_ownership` guards — hiding a tab is a usability decision, not a security boundary.
+
+| Module | UI Routes | API Prefix | Role Access (frontend access level — see note) | Feature Flag | Core DB Tables |
 |---|---|---|---|---|---|
 | **Campus & Tenancy** | `/dash/campus` | `/api/v1/sms` | `administer` | None (Always on) | `sms_campus`, `academic_year`, `sms_term`, `sms_section` |
 | **School Settings** | `/dash/school-settings` | `/api/v1/sms/settings` | `administer` | None (Always on) | `sms_settings`, `organization_config` |
@@ -287,7 +289,7 @@ erDiagram
 ```
 learnhouse-dev/
 ├── apps/
-│   ├── api/                   # Python 3.11 FastAPI backend
+│   ├── api/                   # Python 3.14 FastAPI backend (requires-python >=3.14.7,<3.14.8)
 │   │   ├── src/
 │   │   │   ├── core/          # App setup, database events, worker, redis
 │   │   │   ├── db/            # SQLModel schema declarations (70+ models)
@@ -296,8 +298,9 @@ learnhouse-dev/
 │   │   │   ├── schemas/       # Pydantic request/response schemas
 │   │   │   ├── security/      # Auth, school principals, ownership guards
 │   │   │   └── services/      # Business logic (AI, SMS, RevOps, LiveKit)
-│   │   └── alembic/           # Alembic database migrations
-│   ├── web/                   # Next.js 14 Web Frontend
+│   │   ├── alembic.ini        # Alembic config (script_location = migrations)
+│   │   └── migrations/        # Alembic database migrations (versions/ = 77 revisions)
+│   ├── web/                   # Next.js 16 Web Frontend (next ^16.2.9, react 19.2.8)
 │   │   ├── app/               # Next.js App Router (Staff & Learner shells)
 │   │   ├── components/        # React UI components & widgets
 │   │   ├── hooks/             # Custom React hooks (useApiResource, etc.)

@@ -85,8 +85,9 @@ KeycloakUserPrincipal             (sub, org_id, campus_id, roles, raw_claims)
 get_current_user_principal        apps/api/src/core/keycloak_auth.py
 ```
 
-Because ~90 call sites depend on `get_current_user_principal` **by name**,
-swapping the implementation beneath it required no changes to the routers.
+Because 155 `Depends(get_current_user_principal)` call sites across 60 files
+depend on it **by name** (counted 2026-09-16), swapping the implementation
+beneath it required no changes to the routers.
 
 Key tables (`apps/api/src/db/sms_identity.py`):
 
@@ -122,6 +123,12 @@ Three layers, applied together:
 > **body is never checked** — and it rejects only an *explicit* mismatch, so an
 > unscoped request gives a campus-bound admin org-wide reach. Use the
 > `school_ownership` helpers.
+>
+> It is also **latent rather than active**: as of 2026-09-16 it has **no call
+> sites in any live router**. The only references outside its definition
+> (`apps/api/src/core/keycloak_auth.py:636`) are comments
+> (`sms_campus.py:449`, `sms_payroll.py:261`, `sms_reports.py:61`) and tests
+> (`src/tests/sms/test_campus_scoping.py`, `test_money_campus_scoping.py`).
 
 **Never trust the body for identity or privilege.** `is_teacher`, `graded_by`,
 `approved_by`, `participant_id`, `marked_by` and `student_id` were all accepted
@@ -146,7 +153,8 @@ resolve_feature / resolve_all_features    security/features_utils/resolve.py
 
 Adding a toggle needs **no migration** — it is a JSON blob. But a feature must be
 registered in **both** `ALL_FEATURES` *and* the typed `AdminToggles` model, or it
-becomes enforced-but-unsettable (this happened to `sms_exam`).
+becomes enforced-but-unsettable. This happened to `sms_exam` and has since been
+fixed — it is now declared at `apps/api/src/db/organization_config.py:199`.
 
 Administered at **Org settings → Modules** (`OrgEditModules`).
 
@@ -161,8 +169,10 @@ Administered at **Org settings → Modules** (`OrgEditModules`).
 | New table | Nothing. `import_all_models()` registers it; `create_all` builds it. |
 | **New column on an existing table** | **Write an Alembic migration.** Without one, the code and every existing database silently disagree and the module 500s. |
 
-Alembic head: **`2f4c13b60f5b`**, 71 revisions, single head. The container
-entrypoint runs `alembic upgrade head` at startup.
+Alembic head: **`c5d6e7f8a9b0`**, 77 revisions, single head (verified 2026-09-16
+by walking `down_revision` across `apps/api/migrations/versions/`; `f9a0b1c2d3e4`
+was head until `c5d6e7f8a9b0` landed on top of it). The container entrypoint runs
+`alembic upgrade head` at startup.
 
 Two traps that have already cost time:
 
@@ -207,6 +217,15 @@ school audit trail.
 - hourly nurture-sequence advance (RevOps)
 - daily fee reminders (09:00 — deliberately not hourly; a balance changes on the
   scale of days)
+
+The worker is a **separate deployed service**, not a thread inside the API —
+`worker` in `dokploy-compose.yml:174` and `docker-compose.prod.yml:218`, and
+`pm2 start uv -- run arq src.core.worker.WorkerSettings` in `docker/start.sh:28`.
+Before that service existed nothing ran `WorkerSettings.cron_jobs`, so **no
+scheduled job had ever executed**; the jobs were defined and unreachable. Both
+compose files healthcheck it with `pgrep -f 'arq src.core.worker.WorkerSettings'`
+rather than an HTTP probe, and `worker.py` registers an hourly
+`healthcheck_tick` cron whose log line should be alerted on by its **absence**.
 
 All outbound mail routes through `services/notifications/service.py`, so a failed
 send is a visible `NotificationDelivery` row rather than a swallowed log line.
@@ -260,8 +279,9 @@ find Payroll through search.
 
 ## Deployment
 
-- **Local:** `docker-compose.local.yml` — api, web, postgres, redis, livekit,
-  collab.
+- **Local:** `docker-compose.local.yml` — postgres, redis, tinybird-mock, api,
+  web. It carries **no livekit and no collab service** (LiveKit comes from
+  `docker-compose.livekit.yml`).
 - **Production:** `dokploy-compose.yml` via Dokploy. The API entrypoint runs
   `alembic upgrade head` before starting.
 - **LiveKit:** `docker-compose.livekit.yml` carries an ICE fix

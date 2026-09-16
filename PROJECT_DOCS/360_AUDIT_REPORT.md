@@ -2,7 +2,10 @@
 
 **Date:** 2026-09-14  
 **Auditor:** Antigravity Deep-Dive (code-level, not self-reported)  
-**Verdict:** ⚠️ **NOT production-ready.** Solid prototype with real logic and good engineering discipline — but 5 critical blockers and ~12 significant gaps must be addressed before a real deployment.
+**Verdict:** ⚠️ **NOT production-ready.** Solid prototype with real logic and good engineering discipline — but 4 critical blockers and ~12 significant gaps must be addressed before a real deployment.
+
+> [!NOTE]
+> **Corrections applied 2026-09-16.** Several findings in this audit were factually wrong when written and have been corrected in place, marked with ~~strikethrough~~ and a **Correction** note. **B4 (no Alembic migrations) is retracted outright** — it was one of the five blockers and it does not hold. Parts of **B2** and **B3** (missing LiveKit npm dependency; no LiveKit service in `dokploy-compose.yml`) are also retracted. The remaining blockers (B1 no real Keycloak, B3 no completed production deployment, B5 AGPLv3) stand. Counts in §2 and §G6 were stale and have been refreshed.
 
 ---
 
@@ -45,24 +48,31 @@
   - Frontend: [LiveClassRoom.tsx](file:///d:/Apps/CSG%20Venture/learnhouse-dev/apps/web/modules/sms/live-class/components/LiveClassRoom.tsx) imports `@livekit/components-react` (`LiveKitRoom`, `VideoConference`) — **real WebRTC UI**, not a mock.
   - Compose: [docker-compose.livekit.yml](file:///d:/Apps/CSG%20Venture/learnhouse-dev/docker-compose.livekit.yml) exists as a **proper override file** with `livekit/livekit-server:v1.9.1`, ICE config, webhook wiring, etc.
 
-- **BUT:** `@livekit/components-react` and `@livekit/components-styles` are **NOT in `apps/web/package.json`** — the import will fail at build time. The LiveKit compose override has never been tested end-to-end. No production LiveKit deployment exists in `dokploy-compose.yml`.
+- **BUT:** ~~`@livekit/components-react` and `@livekit/components-styles` are **NOT in `apps/web/package.json`** — the import will fail at build time.~~ **Correction (2026-09-16): incorrect.** All three packages are already declared in `apps/web/package.json` — `@livekit/components-react` `^2.9.24`, `@livekit/components-styles` `^1.2.0`, `livekit-client` `^2.22.3` — so the import resolves and there is no npm blocker. ~~No production LiveKit deployment exists in `dokploy-compose.yml`.~~ **Also incorrect:** `dokploy-compose.yml:264` defines a `livekit` service (`livekit/livekit-server:v1.9.1`) with a healthcheck and the `50200-50250/udp` media range.
+- **Still true:** the LiveKit compose override has never been tested end-to-end, and `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` deliberately have no committed fallback, so live classes fail closed unless they are set in the environment.
 
 > [!WARNING]
-> The LiveKit integration is ~85% code-complete but has a **missing npm dependency blocker** and has never been run end-to-end. Fix: `npm install @livekit/components-react @livekit/components-styles livekit-client` in `apps/web/`, then test with the override compose.
+> The LiveKit integration is ~85% code-complete and has never been run end-to-end. The previously-claimed **missing npm dependency blocker does not exist** — the packages are installed. The real remaining work is running it: `docker compose -f docker-compose.local.yml -f docker-compose.livekit.yml up --build` with real LiveKit credentials.
 
 ### B3. No Production Deployment Has Ever Completed
 
-- **Finding:** [docker-compose.local.yml](file:///d:/Apps/CSG%20Venture/learnhouse-dev/docker-compose.local.yml) is the **only** path that has ever been run to completion. The production compose files (`docker-compose.prod.yml`, `dokploy-compose.yml`) have never been started. No Traefik TLS, no real domain, no Keycloak service, no LiveKit service in production.
+- **Finding:** [docker-compose.local.yml](file:///d:/Apps/CSG%20Venture/learnhouse-dev/docker-compose.local.yml) is the **only** path that has ever been run to completion. The production compose files (`docker-compose.prod.yml`, `dokploy-compose.yml`) have never been started. No Traefik TLS, no real domain, ~~no Keycloak service, no LiveKit service in production~~.
+
+> [!NOTE]
+> **Correction (2026-09-16).** The second half of that sentence was wrong. `dokploy-compose.yml:264` **does** define a `livekit` service. The Keycloak half is correct for that file — `dokploy-compose.yml` has no Keycloak; Keycloak is defined in `docker-compose.prod.yml:71` (`quay.io/keycloak/keycloak:26.1.0`) instead. Neither has been started.
 
 > [!CAUTION]
 > Nothing from this repo has been confirmed running on any server. The entire system is localhost-only validated.
 
-### B4. No Real Database Migrations (Alembic)
+### B4. ~~No Real Database Migrations (Alembic)~~ — RETRACTED (this was not a blocker)
 
-- **Finding:** `alembic==1.19.1` is a dependency, but I found no `alembic/versions/` migration folder or `alembic.ini` in the API source. The app relies on SQLModel/SQLAlchemy's `metadata.create_all()` at startup — which creates tables but **cannot handle schema changes** (adding columns, changing types, data migrations) for an existing production database.
+> [!NOTE]
+> **Correction (2026-09-16): this blocker was factually wrong and is retracted.** Alembic is fully wired up. `apps/api/alembic.ini` exists with `script_location = migrations`, and `apps/api/migrations/versions/` holds **77 revisions on a single head** (`c5d6e7f8a9b0`, which revises `f9a0b1c2d3e4`). The production entrypoint runs `alembic upgrade head` before starting uvicorn (`apps/api/docker-entrypoint.prod.sh:89-99`). The original finding searched for an `alembic/` directory; the real path is `migrations/`. The original text is kept below, struck through, so the audit's reasoning stays auditable.
+
+- ~~**Finding:** `alembic==1.19.1` is a dependency, but I found no `alembic/versions/` migration folder or `alembic.ini` in the API source. The app relies on SQLModel/SQLAlchemy's `metadata.create_all()` at startup — which creates tables but **cannot handle schema changes** (adding columns, changing types, data migrations) for an existing production database.~~
 
 > [!IMPORTANT]
-> For any persistent production database, you need proper migration management. The current approach works for "delete and recreate" dev/demo usage only.
+> **What is still true.** The schema was, historically, built by `SQLModel.metadata.create_all()` rather than by migrations, because `alembic upgrade head` was failing on ten branched heads and the entrypoint swallowed the error (`apps/api/migrations/versions/a1c4e90d77b3_merge_ten_branched_heads.py`). The heads have since been merged and the database baselined. A fresh deployment should still be *verified* with `alembic current` / `alembic upgrade head` rather than assumed — the entrypoint's failure-swallowing is a real, separate risk.
 
 ### B5. AGPLv3 License Compliance
 
@@ -84,7 +94,7 @@
 | **Comprehensive test suite** | **200+ test files** across `tests/sms/`, `tests/ai/`, `tests/services/`, `tests/security/`, `tests/routers/` — covering SMS modules, AI services, security edge cases, and router mount correctness |
 | **Auth is properly wired** | All 12+ SMS routers use `get_current_user_principal` (confirmed by examining [router.py](file:///d:/Apps/CSG%20Venture/learnhouse-dev/apps/api/src/router.py) lines 482-710 — the double-gate bug was identified AND fixed with a regression test) |
 | **Per-org feature toggles** | Proper `FeatureName` literal type with `require_*_feature()` dependencies per router ([dependencies.py](file:///d:/Apps/CSG%20Venture/learnhouse-dev/apps/api/src/security/features_utils/dependencies.py)) |
-| **Role-based access** | 7 realm roles (`SUPER_ADMIN`, `SCHOOL_ADMIN`, `TEACHER`, `STUDENT`, `PARENT`, `STAFF`, `PSYCHOLOGIST`) with per-endpoint `require_roles()` enforcement |
+| **Role-based access** | 7 school roles (`SUPER_ADMIN`, `SCHOOL_ADMIN`, `TEACHER`, `STUDENT`, `PARENT`, `STAFF`, `PSYCHOLOGIST`) with per-endpoint `require_roles()` enforcement. **Correction (2026-09-16):** these are **not** Keycloak realm roles — there is no Keycloak. They are the values of the `SchoolRole` enum in `apps/api/src/db/sms_identity.py:29-36`, granted per-user via `SMSUserRole` rows. The `KeycloakUserPrincipal.realm_roles` field is populated from those rows (`school_principal.py:188`). |
 | **Event bus architecture** | In-process pub/sub ([event_bus.py](file:///d:/Apps/CSG%20Venture/learnhouse-dev/apps/api/src/core/event_bus.py)) for cross-module communication without tight coupling |
 | **Superadmin impersonation** | Production-grade, audited QA tool ([school_principal.py](file:///d:/Apps/CSG%20Venture/learnhouse-dev/apps/api/src/security/school_principal.py#L36-L67)) with signed JWT cookies, 2-hour expiry, fail-safe decoding |
 
@@ -92,9 +102,9 @@
 
 | Area | Count | Examples |
 |---|:---:|---|
-| **Admin/Dash pages** | **73 page.tsx files** | Admissions CRM, attendance (bulk/digest/excuses/history/pastoral), exams (resits/seating), gradebook (report-cards, per-student), timetable (conflicts/generate/lessons), counseling (career), live-classes, revops (config/knowledge), school-settings, reports, financials, HR, payroll |
+| **Admin/Dash pages** | **88 page.tsx files** (was 73 when this audit was written) | Admissions CRM, attendance (bulk/digest/excuses/history/pastoral), exams (resits/seating), gradebook (report-cards, per-student), timetable (conflicts/generate/lessons), counseling (career), live-classes, revops (config/knowledge), school-settings, reports, financials, HR, payroll |
 | **Learner pages** | **25 page.tsx files** | Courses, library, AI tutor, communities, playgrounds, podcasts, boards, certificates, search, trail |
-| **Shared components** | **14 SMS module folders** | Each with `api.ts`, `types.ts`, and real interactive components (RollCallRoster, GradebookMatrix, AdmissionsCRMBoard, TimetableGrid, LiveClassRoom, etc.) |
+| **Shared components** | **27 SMS module folders** (was 14 when this audit was written) | Each with `api.ts`, `types.ts`, and real interactive components (RollCallRoster, GradebookMatrix, AdmissionsCRMBoard, TimetableGrid, LiveClassRoom, etc.) |
 | **API client** | Centralized | [api-client.ts](file:///d:/Apps/CSG%20Venture/learnhouse-dev/apps/web/lib/api/api-client.ts) — normalized error handling (`ApiError` with `kind` classification), automatic Bearer token attachment via session bridge, runtime config resolution |
 
 ### 3. Integration Coherence — Auth Flow Is Now Unified
@@ -154,24 +164,27 @@ All 200+ pytest tests use mocked `AsyncSession` objects, not a real Postgres ins
 
 ### G3. Missing CSG Modules (16 from Original Spec)
 
-These were identified as fabricated in the original audit and remain unbuilt:
+> [!NOTE]
+> **Correction (2026-09-16).** "Remain unbuilt" was wrong for 8 of the 14 modules listed below. All 8 now have routers mounted in `apps/api/src/router.py:765-815`. Five also have real UI; three are API-only with no frontend yet. The table is annotated per row; the 6 genuinely-absent modules are unchanged.
 
-| Module | Name | Effort Estimate |
-|---|---|---|
-| M13 | Course Bundling & Curricular Pathways | Medium |
-| M15 | Plagiarism Detection | Large (needs 3rd-party or ML) |
-| M16 | Certificate PDF Generator (backend) | Small-Medium |
-| M20 | Gamification, Badges & Leaderboards | Medium |
-| M32 | Disciplinary Incident Tracking | Small |
-| M33 | Alumni Tracking | Small |
-| M34 | Inventory & Procurement | Medium |
-| M35 | Transport & Fleet GPS | Large |
-| M36 | Hostel & Dormitory | Medium |
-| M37 | Cafeteria POS & Smart Cards | Large |
-| M38 | Event Management & Facility Booking | Medium |
-| M41 | Real-Time Lecture Translation | Large (needs streaming ASR+TTS) |
-| M46 | Automated Homework Grading | Medium-Large |
-| M49 | Dropout Predictor | Medium (needs historical data + ML) |
+These were identified as fabricated in the original audit:
+
+| Module | Name | Status (verified 2026-09-16) | Effort Estimate |
+|---|---|---|---|
+| M13 | Course Bundling & Curricular Pathways | ✅ **Built** — router mounted (`router.py:795`), UI at `/dash/pathways` | Medium |
+| M15 | Plagiarism Detection | ❌ Still absent — no router, no UI | Large (needs 3rd-party or ML) |
+| M16 | Certificate PDF Generator (backend) | ✅ **Built** — router mounted (`router.py:777`), UI at `/dash/certificates-manager` | Small-Medium |
+| M20 | Gamification, Badges & Leaderboards | ✅ **Built** — router mounted (`router.py:783`), UI at `/dash/gamification` | Medium |
+| M32 | Disciplinary Incident Tracking | ✅ **Built** — router mounted (`router.py:765`), UI at `/dash/discipline` | Small |
+| M33 | Alumni Tracking | ✅ **Built** — router mounted (`router.py:771`), UI at `/dash/alumni` | Small |
+| M34 | Inventory & Procurement | ⚠️ **Partial** — router mounted (`router.py:811`), **no UI** | Medium |
+| M35 | Transport & Fleet GPS | ❌ Still absent — no router, no UI | Large |
+| M36 | Hostel & Dormitory | ⚠️ **Partial** — router mounted (`router.py:804`), **no UI** | Medium |
+| M37 | Cafeteria POS & Smart Cards | ❌ Still absent — no router, no UI | Large |
+| M38 | Event Management & Facility Booking | ⚠️ **Partial** — router mounted (`router.py:789`), **no UI** | Medium |
+| M41 | Real-Time Lecture Translation | ❌ Still absent — no router, no UI | Large (needs streaming ASR+TTS) |
+| M46 | Automated Homework Grading | ❌ Still absent — no router, no UI | Medium-Large |
+| M49 | Dropout Predictor | ❌ Still absent — no router, no UI | Medium (needs historical data + ML) |
 
 ### G4. No Postgres RLS (Row-Level Security)
 
@@ -190,9 +203,9 @@ The wiki specifies OpenTelemetry. The codebase has:
 
 ### G6. Proxy.ts Routing Fragility
 
-[proxy.ts](file:///d:/Apps/CSG%20Venture/learnhouse-dev/apps/web/proxy.ts) (Next.js 16's middleware) is **632 lines** of routing rules. Any new top-level CSG route that isn't explicitly listed in its passthrough set will 404. The `ROLE_PORTAL_PATHS` mapping (line 274-279) now correctly routes to `/my-school` and `/dash` (matching the Learnhouse shell split), but:
+[proxy.ts](file:///d:/Apps/CSG%20Venture/learnhouse-dev/apps/web/proxy.ts) (Next.js 16's middleware) is **639 lines** of routing rules (was 632 when this audit was written). Any new top-level CSG route that isn't explicitly listed in its passthrough set will 404. The `ROLE_PORTAL_PATHS` mapping (line 274-279) now correctly routes to `/my-school` and `/dash` (matching the Learnhouse shell split), but:
 - Adding new portal paths requires editing proxy.ts
-- No automated test validates these routing rules
+- ~~No automated test validates these routing rules~~ **Correction (2026-09-16): partly incorrect.** `apps/web/tests/unit/proxy.test.ts` does exercise `proxy()` directly, including all four `ROLE_PORTAL_PATHS` redirects (§0b). What is still true: it covers the role-portal redirects only — the passthrough set and the rewrite rules are untested.
 - The interaction between proxy.ts rewrites and Next.js route groups is subtle and error-prone
 
 ---
@@ -239,12 +252,12 @@ The wiki specifies OpenTelemetry. The codebase has:
 ```
 ✅ Teacher dashboard → "Start Live Class" → POST /live/rooms
 ✅ Token generation → livekit-api creates real LiveKit token
-⚠️ Frontend imports @livekit/components-react — BUT dependency NOT in package.json
-❌ LiveKit server not in main compose — requires override file
+✅ Frontend imports @livekit/components-react — dependency IS in package.json (corrected 2026-09-16)
+⚠️ LiveKit server not in the local compose — requires the override file (it IS in dokploy-compose.yml:264)
 ❌ Never tested end-to-end
 ```
 
-**Verdict:** ❌ 85% code-complete, but will fail at npm build due to missing dependency.
+**Verdict:** ❌ 85% code-complete and never run end-to-end. **Correction (2026-09-16):** it will *not* fail at npm build — the LiveKit packages are declared in `apps/web/package.json`. The blocker is verification, not a missing dependency.
 
 ### Flow 5: AI Tutor Conversation
 
@@ -290,9 +303,9 @@ The wiki specifies OpenTelemetry. The codebase has:
 ### What's Missing for Production
 
 1. **TLS termination** — Traefik labels exist in compose but never tested with real certs
-2. **Database backups** — No backup strategy, no pg_dump cron
+2. **Database backups** — ~~No backup strategy, no pg_dump cron~~ **Correction (2026-09-16): incorrect.** `scripts/backup.sh` (verified, compressed, retention-pruned `pg_dump`), `scripts/restore.sh`, `scripts/backup_postgres.py` and `scripts/backup_postgres.sh` all exist, and [BACKUP_RESTORE.md](./BACKUP_RESTORE.md) documents a restore verified on 2026-09-13 plus a sample cron entry. What is still true: **no schedule is actually installed anywhere** — the cron line is documentation, not a running job.
 3. **Log aggregation** — No ELK/Loki/CloudWatch integration
-4. **CI/CD pipeline** — No GitHub Actions or Azure Pipeline for automated testing + deployment
+4. **CI/CD pipeline** — ~~No GitHub Actions or Azure Pipeline for automated testing + deployment~~ **Correction (2026-09-16): incorrect.** `.github/workflows/` contains 10 workflows, including `api-tests.yaml`, `e2e.yaml`, `web-lint.yaml`, `api-lint.yaml`, `cli-tests.yaml`, `cli-publish.yaml`, `release.yaml`, `build-community.yaml`, `lockfiles.yaml` and `notify-infra.yaml`. What is still true: none of them **deploy** — there is no CD job.
 5. **Environment secret management** — API keys in compose env vars, not a vault
 6. **Rate limiting at the edge** — Redis rate limiting exists for AI tutor only, not API-wide
 7. **CDN / media storage** — S3/R2 configuration exists but is untested in production
@@ -303,10 +316,10 @@ The wiki specifies OpenTelemetry. The codebase has:
 
 ### Phase 0: Minimum Viable Deployment (1-2 weeks)
 
-- [ ] Install `@livekit/components-react @livekit/components-styles livekit-client` in `apps/web/`
+- [x] ~~Install `@livekit/components-react @livekit/components-styles livekit-client` in `apps/web/`~~ — already present in `apps/web/package.json`; nothing to install (corrected 2026-09-16)
 - [ ] Run full `docker compose -f docker-compose.local.yml -f docker-compose.livekit.yml up --build` and verify video classrooms work
 - [ ] Create an SMS role-provisioning admin UI (or CLI script) so a school admin can assign TEACHER/STUDENT/PARENT roles without touching the database
-- [ ] Set up Alembic migrations for the existing schema
+- [ ] ~~Set up Alembic migrations for the existing schema~~ — already set up: 77 revisions, single head `c5d6e7f8a9b0`, `alembic upgrade head` runs in the entrypoint (corrected 2026-09-16). Replace with: verify `alembic upgrade head` succeeds against a clean database and that the entrypoint no longer swallows migration failure.
 - [ ] Run the full pytest suite: verify current pass rate, fix any regressions
 - [ ] Seed demo data for a realistic school (50 students, 10 teachers, 3 sections, term schedule, fee plans)
 
@@ -323,11 +336,13 @@ The wiki specifies OpenTelemetry. The codebase has:
 
 - [ ] Build E2E Playwright tests for SMS flows (attendance, gradebook, fees)
 - [ ] Add integration tests against a real Postgres (not mocked DB)
-- [ ] Build the 5 smallest missing modules (M32 Discipline, M33 Alumni, M16 Certificates, M13 Course Bundling, plus Visual Flow Builder)
+- [ ] ~~Build the 5 smallest missing modules (M32 Discipline, M33 Alumni, M16 Certificates, M13 Course Bundling, plus Visual Flow Builder)~~ — **Correction (2026-09-16):** M32, M33, M16 and M13 are all built and mounted (see G3). Remaining work here is the Visual Flow Builder, UI for the three API-only modules (M34 Inventory, M36 Hostel, M38 Events), and the 6 genuinely-absent modules.
 - [ ] Mobile: test on real iOS/Android devices, fix platform-specific issues
 - [ ] Add structured logging and basic OpenTelemetry traces
 
 ---
 
 > [!IMPORTANT]
-> **Bottom line:** This is a **serious, well-engineered prototype** with ~25 working backend modules, 73 dashboard pages, a clean auth unification, and a disciplined testing culture. It is NOT production-ready primarily because (1) no deployment has ever completed, (2) the LiveKit frontend dependency is missing, (3) there's no database migration management, and (4) the AGPLv3 license creates legal risk for commercial use. Addressing the Phase 0 items above would get this to a **demonstrable MVP** suitable for internal demos and pilot testing.
+> **Bottom line:** This is a **serious, well-engineered prototype** with ~25 working backend modules, 88 dashboard pages, a clean auth unification, and a disciplined testing culture. It is NOT production-ready primarily because (1) no deployment has ever completed, (2) there is no real identity provider (no Keycloak — roles live in `SMSUserRole` with no self-service provisioning UI), and (3) the AGPLv3 license creates legal risk for commercial use.
+>
+> **Correction (2026-09-16):** two of the four reasons originally given here were wrong and have been removed. The LiveKit frontend dependency is **not** missing (it is in `apps/web/package.json`), and database migration management **does** exist (77 Alembic revisions, single head, run by the container entrypoint). Addressing the Phase 0 items above would get this to a **demonstrable MVP** suitable for internal demos and pilot testing.

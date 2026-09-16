@@ -25,14 +25,18 @@ The frontend groups these into four access levels (`apps/web/lib/school-access.t
 
 ## Feature flags
 
-Eleven school modules are independently toggleable per organisation
+Thirteen school modules are independently toggleable per organisation
 (`ALL_FEATURES` in `apps/api/src/security/features_utils/resolve.py`):
 
 ```
 sms_attendance  sms_timetable  sms_gradebook  sms_fees  sms_financials
 sms_hr_payroll  sms_library    sms_exam       revops    sms_reports
-tutor_counseling
+tutor_counseling  sms_inventory  sms_hostel
 ```
+
+`sms_inventory` and `sms_hostel` were added with M34/M36. Both are in
+`DEFAULT_DISABLED_FEATURES` (`resolve.py:56`), so unlike the others they start
+**off** until an org explicitly enables them.
 
 Flip them at **Org settings → Modules** (`OrgEditModules`). Disabling hides the
 nav entry *and* 403s the API; records are never deleted and reappear on
@@ -495,9 +499,12 @@ would leak exactly what the 404 rule protects.
 | | |
 |---|---|
 | API | `/api/v1/sms/cognia` |
-| UI | **none** |
+| UI | **none reachable** |
 
-Accreditation evidence export. **No UI exists.** The export previously emitted a
+Accreditation evidence export. A `CogniaEvidenceStudio` component exists at
+`apps/web/modules/ems/cognia/CogniaEvidenceStudio.tsx`, but nothing imports it —
+the only reference is the folder's own `index.ts` re-export — so it is dead code
+and no route renders it. The export previously emitted a
 hardcoded `COGNIA-VERIFIED-CSG-LMS-2026` seal asserting a real accreditation body
 had endorsed it; that is removed and it now states plainly that it is an
 unverified self-report.
@@ -514,5 +521,9 @@ unverified self-report.
 AI lesson-plan generation and coursework-hour allocation. `LessonPlan` is linked
 optionally from timetable lesson logs.
 
-Note `LessonPlan.teacher_id` is a Keycloak `sub` **string** while every timetable
-table keys teacher on the integer Learnhouse user id — they cannot be joined.
+`LessonPlan.teacher_id` is a Keycloak `sub` **string** while every timetable table
+keys teacher on the integer Learnhouse user id — they cannot be joined. Migration
+`b7e2d41a9c38` fixed this by adding `LessonPlan.teacher_user_id` (integer
+`user.id`) and backfilling it, so the join is now possible; the string column is
+**legacy**, still written during the transition and dropped by a later migration
+(`apps/api/src/db/sms_teacher_tools.py:46-58`).

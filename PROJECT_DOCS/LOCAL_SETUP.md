@@ -1,6 +1,6 @@
 # Local Setup — Docker (Verified Runbook)
 
-This is the only deployment path that has actually been run end-to-end and tested through a real browser. It brings up Postgres + Redis + the API + the web app — **not** Keycloak (see [ARCHITECTURE.md](./ARCHITECTURE.md#auth-two-systems-not-one) for why).
+This is the only deployment path that has actually been run end-to-end and tested through a real browser. It brings up Postgres + Redis + the API + the web app — **not** Keycloak (see [ARCHITECTURE.md](./ARCHITECTURE.md#identity) for why).
 
 ## 1. Start the stack
 
@@ -28,16 +28,41 @@ This logs you into **Learnhouse's native auth** — courses, org picker, the bas
 
 ## 3. Enter a CSG portal (Student / Teacher / Parent / Campus Admin)
 
-From `/home`, click any of the "Unified Role Portals" links (Student Hub, Teacher Hub, Parent Portal), or use the role switcher in the sidebar/header once inside a portal. These now route through `/dev-login?role=X`, which:
+> **Corrected 2026-09-16.** This section previously described a `/dev-login?role=X`
+> dev-token bridge. That route no longer exists — it was removed along with the
+> dev-only token minting it depended on (see
+> `apps/api/src/security/school_principal.py:38-40`). There is no second login.
 
-1. Takes your current Learnhouse superadmin session,
-2. Calls the backend's dev-only token-minting endpoint,
-3. Stores the result, and
-4. Redirects you into the portal.
+There is only the one Learnhouse login from step 2. Once you are signed in, the
+web app calls `GET /sms/me`, buckets the first role it returns, and writes an
+`LH_role` cookie (`apps/web/lib/api/school-role-cookie.ts`). `proxy.ts`
+(lines 274-286) reads that cookie in single-tenancy mode and redirects `/`,
+`/home` and `/login` to the matching shell:
 
-You can also do this manually: visit `http://localhost:3000/dev-login` and pick a role.
+| `LH_role` | Lands on |
+|---|---|
+| `TEACHER`, `ADMIN` | `/dash` |
+| `STUDENT`, `PARENT` | `/my-school` |
 
-**Why this extra step exists:** the SMS/RevOps backend routers authenticate with a Keycloak-shaped JWT, and no real Keycloak server has ever been deployed for this project. See [ARCHITECTURE.md](./ARCHITECTURE.md#auth-two-systems-not-one).
+The seeded superadmin has no `SMSUserRole` row, but `resolve_school_principal()`
+injects `SUPER_ADMIN` for any `User.is_superadmin`
+(`apps/api/src/security/school_principal.py:164-165`), so it lands on `/dash`.
+
+If an account has no school role at all, no cookie is written and you stay on
+`/home` — from there the "Unified Role Portals" links go straight to
+`/my-school` and `/dash` (`apps/web/app/home/home.tsx:222-232`).
+
+To grant a school role to an account:
+
+```bash
+python scripts/manage_roles.py assign --email teacher@csg.dev --role TEACHER --org-id 1
+python scripts/manage_roles.py list --org-id 1
+```
+
+**Why roles are separate from login:** the SMS/RevOps routers authenticate with
+a `KeycloakUserPrincipal` that is now built from your real Learnhouse session
+plus your `SMSUserRole` rows — there is no Keycloak server and no second token.
+See [ARCHITECTURE.md](./ARCHITECTURE.md#identity).
 
 ## 4. Stopping / resetting
 
