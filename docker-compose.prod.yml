@@ -9,7 +9,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-learnhouse}
       POSTGRES_USER: ${POSTGRES_USER:-learnhouse}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_secure_postgres_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -42,7 +42,7 @@ services:
         redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru;
       fi'
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-change_me_secure_redis_password}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
     volumes:
       - redis_data:/data
     healthcheck:
@@ -77,7 +77,7 @@ services:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-learnhouse}
       KC_DB_USERNAME: ${POSTGRES_USER:-learnhouse}
-      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-change_me_secure_postgres_password}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-auth.csginfotech.com}
       KC_HOSTNAME_ADMIN: ${KEYCLOAK_HOSTNAME:-auth.csginfotech.com}
       KC_HOSTNAME_STRICT: "false"
@@ -87,7 +87,7 @@ services:
       KC_HEALTH_ENABLED: "true"
       KC_METRICS_ENABLED: "true"
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-change_me_keycloak_admin_password}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD must be set}
     volumes:
       - ./deploy/keycloak/realm-export-csg-lms.json:/opt/keycloak/data/import/realm-export-csg-lms.json:ro
     depends_on:
@@ -131,9 +131,9 @@ services:
       LEARNHOUSE_ENV: production
       LEARNHOUSE_PORT: 9000
       WORKERS: ${WORKERS:-4}
-      LEARNHOUSE_SQL_CONNECTION_STRING: postgresql+asyncpg://${POSTGRES_USER:-learnhouse}:${POSTGRES_PASSWORD:-change_me_secure_postgres_password}@postgres:5432/${POSTGRES_DB:-learnhouse}
-      LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD:-change_me_secure_redis_password}@redis:6379/0
-      LEARNHOUSE_REDIS_CONNECTION_STRING: redis://:${REDIS_PASSWORD:-change_me_secure_redis_password}@redis:6379/0
+      LEARNHOUSE_SQL_CONNECTION_STRING: postgresql+asyncpg://${POSTGRES_USER:-learnhouse}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-learnhouse}
+      LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set}@redis:6379/0
+      LEARNHOUSE_REDIS_CONNECTION_STRING: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set}@redis:6379/0
       LEARNHOUSE_URL: ${APP_URL:-${LEARNHOUSE_URL:-https://${APP_DOMAIN:-app.csginfotech.com}}}
       KEYCLOAK_URL: ${KEYCLOAK_URL:-https://${KEYCLOAK_DOMAIN:-auth.csginfotech.com}}
       KEYCLOAK_SERVER_URL: http://keycloak:8080
@@ -142,10 +142,10 @@ services:
       KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/csg-lms/protocol/openid-connect/certs
       KEYCLOAK_ISSUER: ${KEYCLOAK_URL:-https://${KEYCLOAK_DOMAIN:-auth.csginfotech.com}}/realms/csg-lms
       KEYCLOAK_VERIFY_SIGNATURE: "true"
-      LEARNHOUSE_AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:-change_me_jwt_secret_key_minimum_64_chars}
-      AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:-change_me_jwt_secret_key_minimum_64_chars}
-      COLLAB_INTERNAL_KEY: ${COLLAB_INTERNAL_KEY:-change_me_collab_internal_key_minimum_32_chars}
-      LEARNHOUSE_MEDIA_SECRET_KEY: ${LEARNHOUSE_MEDIA_SECRET_KEY:-change_me_media_secret_key}
+      LEARNHOUSE_AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:?LEARNHOUSE_AUTH_JWT_SECRET_KEY must be set}
+      AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:?LEARNHOUSE_AUTH_JWT_SECRET_KEY must be set}
+      COLLAB_INTERNAL_KEY: ${COLLAB_INTERNAL_KEY:?COLLAB_INTERNAL_KEY must be set}
+      LEARNHOUSE_MEDIA_SECRET_KEY: ${LEARNHOUSE_MEDIA_SECRET_KEY:?LEARNHOUSE_MEDIA_SECRET_KEY must be set}
       # AI Provider API Keys
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -237,9 +237,9 @@ services:
       LEARNHOUSE_ENV: production
       LEARNHOUSE_PORT: 9000
       WORKERS: ${WORKERS:-4}
-      LEARNHOUSE_SQL_CONNECTION_STRING: postgresql+asyncpg://${POSTGRES_USER:-learnhouse}:${POSTGRES_PASSWORD:-change_me_secure_postgres_password}@postgres:5432/${POSTGRES_DB:-learnhouse}
-      LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD:-change_me_secure_redis_password}@redis:6379/0
-      LEARNHOUSE_REDIS_CONNECTION_STRING: redis://:${REDIS_PASSWORD:-change_me_secure_redis_password}@redis:6379/0
+      LEARNHOUSE_SQL_CONNECTION_STRING: postgresql+asyncpg://${POSTGRES_USER:-learnhouse}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-learnhouse}
+      LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set}@redis:6379/0
+      LEARNHOUSE_REDIS_CONNECTION_STRING: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set}@redis:6379/0
       LEARNHOUSE_URL: ${APP_URL:-${LEARNHOUSE_URL:-https://${APP_DOMAIN:-app.csginfotech.com}}}
       KEYCLOAK_URL: ${KEYCLOAK_URL:-https://${KEYCLOAK_DOMAIN:-auth.csginfotech.com}}
       KEYCLOAK_SERVER_URL: http://keycloak:8080
@@ -248,10 +248,10 @@ services:
       KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/csg-lms/protocol/openid-connect/certs
       KEYCLOAK_ISSUER: ${KEYCLOAK_URL:-https://${KEYCLOAK_DOMAIN:-auth.csginfotech.com}}/realms/csg-lms
       KEYCLOAK_VERIFY_SIGNATURE: "true"
-      LEARNHOUSE_AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:-change_me_jwt_secret_key_minimum_64_chars}
-      AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:-change_me_jwt_secret_key_minimum_64_chars}
-      COLLAB_INTERNAL_KEY: ${COLLAB_INTERNAL_KEY:-change_me_collab_internal_key_minimum_32_chars}
-      LEARNHOUSE_MEDIA_SECRET_KEY: ${LEARNHOUSE_MEDIA_SECRET_KEY:-change_me_media_secret_key}
+      LEARNHOUSE_AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:?LEARNHOUSE_AUTH_JWT_SECRET_KEY must be set}
+      AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:?LEARNHOUSE_AUTH_JWT_SECRET_KEY must be set}
+      COLLAB_INTERNAL_KEY: ${COLLAB_INTERNAL_KEY:?COLLAB_INTERNAL_KEY must be set}
+      LEARNHOUSE_MEDIA_SECRET_KEY: ${LEARNHOUSE_MEDIA_SECRET_KEY:?LEARNHOUSE_MEDIA_SECRET_KEY must be set}
       # AI Provider API Keys
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -392,9 +392,9 @@ services:
       NODE_ENV: production
       COLLAB_PORT: 4000
       LEARNHOUSE_API_URL: http://api:9000
-      LEARNHOUSE_AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:-change_me_jwt_secret_key_minimum_64_chars}
-      COLLAB_INTERNAL_KEY: ${COLLAB_INTERNAL_KEY:-change_me_collab_internal_key_minimum_32_chars}
-      LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD:-change_me_secure_redis_password}@redis:6379/0
+      LEARNHOUSE_AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:?LEARNHOUSE_AUTH_JWT_SECRET_KEY must be set}
+      COLLAB_INTERNAL_KEY: ${COLLAB_INTERNAL_KEY:?COLLAB_INTERNAL_KEY must be set}
+      LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set}@redis:6379/0
       COLLAB_TRUST_PROXY: "true"
     depends_on:
       api:

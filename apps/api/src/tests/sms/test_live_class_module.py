@@ -36,11 +36,16 @@ from src.schemas.sms_live_class import (
 from src.services.sms import live_class_schedule as lc_schedule
 
 
-def _principal(user_id: int, roles=(), superadmin: bool = False, campus_id=None):
+def _principal(user_id: int, roles=(), superadmin: bool = False, org_id=1, campus_id=None):
     """A resolved principal. These call handlers directly, so FastAPI's DI
-    never runs and the default would arrive as an unresolved `Depends`."""
+    never runs and the default would arrive as an unresolved `Depends`.
+
+    `org_id` is part of the principal because listing classes is now scoped to
+    the caller's organisation, not just their campus.
+    """
     return SimpleNamespace(
         is_superadmin=superadmin,
+        org_id=org_id,
         campus_id=campus_id,
         has_role=lambda r: r in roles,
         has_any_role=lambda wanted: any(r in roles for r in wanted),

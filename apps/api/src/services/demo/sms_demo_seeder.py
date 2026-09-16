@@ -22,7 +22,9 @@ import datetime
 import hashlib
 import json
 import logging
-from typing import Optional, Dict, Any, List
+import os
+import secrets
+from typing import Optional, Dict, Any, List, Tuple
 from uuid import uuid4
 
 from sqlalchemy import select, delete
@@ -94,6 +96,49 @@ from src.db.courses.blocks import Block
 
 logger = logging.getLogger(__name__)
 
+# The organization provisioned when the caller does not name one. Fixed rather
+# than "whichever org has the lowest id": a missing slug used to resolve to
+# org 1, so on any install that also holds real tenants a bare call seeded
+# privileged demo accounts into a live school.
+DEFAULT_DEMO_ORG_SLUG = "csg-academy"
+
+# Password for the seeded personas. Unset (the default) means every run mints
+# a fresh random password, returned once in the result. Setting it is an
+# explicit opt-in for deployments that need a human to type a credential; it
+# is never defaulted to a published string.
+DEMO_PASSWORD_ENV = "LEARNHOUSE_DEMO_SEED_PASSWORD"
+
+# Grants the seeded admin@csg.edu platform-wide superadmin. Off by default:
+# the endpoint that reaches this seeder already requires a superadmin caller,
+# so the seeded account needs org-scoped authority (its SMSUserRole
+# SUPER_ADMIN / SCHOOL_ADMIN grants), not the ability to administer every
+# tenant on the install.
+DEMO_SUPERADMIN_ENV = "LEARNHOUSE_DEMO_SEED_SUPERADMIN"
+
+# Learnhouse org membership handed to personas that are not the demo org's
+# administrator. Same value the signup and join-org paths use for a plain
+# member.
+MEMBER_ROLE_ID = 4
+
+
+def _env_flag(name: str) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return False
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _resolve_demo_password() -> Tuple[str, bool]:
+    """Return ``(password, operator_supplied)`` for this seeding run.
+
+    A hardcoded literal is never used: either the deployment opts in through
+    ``DEMO_PASSWORD_ENV``, or a fresh secret is generated per run.
+    """
+    supplied = (os.environ.get(DEMO_PASSWORD_ENV) or "").strip()
+    if supplied:
+        return supplied, True
+    return secrets.token_urlsafe(18), False
+
 
 async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] = None) -> Dict[str, Any]:
     """
@@ -102,20 +147,30 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
     logger.info("Starting CSG-EMS comprehensive demo data seeding...")
 
     # 1. Resolve Target Organization
+    #
+    # A slug that was supplied must match a real organization. This used to
+    # fall back to the lowest-id org, so a typo seeded demo data -- including
+    # a privileged admin account -- into whichever tenant happened to be
+    # oldest. A mismatch now fails loudly instead.
     target_org = None
     if org_slug:
         stmt = select(Organization).where(Organization.slug == org_slug)
         target_org = (await db_session.execute(stmt)).scalars().first()
-
-    if not target_org:
-        stmt = select(Organization).order_by(Organization.id.asc())
+        if not target_org:
+            raise ValueError(
+                f"No organization found with slug '{org_slug}'. Refusing to "
+                f"seed demo data into a different organization."
+            )
+    else:
+        # No slug given: provision the dedicated demo org, never org 1.
+        stmt = select(Organization).where(Organization.slug == DEFAULT_DEMO_ORG_SLUG)
         target_org = (await db_session.execute(stmt)).scalars().first()
 
     if not target_org:
         # Create default demo organization
         target_org = Organization(
             name="CSG Global Academy",
-            slug="csg-academy",
+            slug=DEFAULT_DEMO_ORG_SLUG,
             email="admissions@csg.edu",
             org_uuid=f"org_{uuid4()}",
             description="Autonomous K-12 & Higher Ed Demonstration Campus",
@@ -134,7 +189,22 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
     await seed_default_ems_roles(db_session, org_id)
 
     # 3. Seed Users across the 7 Personas
-    default_pw_hash = security_hash_password("admin1234")
+    #
+    # One password per run, generated unless the deployment opts into a known
+    # one via DEMO_PASSWORD_ENV. It is never a hardcoded literal: a published
+    # demo password is a published credential for every account seeded with
+    # it, and this seeder is reachable outside the demo endpoint.
+    demo_password, password_is_operator_supplied = _resolve_demo_password()
+    default_pw_hash = security_hash_password(demo_password)
+
+    grant_platform_superadmin = _env_flag(DEMO_SUPERADMIN_ENV)
+    if grant_platform_superadmin:
+        logger.warning(
+            "%s is set: seeded admin@csg.edu will be a platform-wide "
+            "superadmin. Do not enable this on an install holding real data.",
+            DEMO_SUPERADMIN_ENV,
+        )
+
     user_specs = [
         {
             "username": "dr.arthur",
@@ -143,6 +213,9 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
             "last_name": "Pendelton",
             "roles": [SchoolRole.SUPER_ADMIN, SchoolRole.SCHOOL_ADMIN],
             "ems_role": CoreRoleSlug.SUPER_ADMIN.value,
+            # Marks the platform-admin persona. It buys an org-scoped admin
+            # seat (ADMIN_ROLE_ID) in the seeded org; platform-wide
+            # superadmin additionally requires DEMO_SUPERADMIN_ENV.
             "is_superadmin": True,
         },
         {
@@ -256,6 +329,8 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
     ]
 
     seeded_users: Dict[str, User] = {}
+    created_users: List[str] = []
+    skipped_existing_users: List[str] = []
     for spec in user_specs:
         stmt = select(User).where(User.email == spec["email"])
         user = (await db_session.execute(stmt)).scalars().first()
@@ -268,7 +343,12 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
                 last_name=spec["last_name"],
                 password=default_pw_hash,
                 email_verified=True,
-                is_superadmin=spec["is_superadmin"],
+                # Platform-wide superadmin is opt-in. The persona keeps its
+                # org-scoped SMSUserRole grants either way.
+                is_superadmin=(
+                    bool(spec.get("is_superadmin", False))
+                    and grant_platform_superadmin
+                ),
                 user_uuid=f"usr_{uuid4()}",
                 creation_date=now_str,
                 update_date=now_str,
@@ -276,11 +356,22 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
             db_session.add(user)
             await db_session.flush()
             await db_session.refresh(user)
+            created_users.append(spec["email"])
         else:
-            user.password = default_pw_hash
-            user.email_verified = True
-            db_session.add(user)
-            await db_session.flush()
+            # An address that already exists is left completely alone -- no
+            # password reset, no force-verify, no role grants. It may be a
+            # real account that happens to hold one of these addresses, and
+            # overwriting its credentials would hand it to anyone who knows
+            # the demo password while escalating it in this org.
+            skipped_existing_users.append(spec["email"])
+            logger.warning(
+                "Demo address %s already exists (user id=%s); leaving its "
+                "credentials and role grants untouched.",
+                spec["email"],
+                user.id,
+            )
+            seeded_users[spec["email"]] = user
+            continue
 
         seeded_users[spec["email"]] = user
 
@@ -294,7 +385,9 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
             uo = UserOrganization(
                 user_id=user.id,
                 org_id=org_id,
-                role_id=ADMIN_ROLE_ID if spec["is_superadmin"] else 4,
+                role_id=ADMIN_ROLE_ID
+                if spec.get("is_superadmin", False)
+                else MEMBER_ROLE_ID,
                 creation_date=now_str,
                 update_date=now_str,
             )
@@ -619,6 +712,12 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
             TimetableSchedule.academic_term_id == fall_term.id,
         )
         if not (await db_session.execute(tt_stmt)).scalars().first():
+            # TimetableSchedule has no is_active column. On SQLModel versions
+            # that reject unknown kwargs the old is_active=True was a hard
+            # TypeError at seed time; on this one it is silently dropped, so
+            # the "active" intent was simply lost. A slot is live by belonging
+            # to a term: academic_term_id is what every timetable read scopes
+            # on, so binding these to the fall term is what activates them.
             db_session.add(
                 TimetableSchedule(
                     section_id=s_id,
@@ -628,7 +727,6 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
                     period_id=p_obj.id,
                     room_number=room,
                     academic_term_id=fall_term.id,
-                    is_active=True,
                 )
             )
 
@@ -1207,13 +1305,31 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
     await db_session.commit()
     logger.info("CSG-EMS comprehensive demo data successfully seeded and committed!")
 
-    return {
+    result: Dict[str, Any] = {
         "status": "success",
         "organization": target_org.name,
         "org_slug": target_org.slug,
         "users_seeded": len(seeded_users),
+        "users_created": len(created_users),
+        "users_skipped_existing": skipped_existing_users,
         "campus": campus.name,
         "sections": len(seeded_sections),
         "courses": len(seeded_courses),
         "ami_index": 3.82,
     }
+
+    # The generated password is surfaced exactly once, here, because only its
+    # hash is stored and it is unrecoverable afterwards. Omitted when the
+    # password came from the environment (the operator already holds it) and
+    # when no account was actually created with it -- an empty or echoed value
+    # would be worse than none.
+    if created_users and not password_is_operator_supplied:
+        result["demo_password"] = demo_password
+        logger.info(
+            "Seeded %s demo user(s) with a generated password (returned once "
+            "in the result; set %s to use a known one).",
+            len(created_users),
+            DEMO_PASSWORD_ENV,
+        )
+
+    return result

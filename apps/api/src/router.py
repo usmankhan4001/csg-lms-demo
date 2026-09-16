@@ -668,10 +668,12 @@ v1_router.include_router(
     live_classes.router,
     prefix="/live",
     tags=["live-classes"],
-    # Unlike the routers above, live_classes.py has NO per-handler Keycloak
-    # dependency at all -- this mount-level wrapper is its only auth gate, not
-    # a redundant second one. Do not remove it under the same "double-gate"
-    # fix applied to sms_revops.router above; that would leave it unauthenticated.
+    # live_classes.py now carries its own per-handler Keycloak dependency
+    # (require_roles(_CLASS_STAFF) or get_current_user_principal) on every
+    # handler. This mount-level wrapper is still required and is NOT a
+    # redundant second gate: it is the authentication gate (rejects
+    # anonymous, admits API tokens), while the per-handler ones are
+    # authorization. Removing it would leave the router unauthenticated.
     dependencies=[Depends(require_authenticated_user_or_api_token)],
 )
 

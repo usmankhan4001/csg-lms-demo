@@ -1,20 +1,25 @@
 """
 Integration Test Harness Configuration.
 =========================================
-Provides real PostgreSQL test database lifecycle with graceful fallback to
-in-memory SQLite (with JSONB conversion) when PostgreSQL is not configured or reachable.
-Also provides HTTP client, AsyncSession, principals, and academic environment fixtures.
+Provides an in-memory SQLite database (with JSONB-to-JSON conversion), HTTP
+client, AsyncSession, principals, and academic environment fixtures.
+
+The database is deliberately *not* configurable: this harness used to resolve a
+URL from TEST_DATABASE_URL / POSTGRES_TEST_URL / DATABASE_URL and, because
+`from app import app` runs load_dotenv(), it would happily connect to whatever
+PostgreSQL a developer had configured and then call
+SQLModel.metadata.drop_all() on it at session end. Every test now gets a fresh
+in-memory SQLite database instead, matching the rest of the suite.
 """
 
 import os
 import sys
-import logging
 from datetime import datetime
 from typing import AsyncGenerator
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from sqlalchemy import JSON, text
+from sqlalchemy import JSON
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -46,67 +51,57 @@ from src.db.sms_campus import (
 from src.db.sms_gradebook import GradingScale, AssessmentPlan
 from src.db.sms_fees import FeeStructure
 from app import app
-from src.services.database.database import get_session
-
-logger = logging.getLogger(__name__)
+from src.core.events.database import get_db_session
 
 
-def get_target_db_url() -> str:
-    """Detects PostgreSQL test database URL or falls back to in-memory SQLite."""
-    pg_url = (
-        os.getenv("TEST_DATABASE_URL")
-        or os.getenv("POSTGRES_TEST_URL")
-        or os.getenv("DATABASE_URL")
-    )
-    if pg_url and ("postgres" in pg_url or "postgresql" in pg_url):
-        # Normalize driver for asyncpg if not specified
-        if pg_url.startswith("postgres://"):
-            pg_url = pg_url.replace("postgres://", "postgresql+asyncpg://", 1)
-        elif pg_url.startswith("postgresql://") and not pg_url.startswith("postgresql+asyncpg://"):
-            pg_url = pg_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-        return pg_url
-    return "sqlite+aiosqlite://"
+TEST_DB_URL = "sqlite+aiosqlite://"
 
 
-@pytest.fixture(scope="session")
+def _assert_safe_test_database(url: str) -> None:
+    """Refuse to run against anything but a throwaway in-memory SQLite database.
+
+    Guards against a regression reintroducing an environment-derived URL: a
+    real (possibly shared) database must never be reached, let alone dropped.
+    """
+    if not url.startswith("sqlite+aiosqlite://"):
+        raise RuntimeError(
+            "Integration tests may only run against in-memory SQLite, got "
+            f"{url!r}. Refusing to touch a real database."
+        )
+    # Everything after the scheme must be empty (memory) or ':memory:'. A file
+    # path would persist state across runs and survive a crash.
+    path = url[len("sqlite+aiosqlite://"):].split("?", 1)[0]
+    if path not in ("", ":memory:"):
+        raise RuntimeError(
+            "Integration tests may only run against in-memory SQLite, got a "
+            f"file-backed database {url!r}. Refusing to touch it."
+        )
+
+
+@pytest.fixture
 async def engine():
-    """Session-level Async Engine with PostgreSQL lifecycle or SQLite fallback."""
-    db_url = get_target_db_url()
-    is_postgres = "postgres" in db_url
+    """Per-test in-memory async SQLite engine with JSONB-to-JSON remapping.
 
-    if is_postgres:
-        try:
-            eng = create_async_engine(db_url, echo=False)
-            async with eng.begin() as conn:
-                # Test connection
-                await conn.execute(text("SELECT 1"))
-                await conn.run_sync(SQLModel.metadata.create_all)
-            logger.info("Integration tests running against real PostgreSQL: %s", db_url)
-            yield eng
-            async with eng.begin() as conn:
-                await conn.run_sync(SQLModel.metadata.drop_all)
-            await eng.dispose()
-            return
-        except Exception as e:
-            logger.warning(
-                "PostgreSQL connection failed (%s). Falling back to in-memory SQLite.", e
-            )
+    Function-scoped on purpose: each test gets a brand new database, so tests
+    in this directory cannot leak rows into one another and stay order-
+    independent. Teardown only disposes the engine -- there is no drop_all,
+    because the schema lives and dies with the in-memory connection.
+    """
+    _assert_safe_test_database(TEST_DB_URL)
 
-    # SQLite fallback
     for table in SQLModel.metadata.tables.values():
         for col in table.columns:
             if isinstance(col.type, JSONB):
                 col.type = JSON()
 
     eng = create_async_engine(
-        "sqlite+aiosqlite://",
+        TEST_DB_URL,
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
         echo=False,
     )
     async with eng.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
-    logger.info("Integration tests running against in-memory SQLite engine.")
     yield eng
     await eng.dispose()
 
@@ -125,7 +120,7 @@ async def client(db: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     async def override_get_session():
         yield db
 
-    app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_db_session] = override_get_session
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as c:

@@ -128,6 +128,17 @@ def save_message_to_history(aichat_uuid: str, user_message: str, ai_response: st
 
 CHAT_TTL = 2160000  # 25 days in seconds
 
+# `mode` marker written onto AI Socratic Tutor session metadata.
+#
+# Tutor sessions are attributed exactly like any other session -- `chat_meta:`
+# carries `user_id`, which is what makes the tutor's ownership check real --
+# but they are deliberately kept OUT of the copilot chat list (see
+# `get_user_chat_sessions`). A session's stored `title` is the user's own first
+# message truncated to 50 chars, and on a tutor session that message can be a
+# crisis disclosure; it must not end up rendered as a row in a chat history
+# sidebar.
+TUTOR_SESSION_MODE = "tutor"
+
 
 def _get_redis():
     """Get a Redis connection."""
@@ -217,6 +228,34 @@ def chat_session_belongs_to_user(aichat_uuid: str, user_id: int) -> bool:
         return False
 
 
+def chat_session_owner_id(aichat_uuid: str) -> Optional[int]:
+    """The user id recorded as this session's owner, or None if unattributed.
+
+    Strict counterpart to :func:`chat_session_belongs_to_user`. That helper
+    treats a session with no ``chat_meta:`` record as ownable by the caller,
+    which is the right default for a session that is about to be created but
+    the wrong one for a transcript that already exists and simply predates
+    attribution: "nobody has claimed it" is indistinguishable from "somebody
+    else owns it and the metadata expired".
+
+    Callers guarding content that must not leak (tutor transcripts) should use
+    this and refuse on None rather than fall back to "anybody may read it".
+    """
+    r = _get_redis()
+    if not r:
+        return None
+    try:
+        meta_data = r.get(f"chat_meta:{aichat_uuid}")
+        if not meta_data:
+            return None
+        meta = json.loads(meta_data.decode("utf-8") if isinstance(meta_data, bytes) else meta_data)
+        owner = meta.get("user_id")
+        return owner if isinstance(owner, int) else None
+    except Exception as e:
+        logger.error("Failed to read chat session owner: %s", e, exc_info=True)
+        return None
+
+
 def get_user_chat_sessions(user_id: int, org_id: Optional[int] = None) -> list[dict]:
     """Return all chat sessions for a user, newest first. Optionally filter by org_id."""
     r = _get_redis()
@@ -244,6 +283,9 @@ def get_user_chat_sessions(user_id: int, org_id: Optional[int] = None) -> list[d
                 expired_uuids.append(uuid_str)
                 continue
             meta = json.loads(meta_data.decode("utf-8") if isinstance(meta_data, bytes) else meta_data)
+            # Tutor transcripts are attributed but not listed -- see TUTOR_SESSION_MODE.
+            if meta.get("mode") == TUTOR_SESSION_MODE:
+                continue
             # Filter by org_id if provided
             if org_id is not None and meta.get("org_id") != org_id:
                 continue

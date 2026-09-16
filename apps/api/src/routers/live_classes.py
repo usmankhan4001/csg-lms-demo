@@ -362,6 +362,13 @@ async def record_attendance_log(
             detail=f"Live class room '{room_name}' not found",
         )
 
+    # Writing a register line is the write half of being in the room, so it
+    # takes the same entitlement as being handed a token for it: this room's
+    # host, or a student actively enrolled in its section, at the caller's own
+    # org and campus. Without this, a student who could only write their OWN
+    # id could still write it into any room at any school.
+    await _assert_may_enter_room(session, principal, live_session)
+
     # A student may only log their OWN attendance. Taking student_id from the
     # body let any authenticated user mark any student present in any class --
     # the same impersonation shape as the participant_id fix above.
@@ -664,6 +671,29 @@ def _assert_can_host(principal: KeycloakUserPrincipal, live: LiveClassSession) -
         )
 
 
+async def _caller_may_view_recording(
+    session: AsyncSession,
+    principal: KeycloakUserPrincipal,
+    live: LiveClassSession,
+) -> bool:
+    """The one rule for who may be handed a class recording.
+
+    A host always may. Anyone else only if the teacher shared it AND they were
+    actually enrolled in that section -- the rule `GET /classes/{id}/recording`
+    already enforced. `_to_detail_read` used to hand `recording_url` to every
+    caller who could read the class at all, so one resource had two different
+    rules depending on which endpoint you asked. Both now ask this.
+    """
+    if _caller_is_host(principal, live):
+        return True
+    caller_id = get_user_id(principal)
+    if caller_id is None:
+        return False
+    return await lc_schedule.student_may_view_recording(
+        session, live=live, student_user_id=caller_id
+    )
+
+
 async def _to_detail_read(
     session: AsyncSession,
     live: LiveClassSession,
@@ -671,6 +701,15 @@ async def _to_detail_read(
 ) -> LiveClassDetailRead:
     detail = await lc_schedule.get_detail(session, live.id)
     coursework = await lc_schedule.list_coursework(session, session_id=live.id)
+    # Same rule as GET /classes/{id}/recording. A list cannot 403 on one row,
+    # so an unentitled caller gets the recording state with no URL rather than
+    # the whole list failing.
+    recording_url = (
+        live.recording_url
+        if live.recording_url is not None
+        and await _caller_may_view_recording(session, principal, live)
+        else None
+    )
     return LiveClassDetailRead(
         id=live.id,
         title=live.title,
@@ -689,7 +728,7 @@ async def _to_detail_read(
             status=detail.recording_status if detail else RecordingStatus.NOT_REQUESTED.value,
             note=detail.recording_note if detail else None,
             # The URL is only ever the one actually stored. Never synthesised.
-            url=live.recording_url,
+            url=recording_url,
             started_at=detail.recording_started_at if detail else None,
             completed_at=detail.recording_completed_at if detail else None,
             duration_seconds=detail.recording_duration_seconds if detail else None,
@@ -749,6 +788,40 @@ async def schedule_live_class(
     return await _to_detail_read(session, live, principal)
 
 
+async def _class_visible_to(
+    session: AsyncSession,
+    principal: KeycloakUserPrincipal,
+    live: LiveClassSession,
+) -> bool:
+    """The list form of `_assert_session_in_scope`.
+
+    A row the caller may not see is dropped, not refused: a list has no single
+    id to 404 on, and 403-ing the whole page because one row belongs to
+    another school would be both useless and a disclosure.
+
+    `list_classes` filters by campus only, and a campus filter of None means
+    every campus of every org -- so the org half of the tenant boundary has to
+    be applied here, per row.
+    """
+    if principal.is_superadmin:
+        return True
+    if live.section_id is None:
+        # No section means no tenant this data can establish. A class like that
+        # is visible only to the teacher who opened it -- the same carve-out
+        # /rooms/active already makes for ad-hoc rooms.
+        return live.teacher_id is not None and live.teacher_id == get_user_id(principal)
+    org_id = require_org_id(principal)
+    session_org, session_campus = await _session_scope(session, live)
+    if session_org is not None and session_org != org_id:
+        return False
+    if (
+        session_campus is not None
+        and resolve_scoped_campus_id(principal, session_campus) != session_campus
+    ):
+        return False
+    return True
+
+
 @router.get(
     "/classes",
     response_model=List[LiveClassDetailRead],
@@ -761,7 +834,7 @@ async def list_live_classes(
     teacher_id: Optional[int] = Query(None),
     campus_id: Optional[int] = Query(None),
     session: AsyncSession = Depends(get_db_session),
-    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+    principal: KeycloakUserPrincipal = Depends(require_roles(_CLASS_STAFF)),
 ) -> List[LiveClassDetailRead]:
     # Reads narrow rather than fail: a campus-bound caller who asks for
     # everything gets their own campus, not the whole org.
@@ -779,7 +852,12 @@ async def list_live_classes(
         teacher_id=teacher_id if isinstance(teacher_id, int) else None,
         campus_id=scoped_campus,
     )
-    return [await _to_detail_read(session, live, principal) for live, _ in rows]
+    out: List[LiveClassDetailRead] = []
+    for live, _ in rows:
+        if not await _class_visible_to(session, principal, live):
+            continue
+        out.append(await _to_detail_read(session, live, principal))
+    return out
 
 
 @router.get(
@@ -883,19 +961,14 @@ async def get_class_recording(
     live = await _load_class_or_404(session, class_id)
     detail = await lc_schedule.get_detail(session, live.id)
 
-    if not _caller_is_host(principal, live):
-        caller_id = _caller_user_id(principal)
-        allowed = caller_id is not None and await lc_schedule.student_may_view_recording(
-            session, live=live, student_user_id=caller_id
+    if not await _caller_may_view_recording(session, principal, live):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "This recording has not been shared with students, or you were "
+                "not enrolled in this class."
+            ),
         )
-        if not allowed:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    "This recording has not been shared with students, or you were "
-                    "not enrolled in this class."
-                ),
-            )
 
     return LiveClassRecordingRead(
         enabled=detail.recording_enabled if detail else False,
@@ -945,9 +1018,14 @@ async def attach_class_coursework(
 async def list_class_coursework(
     class_id: int,
     session: AsyncSession = Depends(get_db_session),
-    principal: KeycloakUserPrincipal = Depends(get_current_user_principal),
+    principal: KeycloakUserPrincipal = Depends(require_roles(_CLASS_STAFF)),
 ) -> List[LiveClassCourseworkRead]:
     live = await _load_class_or_404(session, class_id)
+    # Coursework is part of the class, so it takes the class's own rule: staff
+    # only, and scoped to the caller's org and campus. It used to answer any
+    # authenticated user at any school, which turned a class id into a way to
+    # read another school's timetable of activities.
+    await _assert_session_in_scope(session, principal, live)
     rows = await lc_schedule.list_coursework(session, session_id=live.id)
     return [LiveClassCourseworkRead.model_validate(r) for r in rows]
 

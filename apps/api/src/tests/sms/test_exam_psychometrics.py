@@ -12,6 +12,7 @@ from src.services.sms.exam_psychometrics import (
     calculate_irt_2pl_psychometrics,
     categorize_difficulty,
     categorize_discrimination,
+    compute_point_biserial,
     estimate_irt_2pl,
     interpret_cronbach_alpha,
     synthesize_response_matrix_from_scores,
@@ -110,6 +111,73 @@ def test_irt_2pl_estimation_and_flagging():
     assert len(item_2.icc_curve) == 25
     assert item_2.icc_curve[0].theta == -3.0
     assert item_2.icc_curve[-1].theta == 3.0
+
+
+def test_point_biserial_is_none_when_a_response_group_is_empty():
+    """An item every candidate answered the same way was never measured.
+
+    One of the two response groups is empty, so its mean has no numeric
+    answer. The honest result is None -- 0.0 would be read as a measured
+    "this item does not discriminate at all", which is a different claim.
+    """
+    totals = [3.0, 4.0, 2.0, 5.0, 1.0, 4.0, 3.0, 2.0, 5.0, 1.0]
+
+    all_correct = compute_point_biserial([1] * 10, totals)
+    all_wrong = compute_point_biserial([0] * 10, totals)
+
+    assert all_correct is None
+    assert all_wrong is None
+    # Explicitly not a number of any kind, and specifically not zero.
+    assert all_correct != 0.0
+    assert all_wrong != 0.0
+
+
+def test_point_biserial_is_none_when_total_scores_have_no_spread():
+    """A zero denominator makes the correlation undefined, not zero."""
+    assert compute_point_biserial([1, 1, 0, 0, 1, 0], [4.0] * 6) is None
+
+
+def test_point_biserial_is_measured_for_a_discriminating_item():
+    """The None path must not swallow items that really do discriminate."""
+    item_scores = [1, 1, 1, 0, 0, 0]
+    totals = [6.0, 5.0, 4.0, 3.0, 2.0, 1.0]
+
+    r = compute_point_biserial(item_scores, totals)
+
+    assert r is not None
+    assert r > 0.5
+
+
+def test_uniform_item_reports_no_discrimination_value():
+    """End-to-end: a constant column yields null, not 0.0, in the report."""
+    # 12 examinees, 4 items. Item index 1 is answered correctly by everyone.
+    matrix = [
+        [1, 1, 1, 0],
+        [1, 1, 0, 0],
+        [1, 1, 1, 1],
+        [0, 1, 0, 0],
+        [1, 1, 0, 1],
+        [0, 1, 1, 0],
+        [1, 1, 0, 0],
+        [0, 1, 1, 1],
+        [1, 1, 0, 0],
+        [0, 1, 1, 0],
+        [1, 1, 0, 1],
+        [0, 1, 0, 0],
+    ]
+
+    report = calculate_irt_2pl_psychometrics(
+        response_matrix=matrix, exam_id=7, exam_title="Uniform Item Check"
+    )
+
+    uniform_item = report.items[1]
+    assert uniform_item.pass_rate == 1.0
+    assert uniform_item.point_biserial_r is None
+    assert uniform_item.point_biserial_r != 0.0
+
+    # The items that do vary still carry a real measurement.
+    measured = [it.point_biserial_r for it in report.items if it.item_index != 2]
+    assert any(r is not None for r in measured)
 
 
 def test_synthesize_response_matrix():

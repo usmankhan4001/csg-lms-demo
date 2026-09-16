@@ -33,7 +33,12 @@ from src.services.ai.socratic_tutor import (
     stream_socratic_guidance,
     check_tutor_daily_rate_limit,
 )
-from src.services.ai.base import get_chat_session_history, save_message_to_history, chat_session_belongs_to_user
+from src.services.ai.base import (
+    get_chat_session_history,
+    save_message_to_history,
+    chat_session_owner_id,
+    TUTOR_SESSION_MODE,
+)
 from src.services.ai.crisis_classifier import classify_prompt_safety, log_safety_incident
 from src.db.sms_ai_consent import AIConsentType
 from src.services.sms.ai_consent import may_screen_for_crisis, resolve_consent
@@ -148,9 +153,14 @@ async def socratic_chat_event_generator(
     session_uuid: Optional[str],
     hint_level: Optional[int],
     model_name: Optional[str],
+    owner_user_id: Optional[int] = None,
 ):
     """
     Generate Server-Sent Events (SSE) stream for Socratic Tutor responses.
+
+    `owner_user_id` is the integer Learnhouse user id, which is what gets
+    written to `chat_meta:` so the transcript can be attributed later. It is
+    NOT `user_id` -- that is `principal.sub`, a UUID string.
     """
     accumulated_response = []
 
@@ -197,9 +207,15 @@ async def socratic_chat_event_generator(
                     aichat_uuid=session_uuid,
                     user_message=query_text,
                     ai_response=full_text,
-                    user_id=int(user_id) if user_id and str(user_id).isdigit() else None,
+                    # The integer id, never principal.sub: save_message_to_history
+                    # only writes `chat_meta:` when it receives an int, and
+                    # without that record the ownership check below has nothing
+                    # to compare against. `mode` keeps the transcript out of the
+                    # copilot chat list (see TUTOR_SESSION_MODE).
+                    user_id=owner_user_id,
                     course_uuid=course_id,
                     org_id=org_id,
+                    mode=TUTOR_SESSION_MODE,
                 )
             except Exception as hist_err:
                 logger.warning("Failed to save Socratic chat to history: %s", hist_err)
@@ -314,6 +330,9 @@ async def api_socratic_tutor_chat(
             session_uuid=payload.session_uuid,
             hint_level=payload.hint_level,
             model_name=payload.model_name,
+            # Anonymous callers get no attribution, so their session stays
+            # unowned and readable only by the safeguarding roles.
+            owner_user_id=get_user_id(principal) if principal is not None else None,
         ),
         media_type="text/event-stream",
         headers={
@@ -339,9 +358,18 @@ def _may_read_tutor_session(principal: KeycloakUserPrincipal, session_uuid: str)
     if user_id is None:
         return False
 
-    # NOTE: this treats a session with NO stored metadata as ownable, so it is
-    # only as strong as the attribution written by save_message_to_history.
-    return chat_session_belongs_to_user(session_uuid, user_id)
+    # Positive proof of ownership only. A session with no `chat_meta:` record
+    # is one written before tutor sessions were attributed; "unattributed"
+    # cannot be told apart from "owned by somebody else", so it is refused here
+    # and left reachable by the safeguarding roles above. That locks the owner
+    # out of that one legacy transcript, not out of the tutor -- every session
+    # started from this change onwards is attributed on its first message.
+    #
+    # Deliberately NOT backfilled on later turns: whoever sent the next message
+    # would become the recorded owner, so an unattributed session is safer left
+    # unowned than claimed by whoever guesses its uuid first.
+    owner_id = chat_session_owner_id(session_uuid)
+    return owner_id is not None and owner_id == user_id
 
 
 @router.get(

@@ -97,25 +97,41 @@ def _sample_variance(values: List[float]) -> float:
 
 
 def compute_point_biserial(item_scores: List[int], total_scores: List[float]) -> Optional[float]:
-    """Computes point-biserial correlation between binary item responses and total scores."""
+    """Computes point-biserial correlation between binary item responses and total scores.
+
+    Returns ``None`` -- never a number -- whenever the correlation was not
+    measured: too few responses, every candidate answered the item the same
+    way, no spread in the total scores, or an empty response group. A uniform
+    item carries no information about who knows the material, and reporting
+    ``0.0`` for it reads as a measured "this item does not discriminate"
+    finding rather than as the truth, which is that it was never measured.
+    """
     n = len(item_scores)
     if n < 3:
         return None
     p = sum(item_scores) / n
     q = 1.0 - p
     if p <= 1e-6 or q <= 1e-6:
-        return 0.0
+        # Every candidate answered identically, so one response group is empty
+        # and there is no group mean to difference.
+        return None
     
     var_tot = _sample_variance(total_scores)
     if var_tot <= 1e-6:
-        return 0.0
+        # No spread in total scores: the denominator is zero, so the
+        # correlation is undefined rather than zero.
+        return None
     std_tot = math.sqrt(var_tot)
     
     scores_1 = [total_scores[i] for i in range(n) if item_scores[i] == 1]
     scores_0 = [total_scores[i] for i in range(n) if item_scores[i] == 0]
     
-    mean_1 = (sum(scores_1) / len(scores_1)) if scores_1 else 0.0
-    mean_0 = (sum(scores_0) / len(scores_0)) if scores_0 else 0.0
+    if not scores_1 or not scores_0:
+        # An empty group was never measured; the mean of nothing is not 0.0.
+        return None
+    
+    mean_1 = sum(scores_1) / len(scores_1)
+    mean_0 = sum(scores_0) / len(scores_0)
     
     r_pbis = ((mean_1 - mean_0) / std_tot) * math.sqrt(p * q)
     return round(_clamp(r_pbis, -1.0, 1.0), 3)

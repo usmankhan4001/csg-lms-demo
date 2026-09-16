@@ -10,7 +10,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-learnhouse}
       POSTGRES_USER: ${POSTGRES_USER:-learnhouse}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -40,7 +40,7 @@ services:
         redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru;
       fi'
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
     volumes:
       - redis_data:/data
     healthcheck:
@@ -73,9 +73,9 @@ services:
       LEARNHOUSE_ENV: production
       LEARNHOUSE_PORT: 9000
       WORKERS: ${WORKERS:-4}
-      LEARNHOUSE_SQL_CONNECTION_STRING: postgresql+asyncpg://${POSTGRES_USER:-learnhouse}:${POSTGRES_PASSWORD}@csg-postgres:5432/${POSTGRES_DB:-learnhouse}
-      LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD}@csg-redis:6379/0
-      LEARNHOUSE_REDIS_CONNECTION_STRING: redis://:${REDIS_PASSWORD}@csg-redis:6379/0
+      LEARNHOUSE_SQL_CONNECTION_STRING: postgresql+asyncpg://${POSTGRES_USER:-learnhouse}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@csg-postgres:5432/${POSTGRES_DB:-learnhouse}
+      LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set}@csg-redis:6379/0
+      LEARNHOUSE_REDIS_CONNECTION_STRING: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set}@csg-redis:6379/0
       LEARNHOUSE_DOMAIN: ${DOMAIN:-csginfotech.co}
       LEARNHOUSE_FRONTEND_DOMAIN: ${APP_DOMAIN:-lms-demo.csginfotech.co}
       LEARNHOUSE_ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://lms-demo.csginfotech.co,https://demo-lms.csginfotech.co,https://learnhouse.csginfotech.co,https://api-demo.csginfotech.co,https://collab-demo.csginfotech.co,https://livekit-demo.csginfotech.co,http://localhost:3000}
@@ -83,10 +83,10 @@ services:
       LEARNHOUSE_COOKIE_DOMAIN: .csginfotech.co
       LEARNHOUSE_COOKIE_DOMAIN_ALLOW_BROAD: "true"
       LEARNHOUSE_URL: ${APP_URL:-${LEARNHOUSE_URL:-https://${APP_DOMAIN:-lms-demo.csginfotech.co}}}
-      LEARNHOUSE_AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY}
-      AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY}
-      COLLAB_INTERNAL_KEY: ${COLLAB_INTERNAL_KEY}
-      LEARNHOUSE_MEDIA_SECRET_KEY: ${LEARNHOUSE_MEDIA_SECRET_KEY}
+      LEARNHOUSE_AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:?LEARNHOUSE_AUTH_JWT_SECRET_KEY must be set}
+      AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:?LEARNHOUSE_AUTH_JWT_SECRET_KEY must be set}
+      COLLAB_INTERNAL_KEY: ${COLLAB_INTERNAL_KEY:?COLLAB_INTERNAL_KEY must be set}
+      LEARNHOUSE_MEDIA_SECRET_KEY: ${LEARNHOUSE_MEDIA_SECRET_KEY:?LEARNHOUSE_MEDIA_SECRET_KEY must be set}
       # AI Provider API Keys
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -121,20 +121,20 @@ services:
       # LiveKit Real-Time Video
       LIVEKIT_URL: ${LIVEKIT_URL:-wss://${LIVEKIT_DOMAIN:-${LIVEKIT_HOSTNAME:-livekit-demo.csginfotech.co}}}
       LIVEKIT_INTERNAL_URL: ws://livekit:7880
-      # NO DEFAULT VALUE -- deliberately empty when unset.
+      # NO DEFAULT VALUE -- compose refuses to start when unset.
       #
       # These previously fell back to credentials committed in this repository,
       # so anyone with read access could mint LiveKit room tokens. That is the
-      # thing being fixed. An empty value is strictly safer than a published
-      # one: live classes fail closed and visibly, rather than appearing to
-      # work while anyone on GitHub can forge a join token.
+      # thing being fixed.
       #
-      # Bare ${VAR} rather than ${VAR:?...}: a hard compose failure would take
-      # the WHOLE stack down -- including attendance, fees and gradebook -- over
-      # one optional subsystem. Set both in the Dokploy environment to enable
-      # live classes; the API logs their absence at boot.
-      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+      # ${VAR:?...} rather than bare ${VAR}: a bare reference resolves to an
+      # EMPTY string, which is not "live classes disabled" -- it is a LiveKit
+      # server that accepts any token and an API that signs with an empty
+      # secret. Failing at compose-up is the only outcome that cannot be
+      # mistaken for a working deployment. Set both in the Dokploy environment
+      # to enable live classes.
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set}
     depends_on:
       csg-postgres:
         condition: service_healthy
@@ -191,9 +191,9 @@ services:
       LEARNHOUSE_ENV: production
       LEARNHOUSE_PORT: 9000
       WORKERS: ${WORKERS:-4}
-      LEARNHOUSE_SQL_CONNECTION_STRING: postgresql+asyncpg://${POSTGRES_USER:-learnhouse}:${POSTGRES_PASSWORD}@csg-postgres:5432/${POSTGRES_DB:-learnhouse}
-      LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD}@csg-redis:6379/0
-      LEARNHOUSE_REDIS_CONNECTION_STRING: redis://:${REDIS_PASSWORD}@csg-redis:6379/0
+      LEARNHOUSE_SQL_CONNECTION_STRING: postgresql+asyncpg://${POSTGRES_USER:-learnhouse}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@csg-postgres:5432/${POSTGRES_DB:-learnhouse}
+      LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set}@csg-redis:6379/0
+      LEARNHOUSE_REDIS_CONNECTION_STRING: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set}@csg-redis:6379/0
       LEARNHOUSE_DOMAIN: ${DOMAIN:-csginfotech.co}
       LEARNHOUSE_FRONTEND_DOMAIN: ${APP_DOMAIN:-lms-demo.csginfotech.co}
       LEARNHOUSE_ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://lms-demo.csginfotech.co,https://demo-lms.csginfotech.co,https://learnhouse.csginfotech.co,https://api-demo.csginfotech.co,https://collab-demo.csginfotech.co,https://livekit-demo.csginfotech.co,http://localhost:3000}
@@ -201,10 +201,10 @@ services:
       LEARNHOUSE_COOKIE_DOMAIN: .csginfotech.co
       LEARNHOUSE_COOKIE_DOMAIN_ALLOW_BROAD: "true"
       LEARNHOUSE_URL: ${APP_URL:-${LEARNHOUSE_URL:-https://${APP_DOMAIN:-lms-demo.csginfotech.co}}}
-      LEARNHOUSE_AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY}
-      AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY}
-      COLLAB_INTERNAL_KEY: ${COLLAB_INTERNAL_KEY}
-      LEARNHOUSE_MEDIA_SECRET_KEY: ${LEARNHOUSE_MEDIA_SECRET_KEY}
+      LEARNHOUSE_AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:?LEARNHOUSE_AUTH_JWT_SECRET_KEY must be set}
+      AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:?LEARNHOUSE_AUTH_JWT_SECRET_KEY must be set}
+      COLLAB_INTERNAL_KEY: ${COLLAB_INTERNAL_KEY:?COLLAB_INTERNAL_KEY must be set}
+      LEARNHOUSE_MEDIA_SECRET_KEY: ${LEARNHOUSE_MEDIA_SECRET_KEY:?LEARNHOUSE_MEDIA_SECRET_KEY must be set}
       # AI Provider API Keys
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -233,8 +233,8 @@ services:
       # LiveKit Real-Time Video
       LIVEKIT_URL: ${LIVEKIT_URL:-wss://${LIVEKIT_DOMAIN:-${LIVEKIT_HOSTNAME:-livekit-demo.csginfotech.co}}}
       LIVEKIT_INTERNAL_URL: ws://livekit:7880
-      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
-      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set}
     depends_on:
       csg-postgres:
         condition: service_healthy
@@ -266,7 +266,7 @@ services:
     restart: always
     environment:
       # Same reasoning as the api service above: no committed fallback.
-      LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?LIVEKIT_API_KEY must be set}: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET must be set}"
     ports:
       - "7883:7880"
       - "50200-50250:50200-50250/udp"
@@ -296,9 +296,9 @@ services:
       NODE_ENV: production
       COLLAB_PORT: 4000
       LEARNHOUSE_API_URL: http://api:9000
-      LEARNHOUSE_AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY}
-      COLLAB_INTERNAL_KEY: ${COLLAB_INTERNAL_KEY}
-      LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD}@csg-redis:6379/0
+      LEARNHOUSE_AUTH_JWT_SECRET_KEY: ${LEARNHOUSE_AUTH_JWT_SECRET_KEY:?LEARNHOUSE_AUTH_JWT_SECRET_KEY must be set}
+      COLLAB_INTERNAL_KEY: ${COLLAB_INTERNAL_KEY:?COLLAB_INTERNAL_KEY must be set}
+      LEARNHOUSE_REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set}@csg-redis:6379/0
       COLLAB_TRUST_PROXY: "true"
     depends_on:
       api:

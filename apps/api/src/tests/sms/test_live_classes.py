@@ -192,10 +192,15 @@ async def test_live_class_session_lifecycle(db: AsyncSession):
 @pytest.mark.asyncio
 async def test_live_class_attendance_tracking(db: AsyncSession):
     """Test student join/leave attendance logging and duration calculation."""
-    # 1. Create a live session
+    # 1. Create a live session. It needs a real section, and the student a real
+    # enrolment in it: attendance is the write half of being in the room, so it
+    # now takes the same entitlement as being handed a join token for it.
+    await _school(db, teacher_id=202)
+    await _enrol(db, 701)
     req = CreateLiveClassSessionRequest(
         title="Physics Lab Live Stream",
         teacher_id=102,
+        section_id=5,
         room_name="physics-lab-live",
     )
     await create_live_class_session(

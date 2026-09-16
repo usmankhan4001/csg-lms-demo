@@ -8,6 +8,7 @@ guardrails, adaptive pacing from the existing mastery DAG, per-grade RAG
 segregation, and Redis-backed daily rate limiting.
 """
 
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
@@ -52,8 +53,10 @@ from src.routers.ai_tutor import (
     api_socratic_tutor_chat,
     api_get_socratic_history,
     api_list_safety_flags,
+    socratic_chat_event_generator,
     router as tutor_router,
 )
+from src.services.ai.base import get_user_chat_sessions, TUTOR_SESSION_MODE
 from src.core.events.database import get_db_session
 from src.core.keycloak_auth import (
     KeycloakUserPrincipal,
@@ -288,7 +291,7 @@ class TestAITutorRouter:
             raw_claims={"lh_user_id": 42},
         )
         with patch("src.routers.ai_tutor.get_chat_session_history") as mock_hist, patch(
-            "src.routers.ai_tutor.chat_session_belongs_to_user", return_value=True
+            "src.routers.ai_tutor.chat_session_owner_id", return_value=42
         ):
             mock_hist.return_value = {
                 "aichat_uuid": "sess_123",
@@ -308,7 +311,8 @@ class TestAITutorRouter:
             org_id=1,
             raw_claims={"lh_user_id": 43},
         )
-        with patch("src.routers.ai_tutor.chat_session_belongs_to_user", return_value=False):
+        # sess_123 is owned by student 42; this caller is 43.
+        with patch("src.routers.ai_tutor.chat_session_owner_id", return_value=42):
             with pytest.raises(HTTPException) as exc_info:
                 await api_get_socratic_history(
                     session_uuid="sess_123", principal=other_student
@@ -326,8 +330,8 @@ class TestAITutorRouter:
             raw_claims={"lh_user_id": 7},
         )
         with patch("src.routers.ai_tutor.get_chat_session_history") as mock_hist, patch(
-            "src.routers.ai_tutor.chat_session_belongs_to_user", return_value=False
-        ) as mock_owns:
+            "src.routers.ai_tutor.chat_session_owner_id", return_value=42
+        ) as mock_owner:
             mock_hist.return_value = {
                 "aichat_uuid": "sess_123",
                 "message_history": [{"role": "user", "content": "hello"}],
@@ -336,7 +340,7 @@ class TestAITutorRouter:
                 session_uuid="sess_123", principal=counsellor
             )
         assert resp.session_uuid == "sess_123"
-        assert not mock_owns.called
+        assert not mock_owner.called
 
     @pytest.mark.asyncio
     async def test_safety_flags_role_protection(self):
@@ -426,6 +430,195 @@ class TestTutorHistoryRequiresAuthentication:
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert not mock_hist.called
+
+
+# ---------------------------------------------------------------------------
+# 5c. Tutor session attribution
+#
+# `_may_read_tutor_session` is only as strong as the `chat_meta:` record it
+# reads. Tutor sessions never got one: the chat endpoint passed `principal.sub`
+# -- a UUID string -- into a parameter that only writes metadata for an int, so
+# every tutor session looked unowned and the ownership branch waved through any
+# authenticated caller. These tests pin the write and the read together.
+# ---------------------------------------------------------------------------
+
+class _FakeChatRedis:
+    """In-memory stand-in for the `chat_history:` / `chat_meta:` keys."""
+
+    def __init__(self):
+        self.store: dict[str, bytes] = {}
+        self.zsets: dict[str, list[str]] = {}
+
+    def get(self, key):
+        return self.store.get(key)
+
+    def setex(self, key, ttl, value):
+        self.store[key] = value.encode("utf-8") if isinstance(value, str) else value
+
+    def zadd(self, key, mapping):
+        self.zsets.setdefault(key, []).extend(mapping.keys())
+
+    def zrevrange(self, key, start, end):
+        return [m.encode("utf-8") for m in reversed(self.zsets.get(key, []))]
+
+    def mget(self, keys):
+        return [self.store.get(k) for k in keys]
+
+    def expire(self, key, ttl):
+        return True
+
+
+def _seed_session(redis, session_uuid, owner_id, mode):
+    redis.store[f"chat_meta:{session_uuid}"] = json.dumps(
+        {
+            "aichat_uuid": session_uuid,
+            "user_id": owner_id,
+            "org_id": 1,
+            "title": "Explain Newton's second law",
+            "mode": mode,
+        }
+    ).encode("utf-8")
+
+
+class TestTutorSessionAttribution:
+    @pytest.fixture
+    def redis(self):
+        return _FakeChatRedis()
+
+    @pytest.fixture
+    def patched_redis(self, redis):
+        # save_message_to_history builds its own client via redis.from_url;
+        # everything else in base.py goes through _get_redis().
+        with patch("src.services.ai.base._get_redis", return_value=redis), patch(
+            "src.services.ai.base.redis.from_url", return_value=redis
+        ):
+            yield redis
+
+    @staticmethod
+    def _student(user_id):
+        return KeycloakUserPrincipal(
+            sub=f"student_{user_id}",
+            roles=[STUDENT],
+            email=f"student{user_id}@csg.edu",
+            org_id=1,
+            raw_claims={"lh_user_id": user_id},
+        )
+
+    @staticmethod
+    def _counsellor():
+        return KeycloakUserPrincipal(
+            sub="counsellor_1",
+            roles=[PSYCHOLOGIST],
+            email="counsellor@csg.edu",
+            org_id=1,
+            raw_claims={"lh_user_id": 7},
+        )
+
+    @pytest.mark.asyncio
+    async def test_first_turn_writes_the_integer_owner(self, patched_redis):
+        """The int reaches chat_meta:, not principal.sub (a UUID string)."""
+
+        async def fake_stream(*args, **kwargs):
+            yield "Because "
+            yield "F = ma."
+
+        with patch(
+            "src.routers.ai_tutor.stream_socratic_guidance", side_effect=fake_stream
+        ):
+            frames = [
+                frame
+                async for frame in socratic_chat_event_generator(
+                    query_text="Explain Newton's second law",
+                    course_id=None,
+                    history=[],
+                    user_id="b7e2d41a-9c38-4f0a-9f1e-0a1b2c3d4e5f",  # principal.sub
+                    org_id=1,
+                    db_session=AsyncMock(),
+                    session_uuid="sess_1",
+                    hint_level=None,
+                    model_name=None,
+                    owner_user_id=42,
+                )
+            ]
+
+        assert frames
+        meta = json.loads(patched_redis.store["chat_meta:sess_1"].decode("utf-8"))
+        assert meta["user_id"] == 42
+        assert meta["mode"] == TUTOR_SESSION_MODE
+
+    @pytest.mark.asyncio
+    async def test_owner_can_read_their_own_transcript(self, patched_redis):
+        _seed_session(patched_redis, "sess_1", owner_id=42, mode=TUTOR_SESSION_MODE)
+        with patch("src.routers.ai_tutor.get_chat_session_history") as mock_hist:
+            mock_hist.return_value = {
+                "aichat_uuid": "sess_1",
+                "message_history": [{"role": "user", "content": "hello"}],
+            }
+            resp = await api_get_socratic_history(
+                session_uuid="sess_1", principal=self._student(42)
+            )
+
+        assert resp.session_uuid == "sess_1"
+        assert len(resp.message_history) == 1
+
+    @pytest.mark.asyncio
+    async def test_another_student_cannot_read_it(self, patched_redis):
+        _seed_session(patched_redis, "sess_1", owner_id=42, mode=TUTOR_SESSION_MODE)
+        with pytest.raises(HTTPException) as exc_info:
+            await api_get_socratic_history(
+                session_uuid="sess_1", principal=self._student(43)
+            )
+
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.asyncio
+    async def test_safeguarding_role_can_still_read_it(self, patched_redis):
+        """A counsellor following up a disclosure is entitled to the transcript."""
+        _seed_session(patched_redis, "sess_1", owner_id=42, mode=TUTOR_SESSION_MODE)
+        with patch("src.routers.ai_tutor.get_chat_session_history") as mock_hist:
+            mock_hist.return_value = {
+                "aichat_uuid": "sess_1",
+                "message_history": [{"role": "user", "content": "hello"}],
+            }
+            resp = await api_get_socratic_history(
+                session_uuid="sess_1", principal=self._counsellor()
+            )
+
+        assert resp.session_uuid == "sess_1"
+
+    @pytest.mark.asyncio
+    async def test_unattributed_session_is_refused_to_peers(self, patched_redis):
+        """No chat_meta: at all -- a session predating attribution."""
+        with pytest.raises(HTTPException) as exc_info:
+            await api_get_socratic_history(
+                session_uuid="sess_legacy", principal=self._student(42)
+            )
+
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.asyncio
+    async def test_unattributed_session_still_reaches_safeguarding(self, patched_redis):
+        with patch("src.routers.ai_tutor.get_chat_session_history") as mock_hist:
+            mock_hist.return_value = {
+                "aichat_uuid": "sess_legacy",
+                "message_history": [],
+            }
+            resp = await api_get_socratic_history(
+                session_uuid="sess_legacy", principal=self._counsellor()
+            )
+
+        assert resp.session_uuid == "sess_legacy"
+
+    def test_tutor_sessions_stay_out_of_the_copilot_list(self, patched_redis):
+        """Attribution must not leak a child's disclosure into a chat sidebar."""
+        _seed_session(patched_redis, "sess_tutor", owner_id=42, mode=TUTOR_SESSION_MODE)
+        _seed_session(patched_redis, "sess_copilot", owner_id=42, mode="course_only")
+        patched_redis.zsets["user_chats:42"] = ["sess_tutor", "sess_copilot"]
+
+        sessions = get_user_chat_sessions(42)
+
+        assert [s["aichat_uuid"] for s in sessions] == ["sess_copilot"]
+
 
 # ---------------------------------------------------------------------------
 # 6. Content-Relevance & Age/Grade Guardrails (content_guardrails.py)
