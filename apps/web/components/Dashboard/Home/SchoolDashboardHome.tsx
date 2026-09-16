@@ -20,11 +20,12 @@
  *     Learnhouse dashboard, unchanged. Setting the school up requires those
  *     screens, and taking them away would strand a fresh deployment.
  *
- * Role and feature resolution is LIFTED FROM DashLeftMenu rather than
- * re-derived: same `resolved_features` toggle, same `GET /sms/me` roles, same
- * `noSchoolRole` escape hatch. A second derivation would eventually disagree
- * with the sidebar, and then a module would be visible in one and not the
- * other.
+ * Role and feature resolution comes from `useSchoolAccess()`
+ * (`lib/school-access.ts`), the single source the sidebar, the palette and the
+ * in-module tabs read: same `resolved_features` toggle, same `GET /sms/me`
+ * roles, same `noSchoolRole` escape hatch. A second derivation would eventually
+ * disagree with the sidebar, and then a module would be visible in one and not
+ * the other.
  *
  * Learnhouse's own surfaces are KEPT, not thrown away — a school runs courses,
  * and the content/member overviews are genuinely useful. They move below the
@@ -45,7 +46,7 @@ import {
 } from 'lucide-react'
 import { useOrg } from '@components/Contexts/OrgContext'
 import { useLHSession } from '@components/Contexts/LHSessionContext'
-import { useSchoolSession } from '@/lib/api/useSchoolSession'
+import { useSchoolAccess } from '@/lib/school-access'
 import { useApiResource } from '@/lib/api/useApiResource'
 import { DataTable, SectionCard, StatGrid, StatusChip } from '@/components/widgets'
 import { getSchoolOverview } from '@/modules/sms/reports/api'
@@ -278,20 +279,15 @@ export default function SchoolDashboardHome() {
   const session = useLHSession() as any
   const username = session?.data?.user?.username || ''
 
-  // Same resolution as DashLeftMenu — deliberately not a second derivation.
-  const rf = org?.config?.config?.resolved_features
-  const isEnabled = (feature: string) => rf?.[feature]?.enabled === true
-
-  const { session: schoolSession, checked } = useSchoolSession()
-  const schoolRoles = schoolSession?.roles ?? []
-  const isSuper = schoolRoles.includes('SUPER_ADMIN')
-  const isSchoolAdmin = isSuper || schoolRoles.includes('SCHOOL_ADMIN')
-  const isTeacher = schoolRoles.includes('TEACHER')
-  const isSchoolStaff = schoolRoles.includes('STAFF')
-  const noSchoolRole = schoolRoles.length === 0
-  const canAdminister = isSchoolAdmin || noSchoolRole
-  const canTeach = canAdminister || isTeacher
-  const canBackOffice = canAdminister || isSchoolStaff
+  // One derivation, shared with the sidebar and the palette.
+  const {
+    canAdminister,
+    canTeach,
+    canBackOffice,
+    isFeatureEnabled: isEnabled,
+    showCampus,
+    checked,
+  } = useSchoolAccess()
 
   // SMS-first: all administrators and school staff see the school operations dashboard
   const isPureLearnhouse = false
@@ -301,7 +297,6 @@ export default function SchoolDashboardHome() {
   const showTimetable = isEnabled('sms_timetable') && canTeach
   const showFees = isEnabled('sms_fees') && canBackOffice
   const showAdmissions = isEnabled('revops') && canAdminister
-  const showCampus = canAdminister
 
   const quickActions: QuickAction[] = [
     showAttendance && { href: '/dash/attendance', label: 'Take register', icon: CalendarCheck },

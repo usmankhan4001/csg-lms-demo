@@ -39,14 +39,14 @@ import {
   Books,
   ChatCircle,
   Heartbeat,
-  ShieldCheck,
   Scales,
   Student,
   SealCheck,
   Trophy,
-  Warehouse,
   Compass,
   VideoCamera,
+  Wallet,
+  type Icon,
 } from '@phosphor-icons/react'
 import { DiscordIcon } from '@components/Objects/Icons/DiscordIcon'
 import Link from 'next/link'
@@ -65,7 +65,58 @@ import { usePlan } from '@components/Hooks/usePlan'
 import { planMeetsRequirement } from '@services/plans/plans'
 import { FeedbackModal } from '@components/Objects/Modals/FeedbackModal'
 import { useCommandPalette } from '@components/Dashboard/CommandPalette/CommandPaletteContext'
-import { useSchoolSession } from '@/lib/api/useSchoolSession'
+import {
+  SCHOOL_DOMAINS,
+  SCHOOL_MODULES,
+  type SchoolModuleDef,
+  type SchoolModuleKey,
+} from '@/lib/school-modules'
+import { useSchoolAccess } from '@/lib/school-access'
+import type { SearchMetaSchoolAccess } from '@/lib/dashboard-search/types'
+
+/**
+ * Panel presentation for `SCHOOL_MODULES`, plus the module-level gates the tab
+ * table does not carry. Mirrors the table in DashLeftMenu.tsx.
+ *
+ * `SCHOOL_MODULES` records `access`/`featureKey` per TAB, and nine modules
+ * (attendance, timetable, gradebook, exams, fees, school-library, admissions,
+ * revops, counseling) have tabs open to any viewer while the module itself has
+ * always been role- and flag-gated in the nav. Rendering strictly from the tabs
+ * would widen those -- a parent would gain Attendance -- so the gate each entry
+ * already had is kept here and ANDed with the tabs. Nothing here reads a role:
+ * every gate resolves through `allows()` / `isFeatureEnabled()` from
+ * `useSchoolAccess`, the same hook CommandPalette and ModuleTabs use.
+ */
+const SCHOOL_MODULE_NAV: Record<
+  SchoolModuleKey,
+  { label: string; icon: Icon; access?: SearchMetaSchoolAccess; feature?: string }
+> = {
+  admissions: { label: 'Admissions', icon: UserPlus, access: 'administer', feature: 'revops' },
+  attendance: { label: 'Attendance', icon: CalendarCheck, access: 'teach', feature: 'sms_attendance' },
+  timetable: { label: 'Timetable', icon: CalendarBlank, access: 'teach', feature: 'sms_timetable' },
+  gradebook: { label: 'Gradebook', icon: GraduationCap, access: 'teach', feature: 'sms_gradebook' },
+  exams: { label: 'Exams & CBT', icon: Exam, access: 'teach', feature: 'sms_exam' },
+  'school-library': { label: 'School Library', icon: Books, access: 'backOffice', feature: 'sms_library' },
+  fees: { label: 'Fees', icon: Receipt, access: 'backOffice', feature: 'sms_fees' },
+  reports: { label: 'Reports & AMI', icon: ChartBar, access: 'administer', feature: 'sms_reports' },
+  counseling: { label: 'Counselling', icon: Heartbeat, access: 'counsel', feature: 'tutor_counseling' },
+  gamification: { label: 'Gamification', icon: Trophy, access: 'teach' },
+  certificates: { label: 'Certificates', icon: SealCheck, access: 'teach' },
+  pathways: { label: 'Pathways', icon: Compass, access: 'teach' },
+  discipline: { label: 'Discipline', icon: Scales, access: 'teach' },
+  alumni: { label: 'Alumni', icon: Student, access: 'administer' },
+  revops: { label: 'Admissions Insights', icon: ChartLineUp, access: 'administer', feature: 'revops' },
+  'school-settings': { label: 'School settings', icon: Gear, access: 'administer' },
+  // Campus & Sections carries no feature toggle and its own canonical rule in
+  // the hook (`showCampus`); it is filtered on that rather than on `access`.
+  campus: { label: 'Campus & Sections', icon: Buildings },
+  financials: { label: 'Financials', icon: Bank, access: 'backOffice', feature: 'sms_financials' },
+  hr: { label: 'Staff & Payroll', icon: IdentificationBadge, access: 'administer', feature: 'sms_hr_payroll' },
+  payroll: { label: 'Payroll', icon: Wallet, access: 'administer', feature: 'sms_hr_payroll' },
+  'ai-tutor': { label: 'AI Tutor', icon: Robot, access: 'teach', feature: 'tutor_counseling' },
+  'live-classes': { label: 'Live Classes', icon: VideoCamera, access: 'teach' },
+  messages: { label: 'Messages', icon: ChatCircle, access: 'anyRole' },
+}
 
 function DashMobileMenu() {
   const org = useOrg() as any
@@ -75,8 +126,11 @@ function DashMobileMenu() {
   const plan = usePlan()
   const { toggle: openSearch } = useCommandPalette()
   // Must sit above the `if (!org || !session || !mounted) return null` below:
-  // hooks cannot run conditionally.
-  const { session: schoolSession } = useSchoolSession()
+  // hooks cannot run conditionally. Single source of school-role and
+  // feature-flag truth: the same derivation CommandPalette,
+  // SchoolDashboardHome, ModuleTabs and DashLeftMenu use. Roles come from
+  // GET /sms/me -- the access token carries no role claim.
+  const { allows, isFeatureEnabled, showCampus } = useSchoolAccess()
   const [menuOpen, setMenuOpen] = useState(false)
   const [feedbackModalOpen, setFeedbackModalOpen] = useState(false)
   const [langExpanded, setLangExpanded] = useState(false)
@@ -92,77 +146,38 @@ function DashMobileMenu() {
     mode === 'oss' ? 'OSS' :
     plan
 
-  const rf = org?.config?.config?.resolved_features
-  const isEnabled = (f: string) => rf?.[f]?.enabled === true
+  // School modules, grouped by business domain and rendered straight from
+  // SCHOOL_MODULES so this panel cannot drift from the tab strip, Ctrl+K or
+  // DashLeftMenu about what a module contains.
+  //
+  // A module is shown when the viewer clears its module-level gate AND at
+  // least one of its tabs is reachable -- the same `allows(tab.access)` test
+  // ModuleTabs applies. Gated on BOTH the org's feature toggle and the
+  // viewer's school role: a teacher with sms_hr_payroll enabled org-wide
+  // still has no business seeing salaries, so the flag alone is not enough.
+  // This hides the nav entry; it does not replace the backend's own
+  // authorization.
+  const schoolDomains = SCHOOL_DOMAINS.map((domain) => ({
+    ...domain,
+    modules: (Object.entries(SCHOOL_MODULES) as [SchoolModuleKey, SchoolModuleDef][])
+      .filter(([, mod]) => mod.domain === domain.id)
+      .filter(([key, mod]) => {
+        if (key === 'campus') return showCampus
+        const nav = SCHOOL_MODULE_NAV[key]
+        if (nav.feature && !isFeatureEnabled(nav.feature)) return false
+        if (!allows(nav.access)) return false
+        return mod.tabs.some(
+          (tab) => allows(tab.access) && (!tab.featureKey || isFeatureEnabled(tab.featureKey))
+        )
+      })
+      .map(([key, mod]) => ({ key, root: mod.root, ...SCHOOL_MODULE_NAV[key] })),
+  })).filter((domain) => domain.modules.length > 0)
 
-  // School (SMS) modules, mirrored from DashLeftMenu.tsx. Gated on BOTH the
-  // org's feature toggle AND the viewer's school role from GET /sms/me — a
-  // teacher with sms_hr_payroll enabled org-wide still has no business seeing
-  // salaries, so the feature flag alone is not enough. This hides the nav
-  // entry; it does not replace the backend's own authorization.
-  const schoolRoles = schoolSession?.roles ?? []
-  const isSuper = schoolRoles.includes('SUPER_ADMIN')
-  const isSchoolAdmin = isSuper || schoolRoles.includes('SCHOOL_ADMIN')
-  const isTeacher = schoolRoles.includes('TEACHER')
-  const isSchoolStaff = schoolRoles.includes('STAFF')
-  // Org admins holding no school role keep full visibility — otherwise
-  // setting the school up would be impossible, since granting the first SMS
-  // role requires reaching these screens.
-  const noSchoolRole = schoolRoles.length === 0
-  const canAdminister = isSchoolAdmin || noSchoolRole
-  const canTeach = canAdminister || isTeacher
-  const canBackOffice = canAdminister || isSchoolStaff
-
-  const showAttendance = isEnabled('sms_attendance') && canTeach
-  const showGradebook = isEnabled('sms_gradebook') && canTeach
-  const showExams = isEnabled('sms_exam') && canTeach
-  const showTimetable = isEnabled('sms_timetable') && canTeach
-  const showFees = isEnabled('sms_fees') && canBackOffice
-  const showFinancials = isEnabled('sms_financials') && canBackOffice
-  const showHr = isEnabled('sms_hr_payroll') && canAdminister
-  // school-library, not library: Learnhouse already owns /dash/library for
-  // its own content/folder library. Two different things, two routes.
-  const showSchoolLibrary = isEnabled('sms_library') && canBackOffice
-  // tutor_counseling is the flag that actually exists; there is no
-  // `tutor_socratic` in resolve.py despite the name appearing in planning docs.
-  const showAiTutor = isEnabled('tutor_counseling') && canTeach
-  const showAdmissions = isEnabled('revops') && canAdminister
-  const showRevOpsInsights = isEnabled('revops') && canAdminister
-  // Messaging has no feature flag, deliberately: it reaches every role
-  // including parents and students, so it is structural like Campus rather
-  // than admin-only like Payroll.
-  const showMessages = schoolRoles.length > 0 || noSchoolRole
-  const showReports = isEnabled('sms_reports') && canAdminister
-  // No feature flag on purpose -- see DashLeftMenu.
-  const showSchoolSettings = canAdminister
-  const showRoles = canAdminister
-  // Facilities is physical-campus room booking -- FacilityTypeEnum is
-  // AUDITORIUM, SPORTS_GROUND, SCIENCE_LAB, COMPUTER_LAB, LIBRARY_HALL,
-  // CONFERENCE_ROOM, CLASSROOM, with capacity and "Projector, PA System,
-  // Lab Benches". An online-first school has none of those, so this sits
-  // with sms_library / sms_inventory / sms_hostel in DEFAULT_DISABLED_FEATURES.
-  // Hidden rather than routed: the link 404'd because no route was ever
-  // built. Set back to canAdminister for a campus-based school.
-  const showFacilities = false
-  const showAlumni = canAdminister
-  const showLiveClasses = canTeach
-  const showPathways = canTeach
-  const showGamification = canTeach
-  const showCertificates = canTeach
-  const showCounseling = isEnabled('tutor_counseling') && (canAdminister || schoolRoles.includes('PSYCHOLOGIST'))
-  const showDiscipline = canTeach
-  const showCampus =
-    canAdminister &&
-    (isEnabled('sms_attendance') || isEnabled('sms_gradebook') || isEnabled('sms_timetable'))
-
-  const showAcademicCoreGroup =
-    showCampus || showTimetable || showAttendance || showGradebook || showExams
-  const showAdmissionsStudentsGroup =
-    showAdmissions || showAlumni || showDiscipline || showCounseling
-  const showFinanceGroup = showFees || showFinancials || showHr
-  const showIntelligenceOpsGroup =
-    showAiTutor || showRevOpsInsights || showSchoolLibrary || showMessages || showReports
-  const showGovernanceGroup = showSchoolSettings || showRoles || showFacilities
+  // The pill row reveals a fixed set of shortcuts; it reads the same
+  // derivation rather than re-deriving it.
+  const visibleModules = new Set<SchoolModuleKey>(
+    schoolDomains.flatMap((domain) => domain.modules.map((mod) => mod.key))
+  )
 
   const isActive = (path: string) => {
     if (path === '/dash') return pathname === '/dash' || pathname === '/dash/'
@@ -204,27 +219,27 @@ function DashMobileMenu() {
             />
           </Link>
           {/* Progressive reveal — SMS core first */}
-          {showAttendance && (
+          {visibleModules.has('attendance') && (
             <PillLink href="/dash/attendance" icon={<CalendarCheck size={18} weight="fill" />} active={isActive('/dash/attendance')} className="hidden min-[340px]:flex" />
           )}
-          {showGradebook && (
+          {visibleModules.has('gradebook') && (
             <PillLink href="/dash/gradebook" icon={<GraduationCap size={18} weight="fill" />} active={isActive('/dash/gradebook')} className="hidden min-[390px]:flex" />
           )}
-          {showTimetable && (
+          {visibleModules.has('timetable') && (
             <PillLink href="/dash/timetable" icon={<CalendarBlank size={18} weight="fill" />} active={isActive('/dash/timetable')} className="hidden min-[430px]:flex" />
           )}
           <PillLink href="/dash/courses" icon={<BookOpen size={18} weight="fill" />} active={isActive('/dash/courses')} className="hidden min-[470px]:flex" />
           <PillLink href="/dash/assignments" icon={<Files size={18} weight="fill" />} active={isActive('/dash/assignments')} className="hidden min-[510px]:flex" />
-          {showAdmissions && (
+          {visibleModules.has('admissions') && (
             <PillLink href="/dash/admissions" icon={<UserPlus size={18} weight="fill" />} active={isActive('/dash/admissions')} className="hidden min-[550px]:flex" />
           )}
-          {showFees && (
+          {visibleModules.has('fees') && (
             <PillLink href="/dash/fees" icon={<Receipt size={18} weight="fill" />} active={isActive('/dash/fees')} className="hidden min-[590px]:flex" />
           )}
           <PillLink href="/dash/users/settings/users" icon={<Users size={18} weight="fill" />} active={isActive('/dash/users')} className="hidden min-[630px]:flex" />
           <PillLink href="/dash/analytics" icon={<ChartBar size={18} weight="fill" />} active={isActive('/dash/analytics')} className="hidden min-[670px]:flex" />
           <PillLink href="/dash/org/settings/general" icon={<Buildings size={18} weight="fill" />} active={isActive('/dash/org')} className="hidden min-[710px]:flex" />
-          {isEnabled('payments') && (
+          {isFeatureEnabled('payments') && (
             <PillLink href="/dash/payments/overview" icon={<CurrencyCircleDollar size={18} weight="fill" />} active={isActive('/dash/payments')} className="hidden min-[750px]:flex" />
           )}
 
@@ -317,59 +332,44 @@ function DashMobileMenu() {
               <div className="py-2 px-2 max-h-[52vh] overflow-y-auto overscroll-contain space-y-px">
                 <PanelItem href="/dash" icon={<House size={15} weight="fill" />} label={t('common.home')} active={isActive('/dash')} onClick={close} />
 
-                {/* 1. Academic Core (SMS) */}
-                {showAcademicCoreGroup && <PanelHeading label="Academic Core" />}
-                {showCampus && <PanelItem href="/dash/campus" icon={<Buildings size={15} weight="fill" />} label="Campus & Sections" active={isActive('/dash/campus')} onClick={close} />}
-                {showTimetable && <PanelItem href="/dash/timetable" icon={<CalendarBlank size={15} weight="fill" />} label="Timetable" active={isActive('/dash/timetable')} onClick={close} />}
-                {showAttendance && <PanelItem href="/dash/attendance" icon={<CalendarCheck size={15} weight="fill" />} label="Attendance" active={isActive('/dash/attendance')} onClick={close} />}
-                {showGradebook && <PanelItem href="/dash/gradebook" icon={<GraduationCap size={15} weight="fill" />} label="Gradebook" active={isActive('/dash/gradebook')} onClick={close} />}
-                {showExams && <PanelItem href="/dash/exams" icon={<Exam size={15} weight="fill" />} label="Exams & CBT" active={isActive('/dash/exams')} onClick={close} />}
+                {/* School modules, grouped by business domain in the order
+                    SCHOOL_DOMAINS defines. One entry per module, pointing at
+                    the module root; the module's own tab strip takes over
+                    from there. */}
+                {schoolDomains.map((domain) => (
+                  <React.Fragment key={domain.id}>
+                    <PanelHeading label={domain.label} />
+                    {domain.modules.map((mod) => {
+                      const ModuleIcon = mod.icon
+                      return (
+                        <PanelItem
+                          key={mod.key}
+                          href={mod.root}
+                          icon={<ModuleIcon size={15} weight="fill" />}
+                          label={mod.label}
+                          active={isActive(mod.root)}
+                          onClick={close}
+                        />
+                      )
+                    })}
+                  </React.Fragment>
+                ))}
 
-                {/* 2. Admissions & Students (SMS) */}
-                {showAdmissionsStudentsGroup && <PanelHeading label="Admissions & Students" />}
-                {showAdmissions && <PanelItem href="/dash/admissions" icon={<UserPlus size={15} weight="fill" />} label="Admissions" active={isActive('/dash/admissions')} onClick={close} />}
-                {showAlumni && <PanelItem href="/dash/alumni" icon={<Student size={15} weight="fill" />} label="Alumni" active={isActive('/dash/alumni')} onClick={close} />}
-                {showDiscipline && <PanelItem href="/dash/discipline" icon={<Scales size={15} weight="fill" />} label="Discipline" active={isActive('/dash/discipline')} onClick={close} />}
-                {showCounseling && <PanelItem href="/dash/counseling" icon={<Heartbeat size={15} weight="fill" />} label="Counselling" active={isActive('/dash/counseling')} onClick={close} />}
-
-                {/* 3. Finance & Staff (SMS) */}
-                {showFinanceGroup && <PanelHeading label="Finance & Staff" />}
-                {showFees && <PanelItem href="/dash/fees" icon={<Receipt size={15} weight="fill" />} label="Fees" active={isActive('/dash/fees')} onClick={close} />}
-                {showFinancials && <PanelItem href="/dash/financials" icon={<Bank size={15} weight="fill" />} label="Financials" active={isActive('/dash/financials')} onClick={close} />}
-                {showHr && <PanelItem href="/dash/hr" icon={<IdentificationBadge size={15} weight="fill" />} label="Staff & Payroll" active={isActive('/dash/hr')} onClick={close} />}
-
-                {/* 4. Learning & Academic Delivery (LMS Engine) */}
+                {/* Learnhouse's own content surfaces. Not school modules, so
+                    they keep their own heading rather than a business domain. */}
                 <PanelHeading label="Learning & Delivery" />
                 <PanelItem href="/dash/courses" icon={<BookOpen size={15} weight="fill" />} label={t('courses.courses')} active={isActive('/dash/courses')} onClick={close} />
                 <PanelItem href="/dash/assignments" icon={<Files size={15} weight="fill" />} label={t('common.assignments')} active={isActive('/dash/assignments')} onClick={close} />
-                {showLiveClasses && <PanelItem href="/dash/live-classes" icon={<VideoCamera size={15} weight="fill" />} label="Live Classes" active={isActive('/dash/live-classes')} onClick={close} />}
-                {showPathways && <PanelItem href="/dash/pathways" icon={<Compass size={15} weight="fill" />} label="Pathways" active={isActive('/dash/pathways')} onClick={close} />}
-                {showCertificates && <PanelItem href="/dash/certificates-manager" icon={<SealCheck size={15} weight="fill" />} label="Certificates" active={isActive('/dash/certificates-manager')} onClick={close} />}
-                {showGamification && <PanelItem href="/dash/gamification" icon={<Trophy size={15} weight="fill" />} label="Gamification" active={isActive('/dash/gamification')} onClick={close} />}
-                {isEnabled('folders') && <PanelItem href="/dash/library" icon={<FolderSimple size={15} weight="fill" />} label={t('library.library')} active={isActive('/dash/library')} onClick={close} />}
-                {isEnabled('communities') && <PanelItem href="/dash/communities" icon={<ChatsCircle size={15} weight="fill" />} label={t('communities.title')} active={isActive('/dash/communities')} onClick={close} />}
-                {isEnabled('podcasts') && <PanelItem href="/dash/podcasts" icon={<Headphones size={15} weight="fill" />} label={t('podcasts.podcasts')} active={isActive('/dash/podcasts')} onClick={close} />}
-                {isEnabled('boards') && <PanelItem href="/dash/boards" icon={<ChalkboardSimple size={15} weight="fill" />} label="Boards" active={isActive('/dash/boards')} onClick={close} />}
-                {isEnabled('playgrounds') && <PanelItem href="/dash/playgrounds" icon={<Cube size={15} weight="fill" />} label="Playgrounds" active={isActive('/dash/playgrounds')} onClick={close} />}
+                {isFeatureEnabled('folders') && <PanelItem href="/dash/library" icon={<FolderSimple size={15} weight="fill" />} label={t('library.library')} active={isActive('/dash/library')} onClick={close} />}
+                {isFeatureEnabled('communities') && <PanelItem href="/dash/communities" icon={<ChatsCircle size={15} weight="fill" />} label={t('communities.title')} active={isActive('/dash/communities')} onClick={close} />}
+                {isFeatureEnabled('podcasts') && <PanelItem href="/dash/podcasts" icon={<Headphones size={15} weight="fill" />} label={t('podcasts.podcasts')} active={isActive('/dash/podcasts')} onClick={close} />}
+                {isFeatureEnabled('boards') && <PanelItem href="/dash/boards" icon={<ChalkboardSimple size={15} weight="fill" />} label="Boards" active={isActive('/dash/boards')} onClick={close} />}
+                {isFeatureEnabled('playgrounds') && <PanelItem href="/dash/playgrounds" icon={<Cube size={15} weight="fill" />} label="Playgrounds" active={isActive('/dash/playgrounds')} onClick={close} />}
 
-                {/* 5. Intelligence & Operations */}
-                {showIntelligenceOpsGroup && <PanelHeading label="Intelligence & Operations" />}
-                {showAiTutor && <PanelItem href="/dash/ai-tutor" icon={<Robot size={15} weight="fill" />} label="AI Tutor" active={isActive('/dash/ai-tutor')} onClick={close} />}
-                {showRevOpsInsights && <PanelItem href="/dash/revops" icon={<ChartLineUp size={15} weight="fill" />} label="Admissions Insights" active={isActive('/dash/revops')} onClick={close} />}
-                {showSchoolLibrary && <PanelItem href="/dash/school-library" icon={<Books size={15} weight="fill" />} label="School Library" active={isActive('/dash/school-library')} onClick={close} />}
-                {showMessages && <PanelItem href="/dash/messages" icon={<ChatCircle size={15} weight="fill" />} label="Messages" active={isActive('/dash/messages')} onClick={close} />}
-                {showReports && <PanelItem href="/dash/reports" icon={<ChartBar size={15} weight="fill" />} label="Reports & AMI" active={isActive('/dash/reports')} onClick={close} />}
-
-                {/* 6. School Governance */}
-                {showGovernanceGroup && <PanelHeading label="School Governance" />}
-                {showSchoolSettings && <PanelItem href="/dash/school-settings" icon={<Gear size={15} weight="fill" />} label="School settings" active={isActive('/dash/school-settings')} onClick={close} />}
-                {showRoles && <PanelItem href="/dash/school-settings/roles" icon={<ShieldCheck size={15} weight="fill" />} label="Roles & Permissions" active={isActive('/dash/school-settings/roles')} onClick={close} />}
-                {showFacilities && <PanelItem href="/dash/facilities" icon={<Warehouse size={15} weight="fill" />} label="Facilities" active={isActive('/dash/facilities')} onClick={close} />}
-
-                {/* 7. Platform Settings */}
+                {/* Platform Settings */}
                 <PanelHeading label="Platform" />
                 <PanelItem href="/dash/users/settings/users" icon={<Users size={15} weight="fill" />} label={t('common.users')} active={isActive('/dash/users')} onClick={close} />
-                {isEnabled('payments') && <PanelItem href="/dash/payments/overview" icon={<CurrencyCircleDollar size={15} weight="fill" />} label={t('common.payments')} active={isActive('/dash/payments')} onClick={close} />}
+                {isFeatureEnabled('payments') && <PanelItem href="/dash/payments/overview" icon={<CurrencyCircleDollar size={15} weight="fill" />} label={t('common.payments')} active={isActive('/dash/payments')} onClick={close} />}
                 <PanelItem href="/dash/analytics" icon={<ChartBar size={15} weight="fill" />} label="Analytics" active={isActive('/dash/analytics')} onClick={close} />
                 <PanelItem href="/dash/org/settings/general" icon={<Buildings size={15} weight="fill" />} label={t('common.organization')} active={isActive('/dash/org')} onClick={close} />
                 <PanelItem href="/dash/developers/api" icon={<Code size={15} weight="fill" />} label={t('dashboard.developers.breadcrumb', { defaultValue: 'Developers' })} active={isActive('/dash/developers')} onClick={close} />

@@ -9,9 +9,11 @@ export const searchMeta: SearchMeta = {
   icon: Compass,
   href: '/dash/counseling/career',
   group: 'navigation',
-  // Career guidance is NOT confidential (sms_counseling.py:20) and generation
-  // is open to teaching staff, so this is deliberately wider than the module
-  // it sits under.
+  // The career plan is NOT a confidential record (sms_counseling.py:20-21)
+  // and the backend lets a TEACHER generate one (CAREER_GUIDANCE_STAFF_ROLES),
+  // so discovery is `teach`. This screen renders the counselling tab strip,
+  // but the confidential Sessions tab now carries access: 'counsel' in
+  // school-modules.ts, so a teacher landing here is not shown it.
   schoolAccess: 'teach',
   featureKey: 'tutor_counseling',
 }

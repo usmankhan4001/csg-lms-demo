@@ -21,10 +21,8 @@ import {
   type ContentResult,
   type ContentResultType,
 } from '@/lib/dashboard-search/useContentSearch'
-import { useOrgMembership } from '@components/Contexts/OrgContext'
-import { isFeatureAvailable } from '@services/plans/plans'
 import { normalizeForSearch } from '@/lib/search/normalize'
-import { useSchoolSession } from '@/lib/api/useSchoolSession'
+import { useSchoolAccess } from '@/lib/school-access'
 import { useLHAnalytics, AnalyticsEvent } from '@services/analytics'
 
 const CONTENT_TYPE_ICON: Record<ContentResultType, SearchMeta['icon']> = {
@@ -55,52 +53,19 @@ const CONTENT_TYPE_ORDER: ContentResultType[] = [
 ]
 
 function usePagesFiltered(): SearchMeta[] {
-  const { org } = useOrgMembership()
-  const resolvedFeatures = org?.config?.config?.resolved_features
-  const { session: schoolSession } = useSchoolSession()
-  const schoolRoles = schoolSession?.roles
+  // Role and feature gating both come from useSchoolAccess(), the same source
+  // the sidebar and the in-module tabs read, so the palette cannot surface a
+  // module the sidebar hides. Discovery gating only -- the backend authorizes
+  // every request independently.
+  const { allows, isFeatureVisible } = useSchoolAccess()
 
-  return useMemo(() => {
-    // School-role gating, mirroring DashLeftMenu/DashMobileMenu so the palette
-    // never surfaces a module the sidebar hides. Org admins holding no school
-    // role keep full visibility, otherwise setting the school up would be
-    // impossible. Roles come from GET /sms/me; this is discovery gating only —
-    // the backend authorizes every request independently.
-    const roles = schoolRoles ?? []
-    const noSchoolRole = roles.length === 0
-    const canAdminister =
-      roles.includes('SUPER_ADMIN') || roles.includes('SCHOOL_ADMIN') || noSchoolRole
-    const canTeach = canAdminister || roles.includes('TEACHER')
-    const canBackOffice = canAdminister || roles.includes('STAFF')
-
-    const allowedBySchoolRole = (p: SearchMeta) => {
-      switch (p.schoolAccess) {
-        case undefined:
-          return true
-        case 'administer':
-          return canAdminister
-        case 'teach':
-          return canTeach
-        case 'backOffice':
-          return canBackOffice
-        case 'anyRole':
-          return roles.length > 0 || noSchoolRole
-        case 'counsel':
-          // The counselling module: PSYCHOLOGIST, plus school leadership who
-          // administer it. Deliberately NOT `teach` -- a teacher must not be
-          // pointed at a confidential clinical surface they cannot read.
-          return canAdminister || roles.includes('PSYCHOLOGIST')
-      }
-    }
-
-    return dashboardPages.filter((p) => {
-      if (!allowedBySchoolRole(p)) return false
-      if (!p.featureKey) return true
-      const rf = resolvedFeatures?.[p.featureKey]
-      if (rf) return rf.enabled
-      return isFeatureAvailable(p.featureKey)
-    })
-  }, [resolvedFeatures, schoolRoles])
+  return useMemo(
+    () =>
+      dashboardPages.filter(
+        (p) => allows(p.schoolAccess) && (!p.featureKey || isFeatureVisible(p.featureKey))
+      ),
+    [allows, isFeatureVisible]
+  )
 }
 
 function groupContentResults(results: ContentResult[]): Record<ContentResultType, ContentResult[]> {
