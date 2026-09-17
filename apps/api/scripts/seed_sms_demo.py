@@ -2,11 +2,12 @@
 CLI Runner for CSG-EMS Comprehensive Demo Data Seeding
 ======================================================
 Usage:
-    python -m scripts.seed_sms_demo
+    python -m scripts.seed_sms_demo [--clean] [--org-slug CSG-ACADEMY]
     or
-    apps/api/.venv/Scripts/python apps/api/scripts/seed_sms_demo.py
+    apps/api/.venv/Scripts/python apps/api/scripts/seed_sms_demo.py --clean
 """
 
+import argparse
 import asyncio
 import os
 import sys
@@ -22,14 +23,34 @@ from src.services.demo.sms_demo_seeder import seed_sms_demo_data
 
 
 async def main():
+    parser = argparse.ArgumentParser(description="CSG-EMS Comprehensive Demo Data Seeder CLI")
+    parser.add_argument(
+        "--clean",
+        "--clear",
+        action="store_true",
+        dest="clean",
+        help="Cleanly wipe previous demo records before seeding",
+    )
+    parser.add_argument(
+        "--org-slug",
+        type=str,
+        default=None,
+        help="Target organization slug (defaults to 'csg-academy')",
+    )
+    args = parser.parse_args()
+
     print("Initializing Database metadata and tables...")
     import_all_models()
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
 
-    print("Executing CSG-EMS Comprehensive Demo Data Seeder...")
+    print(f"Executing CSG-EMS Comprehensive Demo Data Seeder (clean_previous={args.clean}, org_slug={args.org_slug})...")
     async for db_session in get_db_session():
-        result = await seed_sms_demo_data(db_session)
+        result = await seed_sms_demo_data(
+            db_session=db_session,
+            org_slug=args.org_slug,
+            clear_previous=args.clean,
+        )
         print("Demo seeding completed successfully!")
         print(f"Result: {result}")
         break

@@ -55,6 +55,7 @@ from src.routers import (
     live_class_webhooks,
     sms_live_class_attendance,
     sms_live_class_interaction,
+    sms_demo,
 )
 from src.routers import ems_roles
 from src.routers import mfa as mfa_router_module
@@ -886,6 +887,13 @@ v1_router.include_router(
     sms_exports.router,
     prefix="/sms/exports",
     tags=["sms-exports"],
+)
+
+# CSG-EMS Comprehensive Demo Seeder & Reset Engine
+v1_router.include_router(
+    sms_demo.router,
+    prefix="/sms/demo",
+    tags=["sms-demo"],
 )
 
 

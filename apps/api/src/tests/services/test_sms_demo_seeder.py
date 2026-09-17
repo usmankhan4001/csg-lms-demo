@@ -2,8 +2,9 @@
 Unit & Integrity Tests for CSG-EMS Demo Data Seeder
 ===================================================
 Verifies complete relational integrity across all 12 modules:
-- 7 Personas & Role Assignments
-- Campus, Academic Years, Sections, Student Enrollments & Curricular Bridges
+- 7 Personas & Role Assignments (13 Users)
+- 4 Class Sections, Enrollments & Curricular Bridges
+- 4 Courses with Chapters, Activities, Blocks & SpeedGrader
 - Attendance, Gradebook, Examinations, Admissions, Financials, Payroll, Cognia
 """
 
@@ -26,8 +27,10 @@ from src.db.sms_fees import StudentFeeVoucher
 from src.db.sms_payroll import SalarySlip
 from src.db.sms_cognia import CogniaEvidenceItem
 from src.db.ems_roles import EMSRole, EMSUserRoleAssignment
+from src.db.courses.courses import Course
+from src.db.courses.assignments import Assignment, AssignmentTaskSubmission
 
-from src.services.demo.sms_demo_seeder import seed_sms_demo_data
+from src.services.demo.sms_demo_seeder import seed_sms_demo_data, clean_sms_demo_data
 
 
 @pytest.mark.asyncio
@@ -36,8 +39,9 @@ async def test_seed_sms_demo_data_integrity(db: AsyncSession):
     result = await seed_sms_demo_data(db)
     assert result["status"] == "success"
     assert result["users_seeded"] >= 13
-    assert result["sections"] == 3
-    assert result["courses"] == 3
+    assert result["sections"] == 4
+    assert result["courses"] == 4
+    assert result["ami_index"] == 3.88
 
     # 2. Verify Organization & Roles
     org = (await db.execute(select(Organization).where(Organization.slug == "csg-academy"))).scalars().first()
@@ -53,14 +57,27 @@ async def test_seed_sms_demo_data_integrity(db: AsyncSession):
     teacher_chen = (await db.execute(select(User).where(User.email == "teacher.physics@csg.edu"))).scalars().first()
     assert teacher_chen is not None
 
-    # 4. Verify Campus & Curricular Bridge
+    # 4. Verify Campus & 4 Sections
     campus = (await db.execute(select(Campus).where(Campus.org_id == org.id))).scalars().first()
     assert campus is not None
 
-    sec_subjects = (await db.execute(select(SectionSubject))).scalars().all()
-    assert len(sec_subjects) >= 3
+    sections = (await db.execute(select(ClassSection).where(ClassSection.campus_id == campus.id))).scalars().all()
+    assert len(sections) == 4
 
-    # 5. Verify Attendance & Gradebook
+    sec_subjects = (await db.execute(select(SectionSubject))).scalars().all()
+    assert len(sec_subjects) >= 4
+
+    # 5. Verify LMS Courses & SpeedGrader Assignments
+    courses = (await db.execute(select(Course).where(Course.org_id == org.id))).scalars().all()
+    assert len(courses) == 4
+
+    assignments = (await db.execute(select(Assignment).where(Assignment.org_id == org.id))).scalars().all()
+    assert len(assignments) >= 4
+
+    submissions = (await db.execute(select(AssignmentTaskSubmission).where(AssignmentTaskSubmission.user_id == alex.id))).scalars().all()
+    assert len(submissions) >= 2
+
+    # 6. Verify Attendance & Gradebook
     attendances = (await db.execute(select(StudentAttendance).where(StudentAttendance.student_id == alex.id))).scalars().all()
     assert len(attendances) > 10
 
@@ -72,7 +89,7 @@ async def test_seed_sms_demo_data_integrity(db: AsyncSession):
     assert report_cards[0].status == "SENT"
     assert report_cards[0].gpa == 3.92
 
-    # 6. Verify Exams & Results
+    # 7. Verify Exams & Results
     exams = (await db.execute(select(Exam))).scalars().all()
     assert len(exams) >= 1
 
@@ -80,16 +97,16 @@ async def test_seed_sms_demo_data_integrity(db: AsyncSession):
     assert len(exam_results) >= 1
     assert exam_results[0].marks_obtained == 92.0
 
-    # 7. Verify Admissions & RevOps
+    # 8. Verify Admissions & RevOps (10 leads)
     leads = (await db.execute(select(AdmissionsLead))).scalars().all()
-    assert len(leads) >= 6
+    assert len(leads) >= 10
 
     apps = (await db.execute(select(StudentApplication))).scalars().all()
-    assert len(apps) >= 6
+    assert len(apps) >= 10
 
-    # 8. Verify Financials & Payroll
+    # 9. Verify Financials & Payroll (15 Chart of Accounts)
     coas = (await db.execute(select(ChartOfAccounts))).scalars().all()
-    assert len(coas) >= 7
+    assert len(coas) >= 15
 
     j_entries = (await db.execute(select(JournalEntry))).scalars().all()
     assert len(j_entries) >= 1
@@ -99,18 +116,24 @@ async def test_seed_sms_demo_data_integrity(db: AsyncSession):
     assert len(vouchers) == 2
 
     slips = (await db.execute(select(SalarySlip))).scalars().all()
-    assert len(slips) >= 3
+    assert len(slips) >= 5
 
-    # 9. Verify Cognia Evidence
+    # 10. Verify Cognia Evidence (7 Standards)
     cognia_items = (await db.execute(select(CogniaEvidenceItem))).scalars().all()
-    assert len(cognia_items) == 3
+    assert len(cognia_items) == 7
 
 
 @pytest.mark.asyncio
-async def test_seed_sms_demo_data_idempotency(db: AsyncSession):
-    # Running twice should not fail or duplicate
+async def test_seed_sms_demo_data_idempotency_and_clean(db: AsyncSession):
+    # Running twice without clean should not fail
     res1 = await seed_sms_demo_data(db)
     assert res1["status"] == "success"
 
     res2 = await seed_sms_demo_data(db)
     assert res2["status"] == "success"
+
+    # Clean and reseed should succeed cleanly
+    res3 = await seed_sms_demo_data(db, clear_previous=True)
+    assert res3["status"] == "success"
+    assert res3["sections"] == 4
+    assert res3["courses"] == 4

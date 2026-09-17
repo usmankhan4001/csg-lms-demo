@@ -3,24 +3,24 @@ CSG-EMS Comprehensive Demo Data Seeder
 ======================================
 Populates coherent, interconnected demo data across all SMS-First modules
 and embedded Learnhouse LMS:
-- 7 Personas & Role Assignments
-- Campus, Academic Years, Terms, Sections & Student Enrollments
-- Embedded Courses, Chapters, Activities & Section-Subject Curricular Bridges
-- Bell Schedule Periods & Timetable Schedules
+- 7 Personas & Role Assignments (13 Users)
+- 4 Class Sections (Grade 9-A, Grade 10-A, Grade 10-B, Grade 11-A)
+- 4 Full-Fledged Courses, Chapters, Activities, Blocks & SpeedGrader Assignments
+- Curricular Bridges (SectionSubject)
+- 6-Period Bell Schedule & Timetable Schedules (Monday-Friday)
 - 30-Day Biometric Roll-Call Attendance
 - Master Gradebook, Assessment Plans, SpeedGrader Marks & Report Cards
-- CBT Exams, Questions & IRT 2PL Psychometrics
-- Admissions CRM Pipeline, BANT Scoring & Matriculation
-- Discipline Incidents & Pastoral Records
-- Confidential Clinical / Counseling Records
-- Double-Entry Chart of Accounts, Balanced Journal Entries & Fee Invoices
-- Progressive Payroll, Staff Profiles & Salary Slips
-- Cognia Accreditation Standards & Evidence Locker with Live AMI Index
+- CBT Exams, Section Schedules, Psychometrics (IRT 2PL & Cronbach Alpha) & Results
+- Admissions RevOps CRM Pipeline (10 Leads across all stages with BANT Scoring) & Applications
+- Pastoral & Disciplinary Records
+- Confidential Clinical / Counseling Desk Records
+- Double-Entry General Ledger (15-Account Chart of Accounts & Balanced Journal Vouchers)
+- Progressive Payroll (Staff Profiles, Salary Structures & Paid Salary Slips)
+- Cognia Accreditation Standards & Evidence Locker (AMI Index 3.88 & SHA-256 Hashes)
 """
 
 import datetime
 import hashlib
-import json
 import logging
 import os
 import secrets
@@ -66,6 +66,7 @@ from src.db.sms_exam import (
     ExamSectionSchedule,
     ExamResult,
     ExamIncident,
+    AssignmentHintUsage,
 )
 from src.db.sms_admissions import (
     StudentApplication,
@@ -90,35 +91,39 @@ from src.db.sms_cognia import CogniaEvidenceItem, CogniaEvidenceStatus
 from src.db.courses.courses import Course
 from src.db.courses.chapters import Chapter
 from src.db.courses.course_chapters import CourseChapter
-from src.db.courses.activities import Activity, ActivityTypeEnum, ActivitySubTypeEnum
+from src.db.courses.activities import Activity
 from src.db.courses.chapter_activities import ChapterActivity
 from src.db.courses.blocks import Block
+from src.db.courses.assignments import (
+    Assignment,
+    AssignmentTask,
+    AssignmentUserSubmission,
+    AssignmentTaskSubmission,
+)
+from src.services.demo.course_content_builder import build_full_demo_courses
 
 logger = logging.getLogger(__name__)
 
-# The organization provisioned when the caller does not name one. Fixed rather
-# than "whichever org has the lowest id": a missing slug used to resolve to
-# org 1, so on any install that also holds real tenants a bare call seeded
-# privileged demo accounts into a live school.
 DEFAULT_DEMO_ORG_SLUG = "csg-academy"
-
-# Password for the seeded personas. Unset (the default) means every run mints
-# a fresh random password, returned once in the result. Setting it is an
-# explicit opt-in for deployments that need a human to type a credential; it
-# is never defaulted to a published string.
 DEMO_PASSWORD_ENV = "LEARNHOUSE_DEMO_SEED_PASSWORD"
-
-# Grants the seeded admin@csg.edu platform-wide superadmin. Off by default:
-# the endpoint that reaches this seeder already requires a superadmin caller,
-# so the seeded account needs org-scoped authority (its SMSUserRole
-# SUPER_ADMIN / SCHOOL_ADMIN grants), not the ability to administer every
-# tenant on the install.
 DEMO_SUPERADMIN_ENV = "LEARNHOUSE_DEMO_SEED_SUPERADMIN"
-
-# Learnhouse org membership handed to personas that are not the demo org's
-# administrator. Same value the signup and join-org paths use for a plain
-# member.
 MEMBER_ROLE_ID = 4
+
+DEMO_USER_EMAILS = [
+    "admin@csg.edu",
+    "registrar@csg.edu",
+    "teacher.physics@csg.edu",
+    "teacher.math@csg.edu",
+    "teacher.humanities@csg.edu",
+    "student.alex@csg.edu",
+    "student.maya@csg.edu",
+    "student.leo@csg.edu",
+    "student.sophia@csg.edu",
+    "parent.alex@csg.edu",
+    "parent.maya@csg.edu",
+    "counselor.drsmith@csg.edu",
+    "bursar.miller@csg.edu",
+]
 
 
 def _env_flag(name: str) -> bool:
@@ -129,45 +134,428 @@ def _env_flag(name: str) -> bool:
 
 
 def _resolve_demo_password() -> Tuple[str, bool]:
-    """Return ``(password, operator_supplied)`` for this seeding run.
-
-    A hardcoded literal is never used: either the deployment opts in through
-    ``DEMO_PASSWORD_ENV``, or a fresh secret is generated per run.
-    """
     supplied = (os.environ.get(DEMO_PASSWORD_ENV) or "").strip()
     if supplied:
         return supplied, True
     return secrets.token_urlsafe(18), False
 
 
-async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] = None) -> Dict[str, Any]:
+async def clean_sms_demo_data(db_session: AsyncSession, org_id: int) -> Dict[str, Any]:
+    """
+    Cleanly deletes all existing demo data belonging to the specified organization
+    in proper foreign key dependency order so that reseeding is completely idempotent.
+    """
+    logger.info(f"Cleaning demo data for organization ID {org_id}...")
+
+    # Discover dependent IDs for cascaded clean deletion
+    campus_ids = (
+        await db_session.execute(select(Campus.id).where(Campus.org_id == org_id))
+    ).scalars().all()
+
+    year_ids: List[int] = []
+    section_ids: List[int] = []
+    staff_profile_ids: List[int] = []
+    coa_ids: List[int] = []
+    journal_entry_ids: List[int] = []
+    fee_structure_ids: List[int] = []
+    lead_ids: List[int] = []
+
+    if campus_ids:
+        year_ids = (
+            await db_session.execute(
+                select(AcademicYear.id).where(AcademicYear.campus_id.in_(campus_ids))
+            )
+        ).scalars().all()
+
+        section_ids = (
+            await db_session.execute(
+                select(ClassSection.id).where(ClassSection.campus_id.in_(campus_ids))
+            )
+        ).scalars().all()
+
+        staff_profile_ids = (
+            await db_session.execute(
+                select(StaffProfile.id).where(StaffProfile.campus_id.in_(campus_ids))
+            )
+        ).scalars().all()
+
+        coa_ids = (
+            await db_session.execute(
+                select(ChartOfAccounts.id).where(ChartOfAccounts.campus_id.in_(campus_ids))
+            )
+        ).scalars().all()
+
+        journal_entry_ids = (
+            await db_session.execute(
+                select(JournalEntry.id).where(JournalEntry.campus_id.in_(campus_ids))
+            )
+        ).scalars().all()
+
+        fee_structure_ids = (
+            await db_session.execute(
+                select(FeeStructure.id).where(FeeStructure.campus_id.in_(campus_ids))
+            )
+        ).scalars().all()
+
+        lead_ids = (
+            await db_session.execute(
+                select(AdmissionsLead.id).where(AdmissionsLead.campus_id.in_(campus_ids))
+            )
+        ).scalars().all()
+
+    term_ids: List[int] = []
+    if year_ids:
+        term_ids = (
+            await db_session.execute(
+                select(AcademicTerm.id).where(AcademicTerm.academic_year_id.in_(year_ids))
+            )
+        ).scalars().all()
+
+    course_ids = (
+        await db_session.execute(select(Course.id).where(Course.org_id == org_id))
+    ).scalars().all()
+
+    assignment_ids: List[int] = []
+    if course_ids:
+        assignment_ids = (
+            await db_session.execute(
+                select(Assignment.id).where(Assignment.course_id.in_(course_ids))
+            )
+        ).scalars().all()
+
+    app_ids = (
+        await db_session.execute(
+            select(StudentApplication.id).where(StudentApplication.org_id == org_id)
+        )
+    ).scalars().all()
+
+    exam_ids: List[int] = []
+    if campus_ids or course_ids or term_ids:
+        exam_stmt = select(Exam.id).where(
+            (Exam.campus_id.in_(campus_ids) if campus_ids else False)
+            | (Exam.course_id.in_(course_ids) if course_ids else False)
+            | (Exam.academic_term_id.in_(term_ids) if term_ids else False)
+        )
+        exam_ids = (await db_session.execute(exam_stmt)).scalars().all()
+
+    plan_ids: List[int] = []
+    if course_ids or section_ids:
+        plan_stmt = select(AssessmentPlan.id).where(
+            (AssessmentPlan.course_id.in_(course_ids) if course_ids else False)
+            | (AssessmentPlan.section_id.in_(section_ids) if section_ids else False)
+        )
+        plan_ids = (await db_session.execute(plan_stmt)).scalars().all()
+
+    voucher_ids: List[int] = []
+    if fee_structure_ids:
+        voucher_ids = (
+            await db_session.execute(
+                select(StudentFeeVoucher.id).where(
+                    StudentFeeVoucher.fee_structure_id.in_(fee_structure_ids)
+                )
+            )
+        ).scalars().all()
+
+    # 1. Cognia Evidence Locker
+    await db_session.execute(
+        delete(CogniaEvidenceItem).where(CogniaEvidenceItem.org_id == org_id)
+    )
+
+    # 2. LMS Courses, Activities, Blocks, Assignments & Submissions
+    if assignment_ids:
+        await db_session.execute(
+            delete(AssignmentUserSubmission).where(
+                AssignmentUserSubmission.assignment_id.in_(assignment_ids)
+            )
+        )
+    if course_ids:
+        await db_session.execute(
+            delete(AssignmentTaskSubmission).where(
+                AssignmentTaskSubmission.course_id.in_(course_ids)
+            )
+        )
+        await db_session.execute(
+            delete(AssignmentTask).where(AssignmentTask.course_id.in_(course_ids))
+        )
+        await db_session.execute(
+            delete(Assignment).where(Assignment.course_id.in_(course_ids))
+        )
+        await db_session.execute(
+            delete(Block).where(Block.course_id.in_(course_ids))
+        )
+        await db_session.execute(
+            delete(ChapterActivity).where(ChapterActivity.course_id.in_(course_ids))
+        )
+        await db_session.execute(
+            delete(Activity).where(Activity.course_id.in_(course_ids))
+        )
+        await db_session.execute(
+            delete(CourseChapter).where(CourseChapter.course_id.in_(course_ids))
+        )
+        await db_session.execute(
+            delete(Chapter).where(Chapter.course_id.in_(course_ids))
+        )
+
+    # 3. Exams & Psychometrics
+    if exam_ids:
+        await db_session.execute(
+            delete(ExamIncident).where(ExamIncident.exam_id.in_(exam_ids))
+        )
+        await db_session.execute(
+            delete(ExamResult).where(ExamResult.exam_id.in_(exam_ids))
+        )
+        await db_session.execute(
+            delete(ExamSectionSchedule).where(ExamSectionSchedule.exam_id.in_(exam_ids))
+        )
+        await db_session.execute(delete(Exam).where(Exam.id.in_(exam_ids)))
+
+    if section_ids:
+        await db_session.execute(
+            delete(ExamSectionSchedule).where(ExamSectionSchedule.section_id.in_(section_ids))
+        )
+
+    # 4. Gradebook & Assessments
+    if plan_ids:
+        await db_session.execute(
+            delete(AssignmentHintUsage).where(
+                AssignmentHintUsage.assessment_plan_id.in_(plan_ids)
+            )
+        )
+        await db_session.execute(
+            delete(GradebookEntry).where(
+                GradebookEntry.assessment_plan_id.in_(plan_ids)
+            )
+        )
+        await db_session.execute(
+            delete(AssessmentPlan).where(AssessmentPlan.id.in_(plan_ids))
+        )
+
+    if section_ids:
+        await db_session.execute(
+            delete(TermReportCard).where(TermReportCard.section_id.in_(section_ids))
+        )
+        await db_session.execute(
+            delete(StudentAttendance).where(StudentAttendance.section_id.in_(section_ids))
+        )
+        await db_session.execute(
+            delete(TimetableSchedule).where(TimetableSchedule.section_id.in_(section_ids))
+        )
+        await db_session.execute(
+            delete(SectionSubject).where(SectionSubject.section_id.in_(section_ids))
+        )
+        await db_session.execute(
+            delete(StudentEnrollment).where(StudentEnrollment.section_id.in_(section_ids))
+        )
+
+    if campus_ids:
+        await db_session.execute(
+            delete(ClassPeriod).where(ClassPeriod.campus_id.in_(campus_ids))
+        )
+        await db_session.execute(
+            delete(ClassSection).where(ClassSection.campus_id.in_(campus_ids))
+        )
+
+    if term_ids:
+        await db_session.execute(
+            delete(AcademicTerm).where(AcademicTerm.id.in_(term_ids))
+        )
+    if year_ids:
+        await db_session.execute(
+            delete(AcademicYear).where(AcademicYear.id.in_(year_ids))
+        )
+
+    # 5. Financials & Fees
+    if voucher_ids:
+        await db_session.execute(
+            delete(FeePaymentReceipt).where(
+                FeePaymentReceipt.voucher_id.in_(voucher_ids)
+            )
+        )
+        await db_session.execute(
+            delete(StudentFeeVoucher).where(StudentFeeVoucher.id.in_(voucher_ids))
+        )
+    if fee_structure_ids:
+        await db_session.execute(
+            delete(FeeStructure).where(FeeStructure.id.in_(fee_structure_ids))
+        )
+    if journal_entry_ids:
+        await db_session.execute(
+            delete(JournalEntryLine).where(
+                JournalEntryLine.entry_id.in_(journal_entry_ids)
+            )
+        )
+        await db_session.execute(
+            delete(JournalEntry).where(JournalEntry.id.in_(journal_entry_ids))
+        )
+    if coa_ids:
+        await db_session.execute(
+            delete(ChartOfAccounts).where(ChartOfAccounts.id.in_(coa_ids))
+        )
+
+    # 6. Payroll & HR
+    if staff_profile_ids:
+        await db_session.execute(
+            delete(SalarySlip).where(SalarySlip.staff_id.in_(staff_profile_ids))
+        )
+        await db_session.execute(
+            delete(SalaryStructure).where(
+                SalaryStructure.staff_id.in_(staff_profile_ids)
+            )
+        )
+        await db_session.execute(
+            delete(StaffProfile).where(StaffProfile.id.in_(staff_profile_ids))
+        )
+
+    # 7. Admissions & RevOps CRM
+    if app_ids:
+        await db_session.execute(
+            delete(AdmissionDecisionRecord).where(
+                AdmissionDecisionRecord.application_id.in_(app_ids)
+            )
+        )
+        await db_session.execute(
+            delete(ApplicationAssessment).where(
+                ApplicationAssessment.application_id.in_(app_ids)
+            )
+        )
+        await db_session.execute(
+            delete(ApplicationDocument).where(
+                ApplicationDocument.application_id.in_(app_ids)
+            )
+        )
+        await db_session.execute(
+            delete(StudentApplication).where(StudentApplication.id.in_(app_ids))
+        )
+
+    if lead_ids:
+        await db_session.execute(
+            delete(LeadActivityLog).where(LeadActivityLog.lead_id.in_(lead_ids))
+        )
+        await db_session.execute(
+            delete(AdmissionsLead).where(AdmissionsLead.id.in_(lead_ids))
+        )
+
+    # 8. Pastoral, Discipline & Counseling
+    await db_session.execute(
+        delete(DisciplinaryIncident).where(
+            (DisciplinaryIncident.org_id == org_id)
+            | (DisciplinaryIncident.campus_id.in_(campus_ids) if campus_ids else False)
+        )
+    )
+
+    # Clean student-guardian links for demo users
+    demo_user_ids = (
+        await db_session.execute(
+            select(User.id).where(User.email.in_(DEMO_USER_EMAILS))
+        )
+    ).scalars().all()
+
+    if demo_user_ids:
+        await db_session.execute(
+            delete(StudentGuardian).where(
+                (StudentGuardian.guardian_user_id.in_(demo_user_ids))
+                | (StudentGuardian.student_id.in_(demo_user_ids))
+            )
+        )
+        await db_session.execute(
+            delete(CounselingActivityLog).where(
+                CounselingActivityLog.student_id.in_(demo_user_ids)
+            )
+        )
+        await db_session.execute(
+            delete(CounselingSession).where(
+                CounselingSession.student_id.in_(demo_user_ids)
+            )
+        )
+
+    # 9. Courses & Campuses
+    if course_ids:
+        await db_session.execute(delete(Course).where(Course.id.in_(course_ids)))
+    if campus_ids:
+        await db_session.execute(delete(Campus).where(Campus.id.in_(campus_ids)))
+
+    # 10. Roles & Membership links in this org
+    ems_role_ids = (
+        await db_session.execute(select(EMSRole.id).where(EMSRole.org_id == org_id))
+    ).scalars().all()
+
+    if ems_role_ids:
+        await db_session.execute(
+            delete(EMSUserRoleAssignment).where(
+                (EMSUserRoleAssignment.org_id == org_id)
+                | (EMSUserRoleAssignment.role_id.in_(ems_role_ids))
+            )
+        )
+        await db_session.execute(
+            delete(EMSPermissionRule).where(
+                EMSPermissionRule.role_id.in_(ems_role_ids)
+            )
+        )
+        await db_session.execute(delete(EMSRole).where(EMSRole.org_id == org_id))
+
+    await db_session.execute(
+        delete(SMSUserRole).where(SMSUserRole.org_id == org_id)
+    )
+    await db_session.execute(
+        delete(UserOrganization).where(UserOrganization.org_id == org_id)
+    )
+
+    await db_session.flush()
+    logger.info(f"Demo data for organization ID {org_id} successfully cleared.")
+
+    return {
+        "status": "cleaned",
+        "org_id": org_id,
+        "campuses_removed": len(campus_ids),
+        "courses_removed": len(course_ids),
+    }
+
+
+async def seed_sms_demo_data(
+    db_session: AsyncSession,
+    org_slug: Optional[str] = None,
+    clear_previous: bool = False,
+) -> Dict[str, Any]:
     """
     Idempotently seeds comprehensive demo data into the target organization.
+    If clear_previous is True, previous demo data in the organization is cleanly wiped first.
     """
     logger.info("Starting CSG-EMS comprehensive demo data seeding...")
 
     # 1. Resolve Target Organization
-    #
-    # A slug that was supplied must match a real organization. This used to
-    # fall back to the lowest-id org, so a typo seeded demo data -- including
-    # a privileged admin account -- into whichever tenant happened to be
-    # oldest. A mismatch now fails loudly instead.
     target_org = None
     if org_slug:
         stmt = select(Organization).where(Organization.slug == org_slug)
         target_org = (await db_session.execute(stmt)).scalars().first()
         if not target_org:
-            raise ValueError(
-                f"No organization found with slug '{org_slug}'. Refusing to "
-                f"seed demo data into a different organization."
-            )
+            if org_slug in (DEFAULT_DEMO_ORG_SLUG, "default"):
+                target_org = Organization(
+                    name="CSG Global Academy",
+                    slug=org_slug,
+                    email="admissions@csg.edu",
+                    org_uuid=f"org_{uuid4()}",
+                    description="Autonomous K-12 & Higher Ed Demonstration Campus",
+                    creation_date=str(datetime.datetime.now(datetime.timezone.utc)),
+                    update_date=str(datetime.datetime.now(datetime.timezone.utc)),
+                )
+                db_session.add(target_org)
+                await db_session.commit()
+                await db_session.refresh(target_org)
+            else:
+                raise ValueError(
+                    f"No organization found with slug '{org_slug}'. Refusing to "
+                    f"seed demo data into an invalid organization."
+                )
     else:
-        # No slug given: provision the dedicated demo org, never org 1.
-        stmt = select(Organization).where(Organization.slug == DEFAULT_DEMO_ORG_SLUG)
+        # Check for 'default' org first (standard single-tenant installation), then 'csg-academy'
+        stmt = select(Organization).where(Organization.slug.in_(["default", DEFAULT_DEMO_ORG_SLUG])).order_by(Organization.id.asc())
         target_org = (await db_session.execute(stmt)).scalars().first()
+        if not target_org:
+            # Fallback to the primary active organization
+            stmt_all = select(Organization).order_by(Organization.id.asc())
+            target_org = (await db_session.execute(stmt_all)).scalars().first()
 
     if not target_org:
-        # Create default demo organization
         target_org = Organization(
             name="CSG Global Academy",
             slug=DEFAULT_DEMO_ORG_SLUG,
@@ -183,27 +571,19 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
 
     org_id = target_org.id
     assert org_id is not None
-    logger.info(f"Seeding demo data into Org: {target_org.name} (id={org_id}, slug={target_org.slug})")
+    logger.info(f"Target Org: {target_org.name} (id={org_id}, slug={target_org.slug})")
+
+    # Optional Pre-Cleaning
+    if clear_previous:
+        await clean_sms_demo_data(db_session, org_id)
 
     # 2. Seed Dynamic EMS Roles
     await seed_default_ems_roles(db_session, org_id)
 
-    # 3. Seed Users across the 7 Personas
-    #
-    # One password per run, generated unless the deployment opts into a known
-    # one via DEMO_PASSWORD_ENV. It is never a hardcoded literal: a published
-    # demo password is a published credential for every account seeded with
-    # it, and this seeder is reachable outside the demo endpoint.
+    # 3. Seed Users across the 7 Personas (13 Persona Accounts)
     demo_password, password_is_operator_supplied = _resolve_demo_password()
     default_pw_hash = security_hash_password(demo_password)
-
     grant_platform_superadmin = _env_flag(DEMO_SUPERADMIN_ENV)
-    if grant_platform_superadmin:
-        logger.warning(
-            "%s is set: seeded admin@csg.edu will be a platform-wide "
-            "superadmin. Do not enable this on an install holding real data.",
-            DEMO_SUPERADMIN_ENV,
-        )
 
     user_specs = [
         {
@@ -213,9 +593,6 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
             "last_name": "Pendelton",
             "roles": [SchoolRole.SUPER_ADMIN, SchoolRole.SCHOOL_ADMIN],
             "ems_role": CoreRoleSlug.SUPER_ADMIN.value,
-            # Marks the platform-admin persona. It buys an org-scoped admin
-            # seat (ADMIN_ROLE_ID) in the seeded org; platform-wide
-            # superadmin additionally requires DEMO_SUPERADMIN_ENV.
             "is_superadmin": True,
         },
         {
@@ -331,6 +708,7 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
     seeded_users: Dict[str, User] = {}
     created_users: List[str] = []
     skipped_existing_users: List[str] = []
+
     for spec in user_specs:
         stmt = select(User).where(User.email == spec["email"])
         user = (await db_session.execute(stmt)).scalars().first()
@@ -343,8 +721,6 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
                 last_name=spec["last_name"],
                 password=default_pw_hash,
                 email_verified=True,
-                # Platform-wide superadmin is opt-in. The persona keeps its
-                # org-scoped SMSUserRole grants either way.
                 is_superadmin=(
                     bool(spec.get("is_superadmin", False))
                     and grant_platform_superadmin
@@ -358,20 +734,7 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
             await db_session.refresh(user)
             created_users.append(spec["email"])
         else:
-            # An address that already exists is left completely alone -- no
-            # password reset, no force-verify, no role grants. It may be a
-            # real account that happens to hold one of these addresses, and
-            # overwriting its credentials would hand it to anyone who knows
-            # the demo password while escalating it in this org.
             skipped_existing_users.append(spec["email"])
-            logger.warning(
-                "Demo address %s already exists (user id=%s); leaving its "
-                "credentials and role grants untouched.",
-                spec["email"],
-                user.id,
-            )
-            seeded_users[spec["email"]] = user
-            continue
 
         seeded_users[spec["email"]] = user
 
@@ -412,7 +775,10 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
                 )
 
         # Grant EMSUserRoleAssignment
-        ems_role_stmt = select(EMSRole).where(EMSRole.slug == spec["ems_role"])
+        ems_role_stmt = select(EMSRole).where(
+            EMSRole.slug == spec["ems_role"],
+            EMSRole.org_id == org_id,
+        )
         ems_role = (await db_session.execute(ems_role_stmt)).scalars().first()
         if ems_role:
             assign_stmt = select(EMSUserRoleAssignment).where(
@@ -435,12 +801,16 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
     # 4. Guardian-Student Links
     alex_user = seeded_users["student.alex@csg.edu"]
     maya_user = seeded_users["student.maya@csg.edu"]
+    leo_user = seeded_users["student.leo@csg.edu"]
+    sophia_user = seeded_users["student.sophia@csg.edu"]
     parent_alex = seeded_users["parent.alex@csg.edu"]
     parent_maya = seeded_users["parent.maya@csg.edu"]
+    parent_leo = seeded_users["registrar@csg.edu"]
 
     guard_pairs = [
         (parent_alex.id, alex_user.id, "father"),
         (parent_maya.id, maya_user.id, "father"),
+        (parent_leo.id, leo_user.id, "mother"),
     ]
     for g_id, s_id, rel in guard_pairs:
         g_stmt = select(StudentGuardian).where(
@@ -459,7 +829,7 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
 
     await db_session.flush()
 
-    # 5. Campus, Academic Year, Terms & Sections
+    # 5. Campus, Academic Year, Terms & 4 Sections
     campus_stmt = select(Campus).where(Campus.org_id == org_id, Campus.code == "MAIN-01")
     campus = (await db_session.execute(campus_stmt)).scalars().first()
     if not campus:
@@ -475,7 +845,10 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
         await db_session.flush()
         await db_session.refresh(campus)
 
-    year_stmt = select(AcademicYear).where(AcademicYear.campus_id == campus.id, AcademicYear.name == "2025-2026 Academic Year")
+    year_stmt = select(AcademicYear).where(
+        AcademicYear.campus_id == campus.id,
+        AcademicYear.name == "2025-2026 Academic Year",
+    )
     acad_year = (await db_session.execute(year_stmt)).scalars().first()
     if not acad_year:
         acad_year = AcademicYear(
@@ -489,7 +862,10 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
         await db_session.flush()
         await db_session.refresh(acad_year)
 
-    term_stmt = select(AcademicTerm).where(AcademicTerm.academic_year_id == acad_year.id, AcademicTerm.name == "Fall Semester 2025")
+    term_stmt = select(AcademicTerm).where(
+        AcademicTerm.academic_year_id == acad_year.id,
+        AcademicTerm.name == "Fall Semester 2025",
+    )
     fall_term = (await db_session.execute(term_stmt)).scalars().first()
     if not fall_term:
         fall_term = AcademicTerm(
@@ -504,7 +880,10 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
         await db_session.flush()
         await db_session.refresh(fall_term)
 
-    term_stmt_sp = select(AcademicTerm).where(AcademicTerm.academic_year_id == acad_year.id, AcademicTerm.name == "Spring Semester 2026")
+    term_stmt_sp = select(AcademicTerm).where(
+        AcademicTerm.academic_year_id == acad_year.id,
+        AcademicTerm.name == "Spring Semester 2026",
+    )
     spring_term = (await db_session.execute(term_stmt_sp)).scalars().first()
     if not spring_term:
         spring_term = AcademicTerm(
@@ -519,15 +898,16 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
         await db_session.flush()
         await db_session.refresh(spring_term)
 
-    # Sections
+    # 4 Class Sections
     teacher_chen = seeded_users["teacher.physics@csg.edu"]
     teacher_jenkins = seeded_users["teacher.math@csg.edu"]
     teacher_aurelius = seeded_users["teacher.humanities@csg.edu"]
 
     section_specs = [
-        {"grade": "Grade 10", "name": "Section 10-A (STEM Advanced)", "room": "Lab 201", "teacher_id": teacher_chen.id, "cap": 30},
-        {"grade": "Grade 10", "name": "Section 10-B (Humanities & Arts)", "room": "Room 105", "teacher_id": teacher_aurelius.id, "cap": 28},
-        {"grade": "Grade 9", "name": "Section 9-A (Foundations)", "room": "Room 102", "teacher_id": teacher_jenkins.id, "cap": 32},
+        {"grade": "Grade 9", "name": "Grade 9-A Foundations", "room": "Room 102", "teacher_id": teacher_jenkins.id, "cap": 32},
+        {"grade": "Grade 10", "name": "Grade 10-A STEM Advanced", "room": "Lab 201", "teacher_id": teacher_chen.id, "cap": 30},
+        {"grade": "Grade 10", "name": "Grade 10-B Humanities", "room": "Room 105", "teacher_id": teacher_aurelius.id, "cap": 28},
+        {"grade": "Grade 11", "name": "Grade 11-A Pre-College", "room": "Hall 301", "teacher_id": teacher_chen.id, "cap": 25},
     ]
 
     seeded_sections: Dict[str, ClassSection] = {}
@@ -554,15 +934,16 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
         seeded_sections[s_spec["name"]] = sec
 
     # Student Enrollments
-    sec_10a = seeded_sections["Section 10-A (STEM Advanced)"]
-    sec_10b = seeded_sections["Section 10-B (Humanities & Arts)"]
-    sec_9a = seeded_sections["Section 9-A (Foundations)"]
+    sec_9a = seeded_sections["Grade 9-A Foundations"]
+    sec_10a = seeded_sections["Grade 10-A STEM Advanced"]
+    sec_10b = seeded_sections["Grade 10-B Humanities"]
+    sec_11a = seeded_sections["Grade 11-A Pre-College"]
 
     enroll_specs = [
-        (seeded_users["student.alex@csg.edu"].id, sec_10a.id, "STEM-101"),
-        (seeded_users["student.maya@csg.edu"].id, sec_10a.id, "STEM-102"),
-        (seeded_users["student.leo@csg.edu"].id, sec_10b.id, "HUM-201"),
-        (seeded_users["student.sophia@csg.edu"].id, sec_9a.id, "FND-001"),
+        (alex_user.id, sec_10a.id, "STEM-101"),
+        (maya_user.id, sec_10a.id, "STEM-102"),
+        (leo_user.id, sec_10b.id, "HUM-201"),
+        (sophia_user.id, sec_9a.id, "FND-001"),
     ]
     for st_id, s_id, roll in enroll_specs:
         enr_stmt = select(StudentEnrollment).where(
@@ -582,96 +963,70 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
 
     await db_session.flush()
 
-    # 6. Embedded Learnhouse Courses & Curricular Bridge
-    course_specs = [
-        {
-            "title": "AP Physics C: Mechanics & Electromagnetism",
-            "slug": "ap-physics-c",
-            "code": "PHY-301",
-            "desc": "Rigorous calculus-based physics covering Newtonian mechanics and field theory.",
-            "teacher": teacher_chen,
-            "section": sec_10a,
-            "credits": 4.0,
-        },
-        {
-            "title": "Advanced Calculus & Linear Algebra",
-            "slug": "adv-calculus-math",
-            "code": "MATH-401",
-            "desc": "Multivariable integration, vector spaces, and differential systems.",
-            "teacher": teacher_jenkins,
-            "section": sec_10a,
-            "credits": 4.0,
-        },
-        {
-            "title": "World History & Global Perspectives",
-            "slug": "world-history-perspectives",
-            "code": "HIST-201",
-            "desc": "Comparative analysis of civilization dynamics and economic revolutions.",
-            "teacher": teacher_aurelius,
-            "section": sec_10b,
-            "credits": 3.0,
-        },
+    # 6. Build 4 Full-Fledged LMS Courses with Chapters, Activities, Blocks & SpeedGrader
+    student_map = {
+        "student.alex@csg.edu": alex_user,
+        "student.maya@csg.edu": maya_user,
+        "student.leo@csg.edu": leo_user,
+        "student.sophia@csg.edu": sophia_user,
+    }
+    seeded_courses = await build_full_demo_courses(
+        db_session=db_session,
+        org_id=org_id,
+        teacher_map=seeded_users,
+        student_map=student_map,
+    )
+
+    phy_course = seeded_courses["ap-physics-c"]
+    math_course = seeded_courses["adv-calculus-math"]
+    hist_course = seeded_courses["world-history-perspectives"]
+    cs_course = seeded_courses["ap-computer-science-ai"]
+
+    # 7. Curricular Bridges (SectionSubject)
+    bridge_specs = [
+        (sec_10a.id, phy_course.id, teacher_chen.id, "AP Physics C: Mechanics & Electromagnetism", "PHY-301", 4.0),
+        (sec_10a.id, math_course.id, teacher_jenkins.id, "Advanced Calculus & Linear Algebra", "MATH-401", 4.0),
+        (sec_10b.id, hist_course.id, teacher_aurelius.id, "World History & Global Perspectives", "HIST-201", 3.0),
+        (sec_11a.id, cs_course.id, teacher_chen.id, "AP Computer Science & Artificial Intelligence", "CS-501", 4.0),
     ]
 
-    seeded_courses: Dict[str, Course] = {}
-    for c_spec in course_specs:
-        c_stmt = select(Course).where(Course.org_id == org_id, Course.name == c_spec["title"])
-        course = (await db_session.execute(c_stmt)).scalars().first()
-        now_str = str(datetime.datetime.now(datetime.timezone.utc))
-        if not course:
-            course = Course(
-                org_id=org_id,
-                name=c_spec["title"],
-                description=c_spec["desc"],
-                about=c_spec["desc"],
-                learnings=c_spec["desc"],
-                public=True,
-                published=True,
-                open_to_contributors=False,
-                course_uuid=f"crs_{uuid4()}",
-                creation_date=now_str,
-                update_date=now_str,
-            )
-            db_session.add(course)
-            await db_session.flush()
-            await db_session.refresh(course)
-
-        seeded_courses[c_spec["slug"]] = course
-
-        # Curricular Bridge (SectionSubject)
+    for s_id, c_id, t_id, s_name, s_code, creds in bridge_specs:
         ss_stmt = select(SectionSubject).where(
-            SectionSubject.section_id == c_spec["section"].id,
-            SectionSubject.course_id == course.id,
+            SectionSubject.section_id == s_id,
+            SectionSubject.course_id == c_id,
         )
         if not (await db_session.execute(ss_stmt)).scalars().first():
             db_session.add(
                 SectionSubject(
-                    section_id=c_spec["section"].id,
-                    course_id=course.id,
-                    teacher_id=c_spec["teacher"].id,
-                    subject_name=c_spec["title"],
-                    subject_code=c_spec["code"],
+                    section_id=s_id,
+                    course_id=c_id,
+                    teacher_id=t_id,
+                    subject_name=s_name,
+                    subject_code=s_code,
                     academic_year_id=acad_year.id,
-                    credit_hours=c_spec["credits"],
+                    credit_hours=creds,
                     is_elective=False,
                 )
             )
 
     await db_session.flush()
 
-    # 7. Bell Schedule Periods & Timetable Schedules
+    # 8. Bell Schedule Periods & Timetable Schedules (Monday-Friday)
     period_specs = [
         (1, "08:30:00", "09:15:00", "Period 1: Morning Advisory & STEM"),
         (2, "09:20:00", "10:15:00", "Period 2: Advanced Physics"),
         (3, "10:25:00", "11:20:00", "Period 3: Calculus & Mathematics"),
         (4, "11:30:00", "12:25:00", "Period 4: World History"),
         (5, "13:15:00", "14:10:00", "Period 5: Laboratory Practicum"),
-        (6, "14:15:00", "15:10:00", "Period 6: Socratic Seminar"),
+        (6, "14:15:00", "15:10:00", "Period 6: Socratic Seminar & CS"),
     ]
 
     seeded_periods: Dict[int, ClassPeriod] = {}
     for p_num, s_time, e_time, p_name in period_specs:
-        p_stmt = select(ClassPeriod).where(ClassPeriod.campus_id == campus.id, ClassPeriod.period_number == p_num)
+        p_stmt = select(ClassPeriod).where(
+            ClassPeriod.campus_id == campus.id,
+            ClassPeriod.period_number == p_num,
+        )
         period = (await db_session.execute(p_stmt)).scalars().first()
         if not period:
             period = ClassPeriod(
@@ -686,21 +1041,22 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
             await db_session.refresh(period)
         seeded_periods[p_num] = period
 
-    # Timetable Slots for Section 10-A
-    phy_course = seeded_courses["ap-physics-c"]
-    math_course = seeded_courses["adv-calculus-math"]
-    hist_course = seeded_courses["world-history-perspectives"]
-
     timetable_slots = [
         (DayOfWeek.MONDAY, 2, phy_course.id, teacher_chen.id, sec_10a.id, "Lab 201"),
         (DayOfWeek.MONDAY, 3, math_course.id, teacher_jenkins.id, sec_10a.id, "Lab 201"),
+        (DayOfWeek.MONDAY, 4, hist_course.id, teacher_aurelius.id, sec_10b.id, "Room 105"),
+        (DayOfWeek.MONDAY, 6, cs_course.id, teacher_chen.id, sec_11a.id, "Hall 301"),
         (DayOfWeek.TUESDAY, 2, phy_course.id, teacher_chen.id, sec_10a.id, "Lab 201"),
         (DayOfWeek.TUESDAY, 3, math_course.id, teacher_jenkins.id, sec_10a.id, "Lab 201"),
+        (DayOfWeek.TUESDAY, 4, hist_course.id, teacher_aurelius.id, sec_10b.id, "Room 105"),
         (DayOfWeek.WEDNESDAY, 2, phy_course.id, teacher_chen.id, sec_10a.id, "Lab 201"),
+        (DayOfWeek.WEDNESDAY, 5, phy_course.id, teacher_chen.id, sec_10a.id, "Lab 201"),
         (DayOfWeek.THURSDAY, 2, phy_course.id, teacher_chen.id, sec_10a.id, "Lab 201"),
         (DayOfWeek.THURSDAY, 3, math_course.id, teacher_jenkins.id, sec_10a.id, "Lab 201"),
+        (DayOfWeek.THURSDAY, 6, cs_course.id, teacher_chen.id, sec_11a.id, "Hall 301"),
         (DayOfWeek.FRIDAY, 2, phy_course.id, teacher_chen.id, sec_10a.id, "Lab 201"),
         (DayOfWeek.FRIDAY, 4, hist_course.id, teacher_aurelius.id, sec_10b.id, "Room 105"),
+        (DayOfWeek.FRIDAY, 6, cs_course.id, teacher_chen.id, sec_11a.id, "Hall 301"),
     ]
 
     for dow, p_num, c_id, t_id, s_id, room in timetable_slots:
@@ -712,12 +1068,6 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
             TimetableSchedule.academic_term_id == fall_term.id,
         )
         if not (await db_session.execute(tt_stmt)).scalars().first():
-            # TimetableSchedule has no is_active column. On SQLModel versions
-            # that reject unknown kwargs the old is_active=True was a hard
-            # TypeError at seed time; on this one it is silently dropped, so
-            # the "active" intent was simply lost. A slot is live by belonging
-            # to a term: academic_term_id is what every timetable read scopes
-            # on, so binding these to the fall term is what activates them.
             db_session.add(
                 TimetableSchedule(
                     section_id=s_id,
@@ -732,47 +1082,54 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
 
     await db_session.flush()
 
-    # 8. 30-Day Biometric Roll-Call Attendance
+    # 9. 30-Day Biometric Roll-Call Attendance
     today = datetime.date.today()
-    students_10a = [seeded_users["student.alex@csg.edu"], seeded_users["student.maya@csg.edu"]]
+    student_section_pairs = [
+        (alex_user, sec_10a.id, teacher_chen.id),
+        (maya_user, sec_10a.id, teacher_chen.id),
+        (leo_user, sec_10b.id, teacher_aurelius.id),
+        (sophia_user, sec_9a.id, teacher_jenkins.id),
+    ]
 
     for day_offset in range(30, -1, -1):
         att_date = today - datetime.timedelta(days=day_offset)
         if att_date.weekday() >= 5:  # Skip weekends
             continue
 
-        for student in students_10a:
-            # Deterministic realistic attendance: Maya 100%, Alex 96%
-            if student.email == "student.alex@csg.edu" and day_offset == 7:
+        for st_user, s_id, t_id in student_section_pairs:
+            if st_user.email == "student.alex@csg.edu" and day_offset == 7:
                 status = AttendanceStatus.LATE
                 remarks = "Late arrival due to transit delay"
-            elif student.email == "student.alex@csg.edu" and day_offset == 14:
+            elif st_user.email == "student.alex@csg.edu" and day_offset == 14:
                 status = AttendanceStatus.EXCUSED
                 remarks = "Medical appointment verified"
+            elif st_user.email == "student.leo@csg.edu" and day_offset == 10:
+                status = AttendanceStatus.LATE
+                remarks = "Biometric check-in verified with advisory pass"
             else:
                 status = AttendanceStatus.PRESENT
                 remarks = "Biometric scan verified"
 
             att_stmt = select(StudentAttendance).where(
-                StudentAttendance.student_id == student.id,
-                StudentAttendance.section_id == sec_10a.id,
+                StudentAttendance.student_id == st_user.id,
+                StudentAttendance.section_id == s_id,
                 StudentAttendance.date == att_date,
             )
             if not (await db_session.execute(att_stmt)).scalars().first():
                 db_session.add(
                     StudentAttendance(
-                        student_id=student.id,
-                        section_id=sec_10a.id,
+                        student_id=st_user.id,
+                        section_id=s_id,
                         date=att_date,
                         status=status,
                         remarks=remarks,
-                        recorded_by=teacher_chen.id,
+                        recorded_by=t_id,
                     )
                 )
 
     await db_session.flush()
 
-    # 9. Master Gradebook, Assessment Plans & SpeedGrader Marks
+    # 10. Master Gradebook, Assessment Plans & Marks
     scale_stmt = select(GradingScale).where(GradingScale.name == "Standard 4.0 GPA Scale")
     scale = (await db_session.execute(scale_stmt)).scalars().first()
     if not scale:
@@ -795,7 +1152,6 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
         db_session.add(scale)
         await db_session.flush()
 
-    # Assessment Plans for AP Physics
     plan_specs = [
         {"name": "Continuous Laboratory & SpeedGrader Work", "weight": 30.0, "max": 100.0},
         {"name": "Midterm CBT Examination", "weight": 30.0, "max": 100.0},
@@ -824,9 +1180,6 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
             await db_session.refresh(plan)
         seeded_plans.append(plan)
 
-    # Gradebook Entries
-    # Alex: Lab=95, Midterm=92, Capstone=96 -> Weighted Total ~94.5 (A)
-    # Maya: Lab=98, Midterm=96, Capstone=99 -> Weighted Total ~97.8 (A+)
     scores = {
         alex_user.id: [95.0, 92.0, 96.0],
         maya_user.id: [98.0, 96.0, 99.0],
@@ -861,10 +1214,13 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
     await db_session.flush()
 
     # Term Report Cards
-    for s_id, (gpa, letter, remarks) in [
-        (alex_user.id, (3.92, "A", "Outstanding analytical capabilities and positive leadership in group physics projects.")),
-        (maya_user.id, (4.00, "A+", "Top of cohort across theoretical derivations and lab implementations. Exemplary work.")),
-    ]:
+    report_card_specs = [
+        (alex_user.id, sec_10a.id, 3.92, "A", 96.5, "Outstanding analytical capabilities and positive leadership in group physics projects."),
+        (maya_user.id, sec_10a.id, 4.00, "A+", 100.0, "Top of cohort across theoretical derivations and lab implementations. Exemplary work."),
+        (leo_user.id, sec_10b.id, 3.85, "A-", 98.0, "Superb critical analysis of historiographical source texts and active seminar debate."),
+        (sophia_user.id, sec_9a.id, 3.90, "A", 99.0, "Consistent foundational mastery and disciplined homework turn-in pace."),
+    ]
+    for s_id, sec_id, gpa, letter, att_pct, remarks in report_card_specs:
         rc_stmt = select(TermReportCard).where(
             TermReportCard.student_id == s_id,
             TermReportCard.academic_term_id == fall_term.id,
@@ -873,11 +1229,11 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
             db_session.add(
                 TermReportCard(
                     student_id=s_id,
-                    section_id=sec_10a.id,
+                    section_id=sec_id,
                     academic_term_id=fall_term.id,
                     gpa=gpa,
                     letter_grade=letter,
-                    attendance_percentage=96.5 if s_id == alex_user.id else 100.0,
+                    attendance_percentage=att_pct,
                     remarks=remarks,
                     status="SENT",
                     sent_at=datetime.datetime.now(datetime.timezone.utc),
@@ -886,8 +1242,11 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
 
     await db_session.flush()
 
-    # 10. School Examinations & Results
-    exam_stmt = select(Exam).where(Exam.course_id == phy_course.id, Exam.title == "Physics Midterm: Quantum & Classical Mechanics")
+    # 11. CBT School Examinations, Schedules, IRT 2PL Psychometrics & Results
+    exam_stmt = select(Exam).where(
+        Exam.course_id == phy_course.id,
+        Exam.title == "Physics Midterm: Quantum & Classical Mechanics",
+    )
     exam = (await db_session.execute(exam_stmt)).scalars().first()
     if not exam:
         exam = Exam(
@@ -910,7 +1269,6 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
         await db_session.flush()
         await db_session.refresh(exam)
 
-        # Section schedule
         db_session.add(
             ExamSectionSchedule(
                 exam_id=exam.id,
@@ -922,7 +1280,6 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
             )
         )
 
-        # Student Exam Results
         db_session.add(
             ExamResult(
                 exam_id=exam.id,
@@ -949,18 +1306,25 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
         )
         await db_session.flush()
 
-    # 11. Admissions & RevOps CRM Pipeline
+    # 12. Admissions & RevOps CRM Pipeline (10 Leads across all stages with BANT scoring)
     leads_data = [
-        {"name": "Elena Rostova", "email": "elena.parent@example.com", "phone": "+1 555-0192", "grade": "Grade 10", "stage": LeadStage.NEW_INQUIRY, "score": 85, "intent": LeadIntent.HOT},
-        {"name": "Tariq Mansoor", "email": "tariq.family@example.com", "phone": "+1 555-0144", "grade": "Grade 10", "stage": LeadStage.TOUR_BOOKED, "score": 78, "intent": LeadIntent.WARM},
-        {"name": "Chloe Dupont", "email": "dupont.chloe@example.com", "phone": "+1 555-0188", "grade": "Grade 11", "stage": LeadStage.CONTACTED, "score": 92, "intent": LeadIntent.HOT},
-        {"name": "Lucas Wright", "email": "wright.lucas@example.com", "phone": "+1 555-0133", "grade": "Grade 9", "stage": LeadStage.ASSESSMENT_SCHEDULED, "score": 82, "intent": LeadIntent.HOT},
-        {"name": "Isabella Martinez", "email": "martinez.isa@example.com", "phone": "+1 555-0177", "grade": "Grade 10", "stage": LeadStage.OFFER_SENT, "score": 95, "intent": LeadIntent.HOT},
-        {"name": "Alex Mercer", "email": "robert.mercer@example.com", "phone": "+1 555-0111", "grade": "Grade 10", "stage": LeadStage.ENROLLED, "score": 98, "intent": LeadIntent.HOT},
+        {"name": "Elena Rostova", "email": "elena.parent@example.com", "phone": "+1 555-0192", "grade": "Grade 10", "stage": LeadStage.NEW_INQUIRY, "score": 85, "intent": LeadIntent.HOT, "budget": "$18,000"},
+        {"name": "Tariq Mansoor", "email": "tariq.family@example.com", "phone": "+1 555-0144", "grade": "Grade 10", "stage": LeadStage.TOUR_BOOKED, "score": 78, "intent": LeadIntent.WARM, "budget": "$15,000"},
+        {"name": "Chloe Dupont", "email": "dupont.chloe@example.com", "phone": "+1 555-0188", "grade": "Grade 11", "stage": LeadStage.CONTACTED, "score": 92, "intent": LeadIntent.HOT, "budget": "$22,000"},
+        {"name": "Lucas Wright", "email": "wright.lucas@example.com", "phone": "+1 555-0133", "grade": "Grade 9", "stage": LeadStage.ASSESSMENT_SCHEDULED, "score": 82, "intent": LeadIntent.HOT, "budget": "$16,000"},
+        {"name": "Isabella Martinez", "email": "martinez.isa@example.com", "phone": "+1 555-0177", "grade": "Grade 10", "stage": LeadStage.OFFER_SENT, "score": 95, "intent": LeadIntent.HOT, "budget": "$20,000"},
+        {"name": "Alex Mercer", "email": "robert.mercer@example.com", "phone": "+1 555-0111", "grade": "Grade 10", "stage": LeadStage.ENROLLED, "score": 98, "intent": LeadIntent.HOT, "budget": "$20,000"},
+        {"name": "Liam O'Connor", "email": "oconnor.liam@example.com", "phone": "+1 555-0165", "grade": "Grade 11", "stage": LeadStage.DOCUMENTS_PENDING, "score": 75, "intent": LeadIntent.WARM, "budget": "$17,500"},
+        {"name": "Amina Al-Mansoor", "email": "amina.admissions@example.com", "phone": "+1 555-0129", "grade": "Grade 9", "stage": LeadStage.APPLICATION_STARTED, "score": 88, "intent": LeadIntent.HOT, "budget": "$19,000"},
+        {"name": "Ethan Zhang", "email": "zhang.ethan@example.com", "phone": "+1 555-0158", "grade": "Grade 10", "stage": LeadStage.QUALIFIED, "score": 80, "intent": LeadIntent.WARM, "budget": "$16,500"},
+        {"name": "Kavita Patel", "email": "patel.kavita@example.com", "phone": "+1 555-0199", "grade": "Grade 11", "stage": LeadStage.NURTURING, "score": 64, "intent": LeadIntent.COLD, "budget": "$14,000"},
     ]
 
     for ld in leads_data:
-        l_stmt = select(AdmissionsLead).where(AdmissionsLead.student_name == ld["name"], AdmissionsLead.email == ld["email"])
+        l_stmt = select(AdmissionsLead).where(
+            AdmissionsLead.student_name == ld["name"],
+            AdmissionsLead.email == ld["email"],
+        )
         lead = (await db_session.execute(l_stmt)).scalars().first()
         if not lead:
             lead = AdmissionsLead(
@@ -975,14 +1339,13 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
                 source=LeadSource.WEBSITE_FORM,
                 lead_score=ld["score"],
                 intent_level=ld["intent"],
-                budget_range="$15,000 - $20,000",
-                notes="Family interested in rigorous STEM curriculum and AP coursework.",
+                budget_range=ld["budget"],
+                notes=f"Admissions profile: BANT qualified intent {ld['intent'].value}. Family evaluated for academic rigor.",
             )
             db_session.add(lead)
             await db_session.flush()
             await db_session.refresh(lead)
 
-            # Log initial LeadActivity
             db_session.add(
                 LeadActivityLog(
                     lead_id=lead.id,
@@ -991,14 +1354,17 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
                 )
             )
 
-            # Map to StudentApplication
             app_status_map = {
                 LeadStage.NEW_INQUIRY: ApplicationStatus.SUBMITTED,
                 LeadStage.CONTACTED: ApplicationStatus.UNDER_REVIEW,
                 LeadStage.TOUR_BOOKED: ApplicationStatus.DOCUMENTS_PENDING,
+                LeadStage.DOCUMENTS_PENDING: ApplicationStatus.DOCUMENTS_PENDING,
                 LeadStage.ASSESSMENT_SCHEDULED: ApplicationStatus.ASSESSMENT_SCHEDULED,
+                LeadStage.APPLICATION_STARTED: ApplicationStatus.DRAFT,
+                LeadStage.QUALIFIED: ApplicationStatus.UNDER_REVIEW,
                 LeadStage.OFFER_SENT: ApplicationStatus.OFFERED,
                 LeadStage.ENROLLED: ApplicationStatus.ENROLLED,
+                LeadStage.NURTURING: ApplicationStatus.DRAFT,
             }
             app_num = f"APP-2025-{lead.id:04d}"
             app_stmt = select(StudentApplication).where(StudentApplication.application_number == app_num)
@@ -1024,8 +1390,11 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
 
     await db_session.flush()
 
-    # 12. Discipline & Pastoral Records
-    disc_stmt = select(DisciplinaryIncident).where(DisciplinaryIncident.student_id == alex_user.id)
+    # 13. Pastoral & Disciplinary Records
+    disc_stmt = select(DisciplinaryIncident).where(
+        DisciplinaryIncident.student_id == alex_user.id,
+        DisciplinaryIncident.title == "Academic Distinction & Regional Physics Olympiad Finalist",
+    )
     if not (await db_session.execute(disc_stmt)).scalars().first():
         db_session.add(
             DisciplinaryIncident(
@@ -1045,7 +1414,7 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
             )
         )
 
-    # 13. Confidential Counseling / Clinical Desk Records
+    # 14. Confidential Counseling / Clinical Desk Records
     clin_user = seeded_users["counselor.drsmith@csg.edu"]
     csess_stmt = select(CounselingSession).where(CounselingSession.student_id == alex_user.id)
     if not (await db_session.execute(csess_stmt)).scalars().first():
@@ -1075,20 +1444,31 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
 
     await db_session.flush()
 
-    # 14. Double-Entry General Ledger & Chart of Accounts
+    # 15. Double-Entry General Ledger (15-Account Chart of Accounts & Balanced Journal Vouchers)
     coa_specs = [
         ("1010", "Cash & Operating Bank Account", AccountType.ASSET, 450000.0),
         ("1020", "Tuition Fees Receivable", AccountType.ASSET, 25000.0),
+        ("1030", "Prepaid Instructional Supplies", AccountType.ASSET, 12000.0),
+        ("1040", "STEM Equipment & Lab Assets", AccountType.ASSET, 85000.0),
         ("2010", "Accounts Payable & Accruals", AccountType.LIABILITY, 18500.0),
+        ("2020", "Unearned Tuition Revenue", AccountType.LIABILITY, 40000.0),
+        ("2030", "Staff Payroll Withholding Payable", AccountType.LIABILITY, 6200.0),
         ("3010", "Institutional Retained Earnings", AccountType.EQUITY, 380000.0),
+        ("3020", "Endowment & Foundation Fund", AccountType.EQUITY, 100000.0),
         ("4010", "Tuition & Academic Program Revenue", AccountType.REVENUE, 125000.0),
+        ("4020", "STEM Lab & Technology Fees", AccountType.REVENUE, 15000.0),
+        ("4030", "Admissions & Application Fees", AccountType.REVENUE, 3500.0),
         ("5010", "Faculty & Instructional Salaries", AccountType.EXPENSE, 38500.0),
         ("5020", "STEM Laboratory & Equipment Expense", AccountType.EXPENSE, 10000.0),
+        ("5030", "Campus Facilities & Utilities Expense", AccountType.EXPENSE, 8500.0),
     ]
 
     seeded_coa: Dict[str, ChartOfAccounts] = {}
     for code, name, acct_type, init_bal in coa_specs:
-        coa_stmt = select(ChartOfAccounts).where(ChartOfAccounts.campus_id == campus.id, ChartOfAccounts.account_code == code)
+        coa_stmt = select(ChartOfAccounts).where(
+            ChartOfAccounts.campus_id == campus.id,
+            ChartOfAccounts.account_code == code,
+        )
         account = (await db_session.execute(coa_stmt)).scalars().first()
         if not account:
             account = ChartOfAccounts(
@@ -1119,7 +1499,6 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
         await db_session.flush()
         await db_session.refresh(j_entry)
 
-        # Lines: Debit Cash (1010) $25,000 / Credit Revenue (4010) $25,000
         db_session.add(
             JournalEntryLine(
                 entry_id=j_entry.id,
@@ -1141,8 +1520,11 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
 
     await db_session.flush()
 
-    # 15. Fee Structure & Student Fee Vouchers
-    fee_struct_stmt = select(FeeStructure).where(FeeStructure.campus_id == campus.id, FeeStructure.name == "Grade 10 STEM Standard Fee")
+    # Fee Structures & Vouchers
+    fee_struct_stmt = select(FeeStructure).where(
+        FeeStructure.campus_id == campus.id,
+        FeeStructure.name == "Grade 10 STEM Standard Fee",
+    )
     fee_struct = (await db_session.execute(fee_struct_stmt)).scalars().first()
     if not fee_struct:
         fee_struct = FeeStructure(
@@ -1158,7 +1540,6 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
         await db_session.flush()
         await db_session.refresh(fee_struct)
 
-    # Vouchers for Alex & Maya
     v_specs = [
         (alex_user.id, "VOUCH-2025-001", VoucherStatus.PAID, today - datetime.timedelta(days=45), today - datetime.timedelta(days=15)),
         (alex_user.id, "VOUCH-2025-002", VoucherStatus.UNPAID, today - datetime.timedelta(days=5), today + datetime.timedelta(days=25)),
@@ -1189,10 +1570,13 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
     await db_session.flush()
 
     # 16. Staff Profiles & Progressive Payroll
+    bursar_user = seeded_users["bursar.miller@csg.edu"]
     staff_specs = [
         {"user": teacher_chen, "code": "FAC-001", "name": "Dr. Albert Chen", "dept": "Science & STEM", "desig": "Lead Physics Faculty", "salary": 8500.0},
         {"user": teacher_jenkins, "code": "FAC-002", "name": "Ms. Sarah Jenkins", "dept": "Mathematics", "desig": "Senior Mathematics Faculty", "salary": 7200.0},
         {"user": teacher_aurelius, "code": "FAC-003", "name": "Mr. Marcus Aurelius", "dept": "Humanities", "desig": "Senior History Faculty", "salary": 7000.0},
+        {"user": bursar_user, "code": "STAFF-001", "name": "Jonathan Miller", "dept": "Finance & Bursar", "desig": "Chief Bursar", "salary": 6800.0},
+        {"user": clin_user, "code": "STAFF-002", "name": "Dr. Evelyn Smith", "dept": "Student Well-Being", "desig": "Lead School Psychologist", "salary": 7500.0},
     ]
 
     for sp in staff_specs:
@@ -1216,7 +1600,6 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
             await db_session.flush()
             await db_session.refresh(profile)
 
-        # Salary Structure & Monthly Slip
         s_struct_stmt = select(SalaryStructure).where(SalaryStructure.staff_id == profile.id)
         if not (await db_session.execute(s_struct_stmt)).scalars().first():
             basic = sp["salary"] * 0.70
@@ -1241,7 +1624,6 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
                 )
             )
 
-            # Slip for current month
             slip_no = f"PAY-{profile.employee_code}-{today.strftime('%Y%m')}"
             slip_stmt = select(SalarySlip).where(SalarySlip.slip_no == slip_no)
             if not (await db_session.execute(slip_stmt)).scalars().first():
@@ -1267,23 +1649,27 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
 
     await db_session.flush()
 
-    # 17. Cognia Accreditation Standards & Evidence Locker
+    # 17. Cognia Accreditation Standards & Evidence Locker (Standards 1.1, 1.2, 2.1, 2.2, 2.3, 3.1, 3.2, AMI 3.88)
     cognia_specs = [
-        ("1.1", "Leadership Capacity", "Standard 1.1: Mission, Strategic Vision & Leadership Capacity", "policy", 3.9),
-        ("2.2", "Learning Capacity", "Standard 2.2: Curriculum Alignment, Rubric Integrity & SpeedGrader Delivery", "rubric", 3.8),
-        ("3.1", "Resource Capacity", "Standard 3.1: Resource Allocation, Financial Soundness & Governance", "assessment", 3.7),
+        ("1.1", "Leadership Capacity", "Standard 1.1: Mission, Strategic Vision & Leadership Capacity", "policy", 3.90),
+        ("1.2", "Leadership Capacity", "Standard 1.2: Governance Integrity & Policy Implementation", "policy", 3.80),
+        ("2.1", "Learning Capacity", "Standard 2.1: Learner-Centered Instructional Design & Differentiation", "curriculum", 3.90),
+        ("2.2", "Learning Capacity", "Standard 2.2: Curriculum Alignment, Rubric Integrity & SpeedGrader Delivery", "rubric", 3.85),
+        ("2.3", "Learning Capacity", "Standard 2.3: Assessment Systems, CBT & Psychometric Reliability", "psychometrics", 3.95),
+        ("3.1", "Resource Capacity", "Standard 3.1: Resource Allocation, Financial Soundness & Governance", "financial", 3.80),
+        ("3.2", "Resource Capacity", "Standard 3.2: Campus Safety, Digital Infrastructure & Well-Being", "safety", 3.90),
     ]
 
+    admin_user = seeded_users["admin@csg.edu"]
     for code, domain, title, ev_type, score in cognia_specs:
         std_stmt = select(CogniaEvidenceItem).where(
             CogniaEvidenceItem.org_id == org_id,
             CogniaEvidenceItem.standard_code == code,
         )
         if not (await db_session.execute(std_stmt)).scalars().first():
-            evidence_body = f"Evidence dossier verifying compliance with Cognia Standard {code} for CSG Global Academy."
+            evidence_body = f"Evidence dossier verifying compliance with Cognia Standard {code} for CSG Global Academy ({title})."
             sha_hash = hashlib.sha256(evidence_body.encode("utf-8")).hexdigest()
 
-            admin_user = seeded_users["admin@csg.edu"]
             db_session.add(
                 CogniaEvidenceItem(
                     org_id=org_id,
@@ -1291,7 +1677,7 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
                     standard_code=code,
                     domain=domain,
                     title=title,
-                    description="Standard Operating Procedures, Curricular Maps, Rubrics and Psychometrics evidence verified under ISO 27001.",
+                    description=f"Standard Operating Procedures, Curricular Maps, Rubrics and Psychometrics evidence verified under ISO 27001 (SHA-256: {sha_hash[:16]}...).",
                     evidence_type=ev_type,
                     artifact_url=f"/artifacts/cognia-std-{code.replace('.', '-')}.pdf",
                     academic_year="2025-2026",
@@ -1315,14 +1701,9 @@ async def seed_sms_demo_data(db_session: AsyncSession, org_slug: Optional[str] =
         "campus": campus.name,
         "sections": len(seeded_sections),
         "courses": len(seeded_courses),
-        "ami_index": 3.82,
+        "ami_index": 3.88,
     }
 
-    # The generated password is surfaced exactly once, here, because only its
-    # hash is stored and it is unrecoverable afterwards. Omitted when the
-    # password came from the environment (the operator already holds it) and
-    # when no account was actually created with it -- an empty or echoed value
-    # would be worse than none.
     if created_users and not password_is_operator_supplied:
         result["demo_password"] = demo_password
         logger.info(
