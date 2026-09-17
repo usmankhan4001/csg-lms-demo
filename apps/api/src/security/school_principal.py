@@ -190,7 +190,7 @@ async def resolve_school_principal(
     else:
         effective_user = current_user
 
-    if request is not None and current_user.is_superadmin:
+    if request is not None and getattr(current_user, "is_superadmin", False):
         payload = decode_impersonation_cookie(request.cookies.get(IMPERSONATION_COOKIE_NAME))
         if payload is not None:
             target_user_id = payload.get("target_user_id")
@@ -206,7 +206,7 @@ async def resolve_school_principal(
                     email_verified=target.email_verified,
                     is_superadmin=target.is_superadmin,
                 )
-                impersonated_by_user_id = current_user.id
+                impersonated_by_user_id = getattr(current_user, "id", None)
 
     result = await db_session.execute(
         select(SMSUserRole).where(SMSUserRole.user_id == effective_user.id, SMSUserRole.is_active == True)  # noqa: E712

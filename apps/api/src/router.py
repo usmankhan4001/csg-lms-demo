@@ -735,6 +735,11 @@ v1_router.include_router(
     prefix="/revops",
     tags=["sms-revops"],
 )
+v1_router.include_router(
+    sms_revops.router,
+    prefix="/sms/revops",
+    tags=["sms-revops"],
+)
 
 # AI RevOps agents (M23 research, M25 marketing, M26 copywriting). Same
 # `/revops` prefix as the CRM above, with every route under `/agents/...` so
