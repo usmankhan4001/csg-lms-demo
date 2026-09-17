@@ -27,7 +27,7 @@ import secrets
 from typing import Optional, Dict, Any, List, Tuple
 from uuid import uuid4
 
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, text
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from src.db.organizations import Organization
@@ -140,12 +140,41 @@ def _resolve_demo_password() -> Tuple[str, bool]:
     return secrets.token_urlsafe(18), False
 
 
+async def _ensure_sms_schema_columns(db_session: AsyncSession) -> None:
+    """Ensures dynamic runtime columns exist on PostgreSQL."""
+    columns_to_ensure = [
+        ("sms_student_attendance", "org_id", "INTEGER"),
+        ("sms_student_attendance", "campus_id", "INTEGER"),
+        ("sms_student_fee_voucher", "org_id", "INTEGER"),
+        ("sms_student_fee_voucher", "campus_id", "INTEGER"),
+        ("sms_gradebook_entry", "org_id", "INTEGER"),
+        ("sms_gradebook_entry", "campus_id", "INTEGER"),
+        ("sms_clinical_case_notes", "org_id", "INTEGER"),
+        ("sms_clinical_case_notes", "campus_id", "INTEGER"),
+        ("sms_salary_slip", "org_id", "INTEGER"),
+        ("sms_salary_slip", "campus_id", "INTEGER"),
+        ("assignmentusersubmission", "creation_date", "VARCHAR"),
+        ("assignmentusersubmission", "update_date", "VARCHAR"),
+        ("assignmentusersubmission", "assignmentusersubmission_uuid", "VARCHAR"),
+    ]
+    for table, col, col_type in columns_to_ensure:
+        try:
+            await db_session.execute(
+                text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type}")
+            )
+            await db_session.commit()
+        except Exception as e:
+            await db_session.rollback()
+            logger.debug(f"Column check for {table}.{col}: {e}")
+
+
 async def clean_sms_demo_data(db_session: AsyncSession, org_id: int) -> Dict[str, Any]:
     """
     Cleanly deletes all existing demo data belonging to the specified organization
     in proper foreign key dependency order so that reseeding is completely idempotent.
     """
     logger.info(f"Cleaning demo data for organization ID {org_id}...")
+    await _ensure_sms_schema_columns(db_session)
 
     # Discover dependent IDs for cascaded clean deletion
     campus_ids = (
@@ -573,6 +602,9 @@ async def seed_sms_demo_data(
     assert org_id is not None
     logger.info(f"Target Org: {target_org.name} (id={org_id}, slug={target_org.slug})")
 
+    # Ensure schema columns exist
+    await _ensure_sms_schema_columns(db_session)
+
     # Optional Pre-Cleaning
     if clear_previous:
         await clean_sms_demo_data(db_session, org_id)
@@ -970,17 +1002,18 @@ async def seed_sms_demo_data(
         "student.leo@csg.edu": leo_user,
         "student.sophia@csg.edu": sophia_user,
     }
-    seeded_courses = await build_full_demo_courses(
+    course_res = await build_full_demo_courses(
         db_session=db_session,
         org_id=org_id,
         teacher_map=seeded_users,
         student_map=student_map,
     )
+    seeded_courses = course_res.get("courses", course_res) if isinstance(course_res, dict) else course_res
 
     phy_course = seeded_courses["ap-physics-c"]
     math_course = seeded_courses["adv-calculus-math"]
     hist_course = seeded_courses["world-history-perspectives"]
-    cs_course = seeded_courses["ap-computer-science-ai"]
+    cs_course = seeded_courses.get("autonomous-ai-cs") or seeded_courses.get("ap-computer-science-ai") or list(seeded_courses.values())[3]
 
     # 7. Curricular Bridges (SectionSubject)
     bridge_specs = [
@@ -1314,10 +1347,10 @@ async def seed_sms_demo_data(
         {"name": "Lucas Wright", "email": "wright.lucas@example.com", "phone": "+1 555-0133", "grade": "Grade 9", "stage": LeadStage.ASSESSMENT_SCHEDULED, "score": 82, "intent": LeadIntent.HOT, "budget": "$16,000"},
         {"name": "Isabella Martinez", "email": "martinez.isa@example.com", "phone": "+1 555-0177", "grade": "Grade 10", "stage": LeadStage.OFFER_SENT, "score": 95, "intent": LeadIntent.HOT, "budget": "$20,000"},
         {"name": "Alex Mercer", "email": "robert.mercer@example.com", "phone": "+1 555-0111", "grade": "Grade 10", "stage": LeadStage.ENROLLED, "score": 98, "intent": LeadIntent.HOT, "budget": "$20,000"},
-        {"name": "Liam O'Connor", "email": "oconnor.liam@example.com", "phone": "+1 555-0165", "grade": "Grade 11", "stage": LeadStage.DOCUMENTS_PENDING, "score": 75, "intent": LeadIntent.WARM, "budget": "$17,500"},
-        {"name": "Amina Al-Mansoor", "email": "amina.admissions@example.com", "phone": "+1 555-0129", "grade": "Grade 9", "stage": LeadStage.APPLICATION_STARTED, "score": 88, "intent": LeadIntent.HOT, "budget": "$19,000"},
-        {"name": "Ethan Zhang", "email": "zhang.ethan@example.com", "phone": "+1 555-0158", "grade": "Grade 10", "stage": LeadStage.QUALIFIED, "score": 80, "intent": LeadIntent.WARM, "budget": "$16,500"},
-        {"name": "Kavita Patel", "email": "patel.kavita@example.com", "phone": "+1 555-0199", "grade": "Grade 11", "stage": LeadStage.NURTURING, "score": 64, "intent": LeadIntent.COLD, "budget": "$14,000"},
+        {"name": "Liam O'Connor", "email": "oconnor.liam@example.com", "phone": "+1 555-0165", "grade": "Grade 11", "stage": LeadStage.CONTACTED, "score": 75, "intent": LeadIntent.WARM, "budget": "$17,500"},
+        {"name": "Amina Al-Mansoor", "email": "amina.admissions@example.com", "phone": "+1 555-0129", "grade": "Grade 9", "stage": LeadStage.NEW_INQUIRY, "score": 88, "intent": LeadIntent.HOT, "budget": "$19,000"},
+        {"name": "Ethan Zhang", "email": "zhang.ethan@example.com", "phone": "+1 555-0158", "grade": "Grade 10", "stage": LeadStage.TOUR_BOOKED, "score": 80, "intent": LeadIntent.WARM, "budget": "$16,500"},
+        {"name": "Kavita Patel", "email": "patel.kavita@example.com", "phone": "+1 555-0199", "grade": "Grade 11", "stage": LeadStage.STALLED, "score": 64, "intent": LeadIntent.COLD, "budget": "$14,000"},
     ]
 
     for ld in leads_data:
@@ -1358,13 +1391,11 @@ async def seed_sms_demo_data(
                 LeadStage.NEW_INQUIRY: ApplicationStatus.SUBMITTED,
                 LeadStage.CONTACTED: ApplicationStatus.UNDER_REVIEW,
                 LeadStage.TOUR_BOOKED: ApplicationStatus.DOCUMENTS_PENDING,
-                LeadStage.DOCUMENTS_PENDING: ApplicationStatus.DOCUMENTS_PENDING,
                 LeadStage.ASSESSMENT_SCHEDULED: ApplicationStatus.ASSESSMENT_SCHEDULED,
-                LeadStage.APPLICATION_STARTED: ApplicationStatus.DRAFT,
-                LeadStage.QUALIFIED: ApplicationStatus.UNDER_REVIEW,
                 LeadStage.OFFER_SENT: ApplicationStatus.OFFERED,
                 LeadStage.ENROLLED: ApplicationStatus.ENROLLED,
-                LeadStage.NURTURING: ApplicationStatus.DRAFT,
+                LeadStage.STALLED: ApplicationStatus.DRAFT,
+                LeadStage.LOST: ApplicationStatus.REJECTED,
             }
             app_num = f"APP-2025-{lead.id:04d}"
             app_stmt = select(StudentApplication).where(StudentApplication.application_number == app_num)
@@ -1700,7 +1731,7 @@ async def seed_sms_demo_data(
         "users_skipped_existing": skipped_existing_users,
         "campus": campus.name,
         "sections": len(seeded_sections),
-        "courses": len(seeded_courses),
+        "courses": len({c.id for c in seeded_courses.values()}) if isinstance(seeded_courses, dict) else len(seeded_courses),
         "ami_index": 3.88,
     }
 
