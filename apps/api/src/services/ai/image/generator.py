@@ -1,45 +1,38 @@
-"""AI image generation (Google "nano banana" family).
+"""AI image generation (OpenRouter, OpenAI & Google multimodal image generation).
 
-Image generation is a **Google-only** path: the provider-agnostic text layer in
-``src/services/ai/llm`` returns text/embeddings only, so images go straight to
-the Google GenAI SDK. It still reuses the same credential resolution as the text
-layer — ``ai_config.api_key`` when the configured provider is Google, otherwise
-the legacy ``ai_config.gemini_api_key`` — so no separate key is needed when the
-deployment already runs on Gemini.
+Supports:
+- OpenRouter image generation models (e.g. ``bytedance-seed/seedream-4.5``, ``recraft/recraft-v3``)
+- OpenAI DALL-E 3 / DALL-E 2
+- Google GenAI (Gemini 2.5 Flash Image / Imagen 3)
 
-Supports two modes with the same call:
+Supports two modes:
 - text-to-image (``prompt`` only)
 - image editing / iterative refinement (``prompt`` + one or more ``input_images``)
-  which powers the chatbot-like "make it darker / add a diagram" refine loop.
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
+import re
 from typing import Optional
 
 from config.config import get_learnhouse_config
 from src.services.ai.llm import AINotConfiguredError
-from src.services.ai.llm.provider import _GOOGLE_ALIASES
+from src.services.ai.llm.provider import _GOOGLE_ALIASES, _OPENAI_ALIASES
 
 logger = logging.getLogger(__name__)
 
-# Google "nano banana" image model. Defaults to the generally-available Gemini 2.5
-# Flash Image model so generation works out of the box on any Gemini API key.
-# Newer/preview models (e.g. Nano Banana 2 / "gemini-3-pro-image-preview") require
-# allowlist access and can 429/500 under capacity — set LEARNHOUSE_AI_IMAGE_MODEL
-# to opt into one once it is enabled for your key.
 DEFAULT_IMAGE_MODEL = "gemini-2.5-flash-image"
+DEFAULT_OPENROUTER_IMAGE_MODEL = "bytedance-seed/seedream-4.5"
+DEFAULT_OPENAI_IMAGE_MODEL = "dall-e-3"
 
-# Nano banana returns PNG inline data.
 OUTPUT_MIME = "image/png"
 OUTPUT_EXT = "png"
 
-# Guard against pathologically large prompts before we spend a credit / call out.
 MAX_PROMPT_CHARS = 4000
 
-# Bounded retry for transient upstream errors (rate limit / capacity).
 _MAX_ATTEMPTS = 3
 _RETRY_BACKOFF_SECONDS = 1.5
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
@@ -59,37 +52,61 @@ def _sniff_mime(data: bytes) -> str:
 
 
 def _is_retryable(exc: Exception) -> bool:
-    """True for transient Google API errors worth retrying."""
+    """True for transient API errors worth retrying."""
     code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
     if isinstance(code, int) and code in _RETRYABLE_STATUS:
         return True
-    # google.genai raises ServerError (5xx) / APIError with a numeric status.
     name = type(exc).__name__
     return name in ("ServerError", "ServiceUnavailable", "ResourceExhausted")
 
 
-def _resolve_image_config() -> tuple[str, str]:
-    """Return ``(api_key, model)`` for image generation or raise if unconfigured."""
+def _resolve_image_config() -> tuple[str, str, str]:
+    """Return ``(provider, api_key, model)`` for image generation or raise if unconfigured."""
     cfg = get_learnhouse_config().ai_config
     provider_id = (getattr(cfg, "provider", None) or "").strip().lower()
+    api_key = getattr(cfg, "api_key", None)
+    gemini_key = getattr(cfg, "gemini_api_key", None)
+    configured_model = (getattr(cfg, "image_model", None) or "").strip()
 
-    # Prefer the unified key when the deployment is already on Google; otherwise
-    # fall back to the dedicated Gemini key (which any provider can set purely for
-    # image generation, since this path is Google-only).
-    api_key = None
-    if provider_id in _GOOGLE_ALIASES:
-        api_key = getattr(cfg, "api_key", None)
-    api_key = api_key or getattr(cfg, "gemini_api_key", None)
+    # 1. OpenRouter
+    if provider_id == "openrouter" or (api_key and api_key.startswith("sk-or-")):
+        key = api_key or getattr(cfg, "openrouter_api_key", None)
+        if not key:
+            raise AINotConfiguredError("OpenRouter API key not configured (set OPENROUTER_API_KEY)")
+        model = configured_model or DEFAULT_OPENROUTER_IMAGE_MODEL
+        return "openrouter", key, model
 
-    if not api_key:
-        raise AINotConfiguredError(
-            "AI image generation requires a Google/Gemini API key "
-            "(set LEARNHOUSE_GEMINI_API_KEY, or LEARNHOUSE_AI_API_KEY when "
-            "LEARNHOUSE_AI_PROVIDER=google)."
-        )
+    # 2. OpenAI
+    if provider_id in _OPENAI_ALIASES or (api_key and api_key.startswith("sk-") and not api_key.startswith("sk-or-")):
+        key = api_key
+        if not key:
+            raise AINotConfiguredError("OpenAI API key not configured (set OPENAI_API_KEY)")
+        model = configured_model or DEFAULT_OPENAI_IMAGE_MODEL
+        return "openai", key, model
 
-    model = (getattr(cfg, "image_model", None) or "").strip() or DEFAULT_IMAGE_MODEL
-    return api_key, model
+    # 3. Google GenAI
+    if provider_id in _GOOGLE_ALIASES or gemini_key or (api_key and api_key.startswith("AIza")):
+        key = gemini_key or api_key
+        if not key:
+            raise AINotConfiguredError(
+                "AI image generation requires a Google/Gemini API key "
+                "(set LEARNHOUSE_GEMINI_API_KEY, or LEARNHOUSE_AI_API_KEY when "
+                "LEARNHOUSE_AI_PROVIDER=google)."
+            )
+        model = configured_model or DEFAULT_IMAGE_MODEL
+        return "google", key, model
+
+    # 4. Fallback to OpenRouter or Google if any key is present
+    if api_key:
+        if api_key.startswith("sk-or-"):
+            return "openrouter", api_key, configured_model or DEFAULT_OPENROUTER_IMAGE_MODEL
+        if api_key.startswith("sk-"):
+            return "openai", api_key, configured_model or DEFAULT_OPENAI_IMAGE_MODEL
+        return "google", api_key, configured_model or DEFAULT_IMAGE_MODEL
+
+    raise AINotConfiguredError(
+        "AI image generation requires an API key (set OPENROUTER_API_KEY, OPENAI_API_KEY, or LEARNHOUSE_GEMINI_API_KEY)."
+    )
 
 
 def _extract_image_bytes(response) -> Optional[bytes]:
@@ -106,34 +123,152 @@ def _extract_image_bytes(response) -> Optional[bytes]:
     return None
 
 
+async def _generate_openrouter_image(
+    prompt: str,
+    api_key: str,
+    model: str,
+    input_images: Optional[list[bytes]] = None,
+) -> bytes:
+    """Generate image using OpenRouter API."""
+    import httpx
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://csginfotech.co",
+        "X-Title": "CSG LMS",
+    }
+
+    payload_prompt = prompt
+    if input_images:
+        payload_prompt = f"Edit the reference image: {prompt}"
+
+    async with httpx.AsyncClient(timeout=90.0) as client:
+        # First attempt: /api/v1/images endpoint
+        try:
+            resp = await client.post(
+                "https://openrouter.ai/api/v1/images",
+                json={"model": model, "prompt": payload_prompt},
+                headers=headers,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                items = data.get("data", [])
+                if items:
+                    b64 = items[0].get("b64_json")
+                    if b64:
+                        return base64.b64decode(b64)
+                    url = items[0].get("url")
+                    if url:
+                        img_resp = await client.get(url)
+                        if img_resp.status_code == 200:
+                            return img_resp.content
+        except Exception as e:
+            logger.warning("OpenRouter /images endpoint call failed: %s, trying chat completions", e)
+
+        # Fallback: /api/v1/chat/completions endpoint
+        resp = await client.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": payload_prompt}],
+                "modalities": ["image", "text"],
+            },
+            headers=headers,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            choices = data.get("choices", [])
+            if choices:
+                msg = choices[0].get("message", {})
+                images = msg.get("images", [])
+                for img in images:
+                    url = img.get("image_url", {}).get("url") or img.get("url")
+                    if url:
+                        if url.startswith("data:") and ";base64," in url:
+                            b64 = url.split(";base64,")[1]
+                            return base64.b64decode(b64)
+                        img_resp = await client.get(url)
+                        if img_resp.status_code == 200:
+                            return img_resp.content
+                content = msg.get("content", "")
+                if "data:image/" in content and ";base64," in content:
+                    m = re.search(r"data:image/[^;]+;base64,([A-Za-z0-9+/=]+)", content)
+                    if m:
+                        return base64.b64decode(m.group(1))
+
+        try:
+            err_data = resp.json()
+            err_msg = err_data.get("error", {}).get("message") or resp.text
+        except Exception:
+            err_msg = resp.text
+        raise RuntimeError(f"OpenRouter image generation failed: {err_msg}")
+
+
+async def _generate_openai_image(
+    prompt: str,
+    api_key: str,
+    model: str,
+) -> bytes:
+    """Generate image using OpenAI DALL-E."""
+    import httpx
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "n": 1,
+        "response_format": "b64_json",
+        "size": "1024x1024",
+    }
+
+    async with httpx.AsyncClient(timeout=90.0) as client:
+        resp = await client.post(
+            "https://api.openai.com/v1/images/generations",
+            json=payload,
+            headers=headers,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            items = data.get("data", [])
+            if items and items[0].get("b64_json"):
+                return base64.b64decode(items[0]["b64_json"])
+        try:
+            err_msg = resp.json().get("error", {}).get("message") or resp.text
+        except Exception:
+            err_msg = resp.text
+        raise RuntimeError(f"OpenAI image generation failed: {err_msg}")
+
+
 async def generate_image(
     prompt: str,
     *,
     input_images: Optional[list[bytes]] = None,
 ) -> bytes:
-    """Generate (or edit) an image with the nano banana model. Returns PNG bytes.
-
-    Raises ``AINotConfiguredError`` when no Google key is configured, or a plain
-    ``RuntimeError`` when the model returns no image (e.g. a safety refusal).
-    """
-    from google import genai
-    from google.genai import types
-
+    """Generate (or edit) an image with OpenRouter, OpenAI, or Google GenAI. Returns PNG/JPEG bytes."""
     prompt = (prompt or "").strip()
     if not prompt:
         raise ValueError("A non-empty prompt is required for image generation.")
     if len(prompt) > MAX_PROMPT_CHARS:
         prompt = prompt[:MAX_PROMPT_CHARS]
 
-    api_key, model = _resolve_image_config()
+    provider, api_key, model = _resolve_image_config()
 
-    # Build multimodal contents.
-    #   - EDIT/REFINE (input_images present): put the reference image(s) FIRST and
-    #     frame the instruction as an edit of "the provided image". This matches
-    #     Google's image-editing recipe and is what makes the model modify the
-    #     attachment instead of generating a fresh image from the words alone.
-    #   - TEXT-TO-IMAGE: prompt only.
-    # Sniff each image's real MIME type — a JPEG/WebP mislabeled as PNG is rejected.
+    if provider == "openrouter":
+        return await _generate_openrouter_image(
+            prompt, api_key, model, input_images=input_images
+        )
+
+    if provider == "openai":
+        return await _generate_openai_image(prompt, api_key, model)
+
+    # Google GenAI path
+    from google import genai
+    from google.genai import types
+
     imgs = [img for img in (input_images or []) if img]
     contents: list = []
     if imgs:
@@ -145,15 +280,10 @@ async def generate_image(
     else:
         contents.append(prompt)
 
-    # Request both output modalities — Google's documented image-editing config.
-    # TEXT parts are skipped by _extract_image_bytes, so output handling is
-    # unchanged; this only avoids a spurious "no image" 502 when an edit turn also
-    # returns a text note. (response_modalities is OUTPUT-only — the edit framing
-    # above, not this, is what makes the input image be used.)
     config = types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"])
-
     client = genai.Client(api_key=api_key)
     response = None
+
     for attempt in range(1, _MAX_ATTEMPTS + 1):
         try:
             response = await client.aio.models.generate_content(
@@ -162,9 +292,7 @@ async def generate_image(
                 config=config,
             )
             break
-        except Exception as e:  # noqa: BLE001 — surface a clean error to the router
-            # Log only the exception type: the underlying SDK error can embed the
-            # API key (request URL/headers), so never log the message or traceback.
+        except Exception as e:
             if _is_retryable(e) and attempt < _MAX_ATTEMPTS:
                 logger.warning(
                     "Image generation transient error (%s), retry %d/%d",
@@ -176,19 +304,13 @@ async def generate_image(
             if "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
                 logger.error("Image generation quota exhausted on Google API key")
                 raise RuntimeError(
-                    "Google Gemini image generation quota exceeded (limit: 0 on free tier). "
-                    "Please enable Billing / Pay-As-You-Go on your Google AI Studio project for this API key to generate images."
+                    "Google Gemini image generation quota exceeded. Please configure OPENROUTER_API_KEY for image generation."
                 ) from e
             logger.error("Image generation call failed: %s", type(e).__name__)
             raise RuntimeError("Image generation failed. Please try again or rephrase your prompt.") from e
 
     image_bytes = _extract_image_bytes(response)
     if not image_bytes:
-        # Most commonly a safety block — no inline image part was returned.
-        # `model` is intentionally not logged: it shares a return tuple with the
-        # API key, so logging it trips clear-text-secret analysis.
         logger.warning("Image generation returned no image")
-        raise RuntimeError(
-            "The model did not return an image. Try rephrasing your prompt."
-        )
+        raise RuntimeError("The model did not return an image. Try rephrasing your prompt.")
     return image_bytes

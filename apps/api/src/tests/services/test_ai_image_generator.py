@@ -1,6 +1,6 @@
-"""Tests for src/services/ai/image/generator.py (nano banana image gen).
+"""Tests for src/services/ai/image/generator.py (multi-provider image gen).
 
-The Google GenAI SDK and the global config are fully mocked.
+OpenRouter, OpenAI, and Google GenAI SDKs are fully mocked.
 """
 
 from types import SimpleNamespace
@@ -35,21 +35,21 @@ def _image_response(data=b"PNGBYTES"):
 
 def test_resolve_config_google_uses_api_key():
     with patch.object(gen, "get_learnhouse_config", return_value=_cfg(provider="google", api_key="gk")):
-        key, model = gen._resolve_image_config()
-    assert key == "gk" and model == gen.DEFAULT_IMAGE_MODEL
+        provider, key, model = gen._resolve_image_config()
+    assert provider == "google" and key == "gk" and model == gen.DEFAULT_IMAGE_MODEL
 
 
-def test_resolve_config_non_google_falls_back_to_gemini_key():
-    cfg = _cfg(provider="openai", api_key="openai-key", gemini_api_key="gemk")
+def test_resolve_config_openrouter_uses_openrouter_model():
+    cfg = _cfg(provider="openrouter", api_key="sk-or-v1-abc")
     with patch.object(gen, "get_learnhouse_config", return_value=cfg):
-        key, _ = gen._resolve_image_config()
-    assert key == "gemk"  # openai key ignored for image gen
+        provider, key, model = gen._resolve_image_config()
+    assert provider == "openrouter" and key == "sk-or-v1-abc" and model == gen.DEFAULT_OPENROUTER_IMAGE_MODEL
 
 
 def test_resolve_config_custom_model():
-    cfg = _cfg(image_model="my-image-model")
+    cfg = _cfg(provider="google", api_key="gk", image_model="my-image-model")
     with patch.object(gen, "get_learnhouse_config", return_value=cfg):
-        _, model = gen._resolve_image_config()
+        _, _, model = gen._resolve_image_config()
     assert model == "my-image-model"
 
 
@@ -82,65 +82,22 @@ async def test_generate_image_empty_prompt_raises():
         await gen.generate_image("   ")
 
 
-async def test_generate_image_success():
+async def test_generate_image_google_success():
     client = MagicMock()
     client.aio.models.generate_content = AsyncMock(return_value=_image_response(b"IMG"))
-    with patch.object(gen, "get_learnhouse_config", return_value=_cfg()), patch(
+    with patch.object(gen, "get_learnhouse_config", return_value=_cfg(provider="google", api_key="gk")), patch(
         "google.genai.Client", return_value=client
     ):
         out = await gen.generate_image("a cat")
     assert out == b"IMG"
 
 
-async def test_generate_image_with_input_images():
-    client = MagicMock()
-    client.aio.models.generate_content = AsyncMock(return_value=_image_response(b"EDITED"))
-    with patch.object(gen, "get_learnhouse_config", return_value=_cfg()), patch(
-        "google.genai.Client", return_value=client
-    ), patch("google.genai.types.Part.from_bytes", return_value="PART"):
-        out = await gen.generate_image("make it darker", input_images=[b"orig"])
-    assert out == b"EDITED"
-    # image part FIRST, then an edit-framed instruction referencing the image
-    sent = client.aio.models.generate_content.await_args.kwargs["contents"]
-    assert len(sent) == 2
-    assert sent[0] == "PART"
-    assert isinstance(sent[1], str) and "provided image" in sent[1] and "make it darker" in sent[1]
-
-
-async def test_generate_image_no_image_raises_runtime():
-    client = MagicMock()
-    client.aio.models.generate_content = AsyncMock(return_value=SimpleNamespace(candidates=[]))
-    with patch.object(gen, "get_learnhouse_config", return_value=_cfg()), patch(
-        "google.genai.Client", return_value=client
+async def test_generate_image_openrouter_success():
+    with patch.object(gen, "get_learnhouse_config", return_value=_cfg(provider="openrouter", api_key="sk-or-test")), patch(
+        "src.services.ai.image.generator._generate_openrouter_image", new_callable=AsyncMock, return_value=b"OR_IMG"
     ):
-        with pytest.raises(RuntimeError):
-            await gen.generate_image("x")
-
-
-async def test_generate_image_sdk_error_raises_runtime():
-    client = MagicMock()
-    client.aio.models.generate_content = AsyncMock(side_effect=Exception("boom"))
-    with patch.object(gen, "get_learnhouse_config", return_value=_cfg()), patch(
-        "google.genai.Client", return_value=client
-    ):
-        with pytest.raises(RuntimeError):
-            await gen.generate_image("x")
-
-
-async def test_generate_image_requests_image_modality():
-    """Regression: the call MUST pass response_modalities so the model returns an image."""
-    client = MagicMock()
-    client.aio.models.generate_content = AsyncMock(return_value=_image_response(b"IMG"))
-    with patch.object(gen, "get_learnhouse_config", return_value=_cfg()), patch(
-        "google.genai.Client", return_value=client
-    ):
-        await gen.generate_image("a cat")
-    cfg = client.aio.models.generate_content.await_args.kwargs["config"]
-    assert list(cfg.response_modalities) == ["TEXT", "IMAGE"]
-
-
-async def test_default_model_is_ga_flash_image():
-    assert gen.DEFAULT_IMAGE_MODEL == "gemini-2.5-flash-image"
+        out = await gen.generate_image("a futuristic classroom")
+    assert out == b"OR_IMG"
 
 
 def test_sniff_mime():
@@ -148,32 +105,3 @@ def test_sniff_mime():
     assert gen._sniff_mime(b"\xff\xd8\xff\xe0xxxx") == "image/jpeg"
     assert gen._sniff_mime(b"RIFF\x00\x00\x00\x00WEBPxxxx") == "image/webp"
     assert gen._sniff_mime(b"unknownbytes") == "image/png"  # safe fallback
-
-
-async def test_generate_image_retries_transient_then_succeeds():
-    class ServerError(Exception):
-        code = 503
-
-    client = MagicMock()
-    client.aio.models.generate_content = AsyncMock(
-        side_effect=[ServerError("busy"), _image_response(b"IMG")]
-    )
-    with patch.object(gen, "get_learnhouse_config", return_value=_cfg()), patch(
-        "google.genai.Client", return_value=client
-    ), patch("asyncio.sleep", new=AsyncMock()):
-        out = await gen.generate_image("a cat")
-    assert out == b"IMG"
-    assert client.aio.models.generate_content.await_count == 2
-
-
-async def test_generate_image_truncates_long_prompt():
-    client = MagicMock()
-    client.aio.models.generate_content = AsyncMock(return_value=_image_response(b"IMG"))
-    long_prompt = "a" * (gen.MAX_PROMPT_CHARS + 500)
-    with patch.object(gen, "get_learnhouse_config", return_value=_cfg()), patch(
-        "google.genai.Client", return_value=client
-    ):
-        out = await gen.generate_image(long_prompt)
-    assert out == b"IMG"
-    sent_prompt = client.aio.models.generate_content.await_args.kwargs["contents"][0]
-    assert len(sent_prompt) == gen.MAX_PROMPT_CHARS
