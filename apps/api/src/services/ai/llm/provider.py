@@ -87,8 +87,17 @@ def build_model(model_name: str) -> Model:
         from pydantic_ai.models.openai import OpenAIChatModel
         from pydantic_ai.providers.openrouter import OpenRouterProvider
 
+        resolved_model = model_name
+        if "/" not in resolved_model:
+            if resolved_model.startswith("gemini-"):
+                resolved_model = f"google/{resolved_model}"
+            elif resolved_model.startswith(("gpt-", "o1-", "o3-")):
+                resolved_model = f"openai/{resolved_model}"
+            elif resolved_model.startswith("claude-"):
+                resolved_model = f"anthropic/{resolved_model}"
+
         return OpenAIChatModel(
-            model_name,
+            resolved_model,
             provider=OpenRouterProvider(
                 api_key=api_key,
                 app_title=getattr(lh_config, "site_name", None) or "CSG LMS",

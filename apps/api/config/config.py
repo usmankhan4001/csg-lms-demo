@@ -553,6 +553,10 @@ def get_learnhouse_config() -> LearnHouseConfig:
     ai_tts_model = os.environ.get("LEARNHOUSE_AI_TTS_MODEL") or yaml_ai_config.get("tts_model")
 
     # Provider-agnostic generation settings (env takes precedence over yaml).
+    env_openrouter_key = (
+        os.environ.get("OPENROUTER_API_KEY")
+        or os.environ.get("LEARNHOUSE_OPENROUTER_API_KEY")
+    )
     env_openai_key = os.environ.get("OPENAI_API_KEY")
     env_anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
 
@@ -560,20 +564,24 @@ def get_learnhouse_config() -> LearnHouseConfig:
         os.environ.get("LEARNHOUSE_AI_PROVIDER")
         or os.environ.get("AI_PROVIDER")
         or yaml_ai_config.get("provider")
-        or ("openai" if env_openai_key and not env_gemini_api_key else "google")
+        or ("openrouter" if env_openrouter_key and not (env_gemini_api_key or env_openai_key)
+            else "openai" if env_openai_key and not env_gemini_api_key
+            else "google")
     )
     ai_api_key = (
         os.environ.get("LEARNHOUSE_AI_API_KEY")
         or os.environ.get("AI_API_KEY")
+        or (env_openrouter_key if ai_provider == "openrouter" else None)
         or env_gemini_api_key
+        or env_openrouter_key
         or env_openai_key
         or env_anthropic_key
         or yaml_ai_config.get("api_key")
     )
     ai_base_url = os.environ.get("LEARNHOUSE_AI_BASE_URL") or os.environ.get("AI_BASE_URL") or yaml_ai_config.get("base_url")
-    ai_model_fast = os.environ.get("LEARNHOUSE_AI_MODEL_FAST") or yaml_ai_config.get("model_fast")
-    ai_model_standard = os.environ.get("LEARNHOUSE_AI_MODEL_STANDARD") or yaml_ai_config.get("model_standard")
-    ai_model_pro = os.environ.get("LEARNHOUSE_AI_MODEL_PRO") or yaml_ai_config.get("model_pro")
+    ai_model_fast = os.environ.get("LEARNHOUSE_AI_MODEL_FAST") or os.environ.get("AI_MODEL_FAST") or yaml_ai_config.get("model_fast")
+    ai_model_standard = os.environ.get("LEARNHOUSE_AI_MODEL_STANDARD") or os.environ.get("AI_MODEL_STANDARD") or yaml_ai_config.get("model_standard")
+    ai_model_pro = os.environ.get("LEARNHOUSE_AI_MODEL_PRO") or os.environ.get("AI_MODEL_PRO") or yaml_ai_config.get("model_pro")
     ai_embedding_provider = os.environ.get("LEARNHOUSE_AI_EMBEDDING_PROVIDER") or yaml_ai_config.get("embedding_provider")
     ai_embedding_model = os.environ.get("LEARNHOUSE_AI_EMBEDDING_MODEL") or yaml_ai_config.get("embedding_model")
     _ai_embedding_dims = os.environ.get("LEARNHOUSE_AI_EMBEDDING_DIMENSIONS") or yaml_ai_config.get("embedding_dimensions")
@@ -583,7 +591,7 @@ def get_learnhouse_config() -> LearnHouseConfig:
     if env_is_ai_enabled_str:
         is_ai_enabled = env_is_ai_enabled_str.lower() in ("true", "1", "yes")
     else:
-        is_ai_enabled = bool(gemini_api_key or ai_api_key or yaml_ai_config.get("is_ai_enabled", True))
+        is_ai_enabled = bool(gemini_api_key or ai_api_key or env_openrouter_key or yaml_ai_config.get("is_ai_enabled", True))
 
     # Redis config
     env_redis_connection_string = os.environ.get("LEARNHOUSE_REDIS_CONNECTION_STRING")
