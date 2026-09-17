@@ -11,6 +11,7 @@ SECURITY:
 - Podcast episode content for non-public podcasts requires auth
 """
 
+import logging
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -19,6 +20,8 @@ from pathlib import Path
 from urllib.parse import quote
 from sqlmodel import select
 from botocore.exceptions import ClientError
+
+logger = logging.getLogger(__name__)
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 from src.core.events.database import get_db_session
