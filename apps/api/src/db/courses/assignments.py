@@ -458,14 +458,14 @@ class AssignmentUserSubmission(AssignmentUserSubmissionBase, table=True):
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    creation_date: str
-    update_date: str
-    assignmentusersubmission_uuid: str
+    creation_date: str = Field(default="")
+    update_date: str = Field(default="")
+    assignmentusersubmission_uuid: str = Field(default="", index=True)
 
     submission_status: AssignmentUserSubmissionStatus = (
         AssignmentUserSubmissionStatus.SUBMITTED
     )
-    grade: int
+    grade: int = 0
     overall_feedback: Optional[str] = None
     attempt_number: int = 1
     user_id: int = Field(
