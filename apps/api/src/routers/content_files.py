@@ -14,7 +14,7 @@ SECURITY:
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import StreamingResponse, Response, FileResponse
 from pathlib import Path
 from urllib.parse import quote
 from sqlmodel import select
@@ -135,11 +135,11 @@ def _validate_content_path(file_path: str) -> str | None:
     # Canonicalize via os.path.realpath (resolves symlinks, normalizes) and verify containment.
     # realpath is used deliberately: it is a recognized path-injection sanitizer.
     base_real = os.path.realpath(str(Path("content")))
-    full_real = os.path.realpath(os.path.join(base_real, normalized))
-    if not full_real.startswith(base_real + os.sep):
+    full_real = os.path.realpath(f"{base_real}/{normalized}")
+    if not (full_real.startswith(base_real + os.sep) or full_real.startswith(base_real + "/")):
         return None
-    # Return the validated relative path
-    return os.path.relpath(full_real, base_real)
+    # Return the validated relative path with standard forward slashes
+    return os.path.relpath(full_real, base_real).replace('\\', '/')
 
 
 async def _check_content_access(
@@ -294,13 +294,24 @@ async def serve_content_file(
     s3_client = get_storage_client()
     bucket = get_s3_bucket_name()
 
+    local_path = os.path.realpath(os.path.join("content", safe_path))
+    content_root = os.path.realpath("content")
+    local_exists = (
+        (local_path == content_root or local_path.startswith(content_root + os.sep))
+        and os.path.isfile(local_path)
+    )
+
     if not s3_client:
+        if local_exists:
+            return FileResponse(local_path, media_type=_get_mime_type(safe_path))
         raise HTTPException(status_code=500, detail="Storage not configured")
 
     # Get file metadata
     try:
         head = s3_client.head_object(Bucket=bucket, Key=s3_key)
     except ClientError as e:
+        if local_exists:
+            return FileResponse(local_path, media_type=_get_mime_type(safe_path))
         code = e.response["Error"]["Code"]
         if code in ("NoSuchKey", "404"):
             raise HTTPException(status_code=404, detail="File not found")
@@ -309,6 +320,8 @@ async def serve_content_file(
         else:
             raise HTTPException(status_code=502, detail="Storage service error")
     except Exception:
+        if local_exists:
+            return FileResponse(local_path, media_type=_get_mime_type(safe_path))
         raise HTTPException(status_code=502, detail="Storage service error")
 
     file_size = head['ContentLength']
@@ -435,12 +448,49 @@ async def head_content_file(
     s3_client = get_storage_client()
     bucket = get_s3_bucket_name()
 
+    local_path = os.path.realpath(os.path.join("content", safe_path))
+    content_root = os.path.realpath("content")
+    local_exists = (
+        (local_path == content_root or local_path.startswith(content_root + os.sep))
+        and os.path.isfile(local_path)
+    )
+
     if not s3_client:
+        if local_exists:
+            mime_type = _get_mime_type(safe_path)
+            file_size = os.path.getsize(local_path)
+            return Response(
+                status_code=200,
+                headers={
+                    "Accept-Ranges": "bytes",
+                    "Content-Length": str(file_size),
+                    "Content-Type": mime_type,
+                    "Cache-Control": "public, max-age=86400",
+                    "X-Content-Type-Options": "nosniff",
+                    "Content-Disposition": _content_disposition(mime_type, safe_path),
+                    **_security_headers(mime_type),
+                },
+            )
         raise HTTPException(status_code=500, detail="Storage not configured")
 
     try:
         head = s3_client.head_object(Bucket=bucket, Key=s3_key)
     except ClientError as e:
+        if local_exists:
+            mime_type = _get_mime_type(safe_path)
+            file_size = os.path.getsize(local_path)
+            return Response(
+                status_code=200,
+                headers={
+                    "Accept-Ranges": "bytes",
+                    "Content-Length": str(file_size),
+                    "Content-Type": mime_type,
+                    "Cache-Control": "public, max-age=86400",
+                    "X-Content-Type-Options": "nosniff",
+                    "Content-Disposition": _content_disposition(mime_type, safe_path),
+                    **_security_headers(mime_type),
+                },
+            )
         code = e.response["Error"]["Code"]
         if code in ("NoSuchKey", "404"):
             raise HTTPException(status_code=404, detail="File not found")
@@ -449,6 +499,21 @@ async def head_content_file(
         else:
             raise HTTPException(status_code=502, detail="Storage service error")
     except Exception:
+        if local_exists:
+            mime_type = _get_mime_type(safe_path)
+            file_size = os.path.getsize(local_path)
+            return Response(
+                status_code=200,
+                headers={
+                    "Accept-Ranges": "bytes",
+                    "Content-Length": str(file_size),
+                    "Content-Type": mime_type,
+                    "Cache-Control": "public, max-age=86400",
+                    "X-Content-Type-Options": "nosniff",
+                    "Content-Disposition": _content_disposition(mime_type, safe_path),
+                    **_security_headers(mime_type),
+                },
+            )
         raise HTTPException(status_code=502, detail="Storage service error")
 
     file_size = head['ContentLength']

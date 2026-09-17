@@ -138,6 +138,8 @@ services:
       LIVEKIT_INTERNAL_URL: ws://livekit:7880
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-APIcsgLivekit2026ProdKey982}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-sec_csgLivekit2026ProdSecret_739281046194720185_Key}
+    volumes:
+      - content_data:/app/content
     depends_on:
       csg-postgres:
         condition: service_healthy
@@ -253,6 +255,8 @@ services:
       LIVEKIT_INTERNAL_URL: ws://livekit:7880
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-APIcsgLivekit2026ProdKey982}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-sec_csgLivekit2026ProdSecret_739281046194720185_Key}
+    volumes:
+      - content_data:/app/content
     depends_on:
       csg-postgres:
         condition: service_healthy
@@ -468,6 +472,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  content_data:
 
 networks:
   dokploy-network:

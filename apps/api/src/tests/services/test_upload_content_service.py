@@ -150,18 +150,20 @@ class TestUploadContentService:
                 "src.services.utils.upload_content.boto3.client",
                 return_value=s3_client,
             ):
-                with pytest.raises(HTTPException) as exc:
-                    await upload_content(
-                        directory="logos",
-                        type_of_dir="orgs",
-                        uuid="org_uuid",
-                        file_binary=b"ok",
-                        file_and_format="logo.png",
-                    )
+                # When S3 fails, upload_content gracefully logs a warning and keeps the local file
+                await upload_content(
+                    directory="logos",
+                    type_of_dir="orgs",
+                    uuid="org_uuid",
+                    file_binary=b"ok-fallback",
+                    file_and_format="logo.png",
+                )
+            # Local file exists and contains the content
+            local_fallback = tmp_path / "content" / "orgs" / "org_uuid" / "logos" / "logo.png"
+            assert local_fallback.exists()
+            assert local_fallback.read_bytes() == b"ok-fallback"
         finally:
             os.chdir(old_cwd)
-
-        assert exc.value.status_code == 500
 
     @pytest.mark.asyncio
     async def test_read_content_rejects_bad_filename(self):

@@ -128,14 +128,12 @@ async def upload_content(
         await asyncio.to_thread(ensure_faststart, safe_path)
 
     elif content_delivery == "s3api":
-        s3 = build_s3_client()
-
         bucket_name = learnhouse_config.hosting_config.content_delivery.s3api.bucket_name or "learnhouse-media"
         local_path = safe_path
         # The S3 key stays a clean relative content path.
         s3_key = f"content/{type_of_dir}/{uuid}/{directory}/{file_and_format}"
 
-        # Write to local temp file for S3 upload
+        # Write to local file first
         with open(local_path, "wb") as f:
             f.write(file_binary)
 
@@ -146,18 +144,20 @@ async def upload_content(
         await asyncio.to_thread(ensure_faststart, local_path)
 
         try:
+            s3 = build_s3_client()
+            if not s3:
+                logger.warning("S3 client not configured; keeping local file at %s", local_path)
+                return
             await asyncio.to_thread(s3.upload_file, local_path, bucket_name, s3_key)
             await asyncio.to_thread(s3.head_object, Bucket=bucket_name, Key=s3_key)
             logger.debug("S3 upload successful: %s", s3_key)
-        except (ClientError, BotoCoreError) as e:
-            logger.error("S3 upload failed: %s", e)
-            raise HTTPException(status_code=500, detail="File upload to storage failed")
-        finally:
             # Clean up local temp file after S3 upload
             try:
                 os.remove(local_path)
             except OSError as cleanup_err:
                 logger.error("Failed to clean up temp file %s: %s", local_path, cleanup_err)
+        except Exception as e:
+            logger.warning("S3 upload failed (%s). Retaining local filesystem copy at %s.", e, local_path)
 
 
 async def read_content(
@@ -189,17 +189,17 @@ async def read_content(
     content_delivery = learnhouse_config.hosting_config.content_delivery.type
 
     if content_delivery == "s3api":
-        s3 = build_s3_client()
-        bucket_name = learnhouse_config.hosting_config.content_delivery.s3api.bucket_name or "learnhouse-media"
-        s3_key = f"content/{type_of_dir}/{uuid}/{directory}/{file_and_format}"
         try:
-            resp = await asyncio.to_thread(s3.get_object, Bucket=bucket_name, Key=s3_key)
-            return await asyncio.to_thread(resp["Body"].read)
-        except (ClientError, BotoCoreError) as e:
-            logger.error("S3 read failed: %s", e)
-            raise HTTPException(status_code=404, detail="File not found")
+            s3 = build_s3_client()
+            if s3:
+                bucket_name = learnhouse_config.hosting_config.content_delivery.s3api.bucket_name or "learnhouse-media"
+                s3_key = f"content/{type_of_dir}/{uuid}/{directory}/{file_and_format}"
+                resp = await asyncio.to_thread(s3.get_object, Bucket=bucket_name, Key=s3_key)
+                return await asyncio.to_thread(resp["Body"].read)
+        except Exception as e:
+            logger.warning("S3 read failed (%s). Checking local filesystem fallback.", e)
 
-    # filesystem
+    # filesystem fallback or default
     safe_path = _safe_content_path(type_of_dir, uuid, directory, file_and_format)
     if not os.path.exists(safe_path):
         raise HTTPException(status_code=404, detail="File not found")
