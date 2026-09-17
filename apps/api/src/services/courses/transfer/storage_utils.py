@@ -80,10 +80,11 @@ def get_storage_client():
     with _s3_client_lock:
         if _s3_client is not None:
             return _s3_client
-        # SigV4, region and addressing style now live in the shared builder --
-        # this site used to be the only one that set them, so uploads and
-        # presigned downloads of the same object were configured differently.
-        _s3_client = build_s3_client()
+        try:
+            _s3_client = build_s3_client()
+        except Exception as e:
+            logger.warning("Failed to initialize S3 storage client: %s", e)
+            _s3_client = None
         return _s3_client
 
 

@@ -61,6 +61,8 @@ def build_s3_client(
     still works for deployments that rely on it.
     """
     s3 = get_s3_settings()
+    if not s3:
+        return None
 
     endpoint_url = (getattr(s3, "endpoint_url", None) or "").strip() or None
     access_key_id = (getattr(s3, "access_key_id", None) or "").strip() or None
@@ -70,6 +72,13 @@ def build_s3_client(
     # validate the region against the endpoint, so it stays overridable.
     region = (getattr(s3, "region", None) or "").strip() or "auto"
     addressing_style = (getattr(s3, "addressing_style", None) or "").strip() or "auto"
+
+    if endpoint_url and ("<" in endpoint_url or ">" in endpoint_url or "account-id" in endpoint_url):
+        logger.warning("Ignoring placeholder S3 endpoint URL: %s", endpoint_url)
+        endpoint_url = None
+
+    if not endpoint_url and not access_key_id:
+        return None
 
     client_config = botocore.config.Config(
         signature_version="s3v4",
@@ -86,7 +95,11 @@ def build_s3_client(
         kwargs["aws_access_key_id"] = access_key_id
         kwargs["aws_secret_access_key"] = secret_access_key
 
-    return boto3.client("s3", **kwargs)
+    try:
+        return boto3.client("s3", **kwargs)
+    except Exception as e:
+        logger.warning("Failed to initialize boto3 S3 client: %s", e)
+        return None
 
 
 def get_public_object_url(key: str) -> Optional[str]:

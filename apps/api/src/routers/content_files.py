@@ -291,7 +291,11 @@ async def serve_content_file(
     await _check_content_access(safe_path, current_user, db_session, request=request)
 
     s3_key = f"content/{safe_path}"
-    s3_client = get_storage_client()
+    try:
+        s3_client = get_storage_client()
+    except Exception as e:
+        logger.warning("Failed to obtain storage client: %s", e)
+        s3_client = None
     bucket = get_s3_bucket_name()
 
     local_path = os.path.realpath(os.path.join("content", safe_path))
@@ -445,7 +449,11 @@ async def head_content_file(
     await _check_content_access(safe_path, current_user, db_session, request=request)
 
     s3_key = f"content/{safe_path}"
-    s3_client = get_storage_client()
+    try:
+        s3_client = get_storage_client()
+    except Exception as e:
+        logger.warning("Failed to obtain storage client: %s", e)
+        s3_client = None
     bucket = get_s3_bucket_name()
 
     local_path = os.path.realpath(os.path.join("content", safe_path))

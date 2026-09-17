@@ -481,23 +481,36 @@ def get_learnhouse_config() -> LearnHouseConfig:
     endpoint_url = _s3_yaml.get("endpoint_url") or _s3_env(
         "LEARNHOUSE_S3_API_ENDPOINT_URL", "S3_ENDPOINT_URL"
     )
+    if endpoint_url and ("<" in endpoint_url or ">" in endpoint_url or "account-id" in endpoint_url):
+        logging.warning("Ignoring placeholder S3 endpoint URL: %r", endpoint_url)
+        endpoint_url = ""
+
     # Credentials: boto3's ambient chain only reads AWS_*, so a deployment
     # setting S3_ACCESS_KEY_ID got no credentials at all. All three spellings
     # are accepted and passed to the client explicitly.
     access_key_id = _s3_yaml.get("access_key_id") or _s3_env(
         "LEARNHOUSE_S3_API_ACCESS_KEY_ID", "S3_ACCESS_KEY_ID", "AWS_ACCESS_KEY_ID"
     )
+    if access_key_id and ("<" in access_key_id or ">" in access_key_id):
+        access_key_id = ""
+
     secret_access_key = _s3_yaml.get("secret_access_key") or _s3_env(
         "LEARNHOUSE_S3_API_SECRET_ACCESS_KEY",
         "S3_SECRET_ACCESS_KEY",
         "AWS_SECRET_ACCESS_KEY",
     )
+    if secret_access_key and ("<" in secret_access_key or ">" in secret_access_key):
+        secret_access_key = ""
+
     region = _s3_yaml.get("region") or _s3_env(
         "LEARNHOUSE_S3_API_REGION", "S3_REGION", "AWS_REGION"
     )
     public_domain = _s3_yaml.get("public_domain") or _s3_env(
         "LEARNHOUSE_S3_API_PUBLIC_DOMAIN", "S3_PUBLIC_DOMAIN"
     )
+    if public_domain and ("<" in public_domain or ">" in public_domain):
+        public_domain = ""
+
     addressing_style = _s3_yaml.get("addressing_style") or _s3_env(
         "LEARNHOUSE_S3_API_ADDRESSING_STYLE", "S3_ADDRESSING_STYLE"
     )
