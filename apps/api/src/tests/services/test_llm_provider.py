@@ -150,9 +150,9 @@ def test_model_for_tier_defaults(monkeypatch):
         "src.services.ai.llm.tiers.get_learnhouse_config",
         lambda: SimpleNamespace(ai_config=SimpleNamespace(model_fast=None, model_standard=None, model_pro=None)),
     )
-    assert model_for_tier("fast") == "gemini-3.1-flash-lite"
-    assert model_for_tier("standard") == "gemini-3.5-flash"
-    assert model_for_tier("pro") == "gemini-3.1-pro-preview"
+    assert model_for_tier("fast") == "gemini-2.5-flash"
+    assert model_for_tier("standard") == "gemini-2.5-flash"
+    assert model_for_tier("pro") == "gemini-2.5-pro"
 
 
 # --- Provider-agnostic embeddings ---------------------------------------------------------

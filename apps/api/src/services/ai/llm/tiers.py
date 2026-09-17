@@ -27,9 +27,9 @@ Purpose = Literal["chat", "planning"]
 #   standard -> gemini-3.5-flash (GA)           — chat, RAG, planning/blocks (std plans)
 #   pro      -> gemini-3.1-pro-preview          — planning/blocks (Pro+ plans)
 _TIER_DEFAULTS: dict[str, str] = {
-    "fast": "gemini-3.1-flash-lite",
-    "standard": "gemini-3.5-flash",
-    "pro": "gemini-3.1-pro-preview",
+    "fast": "gemini-2.5-flash",
+    "standard": "gemini-2.5-flash",
+    "pro": "gemini-2.5-pro",
 }
 
 _TIER_CONFIG_ATTR: dict[str, str] = {

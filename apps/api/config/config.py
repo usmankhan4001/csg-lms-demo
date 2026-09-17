@@ -539,18 +539,38 @@ def get_learnhouse_config() -> LearnHouseConfig:
     ).get("sql_connection_string")
 
     # AI Config
+    # AI Config
     yaml_ai_config = yaml_config.get("ai_config", {}) or {}
-    env_gemini_api_key = os.environ.get("LEARNHOUSE_GEMINI_API_KEY")
-    env_is_ai_enabled_str = os.environ.get("LEARNHOUSE_IS_AI_ENABLED")
+    env_gemini_api_key = (
+        os.environ.get("LEARNHOUSE_GEMINI_API_KEY")
+        or os.environ.get("GEMINI_API_KEY")
+        or os.environ.get("GOOGLE_API_KEY")
+    )
+    env_is_ai_enabled_str = os.environ.get("LEARNHOUSE_IS_AI_ENABLED") or os.environ.get("IS_AI_ENABLED")
 
     gemini_api_key = env_gemini_api_key or yaml_ai_config.get("gemini_api_key")
     ai_image_model = os.environ.get("LEARNHOUSE_AI_IMAGE_MODEL") or yaml_ai_config.get("image_model")
     ai_tts_model = os.environ.get("LEARNHOUSE_AI_TTS_MODEL") or yaml_ai_config.get("tts_model")
 
     # Provider-agnostic generation settings (env takes precedence over yaml).
-    ai_provider = os.environ.get("LEARNHOUSE_AI_PROVIDER") or yaml_ai_config.get("provider")
-    ai_api_key = os.environ.get("LEARNHOUSE_AI_API_KEY") or yaml_ai_config.get("api_key")
-    ai_base_url = os.environ.get("LEARNHOUSE_AI_BASE_URL") or yaml_ai_config.get("base_url")
+    env_openai_key = os.environ.get("OPENAI_API_KEY")
+    env_anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+
+    ai_provider = (
+        os.environ.get("LEARNHOUSE_AI_PROVIDER")
+        or os.environ.get("AI_PROVIDER")
+        or yaml_ai_config.get("provider")
+        or ("openai" if env_openai_key and not env_gemini_api_key else "google")
+    )
+    ai_api_key = (
+        os.environ.get("LEARNHOUSE_AI_API_KEY")
+        or os.environ.get("AI_API_KEY")
+        or env_gemini_api_key
+        or env_openai_key
+        or env_anthropic_key
+        or yaml_ai_config.get("api_key")
+    )
+    ai_base_url = os.environ.get("LEARNHOUSE_AI_BASE_URL") or os.environ.get("AI_BASE_URL") or yaml_ai_config.get("base_url")
     ai_model_fast = os.environ.get("LEARNHOUSE_AI_MODEL_FAST") or yaml_ai_config.get("model_fast")
     ai_model_standard = os.environ.get("LEARNHOUSE_AI_MODEL_STANDARD") or yaml_ai_config.get("model_standard")
     ai_model_pro = os.environ.get("LEARNHOUSE_AI_MODEL_PRO") or yaml_ai_config.get("model_pro")
@@ -563,7 +583,7 @@ def get_learnhouse_config() -> LearnHouseConfig:
     if env_is_ai_enabled_str:
         is_ai_enabled = env_is_ai_enabled_str.lower() in ("true", "1", "yes")
     else:
-        is_ai_enabled = yaml_ai_config.get("is_ai_enabled", False)
+        is_ai_enabled = bool(gemini_api_key or ai_api_key or yaml_ai_config.get("is_ai_enabled", True))
 
     # Redis config
     env_redis_connection_string = os.environ.get("LEARNHOUSE_REDIS_CONNECTION_STRING")
