@@ -95,6 +95,10 @@ def build_model(model_name: str) -> Model:
                 resolved_model = f"openai/{resolved_model}"
             elif resolved_model.startswith("claude-"):
                 resolved_model = f"anthropic/{resolved_model}"
+            elif resolved_model.startswith("glm-"):
+                resolved_model = f"z-ai/{resolved_model}"
+            elif resolved_model.startswith("hy"):
+                resolved_model = f"tencent/{resolved_model}"
 
         return OpenAIChatModel(
             resolved_model,
